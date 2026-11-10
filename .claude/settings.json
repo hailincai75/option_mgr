@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd backend && gradlew.bat build*)",
+      "Bash(cd backend && gradlew.bat test*)",
+      "Bash(cd frontend && npm run lint*)",
+      "Bash(cd frontend && npm run typecheck*)",
+      "Bash(cd frontend && npm test*)",
+      "Bash(cd e2e && npx playwright test*)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./**/.env)",
+      "Read(./data/**)"
+    ]
+  }
+}

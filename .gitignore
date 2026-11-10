@@ -1,0 +1,29 @@
+# Backend build
+backend/build/
+backend/.gradle/
+backend/out/
+*.class
+
+# Frontend / e2e
+node_modules/
+frontend/dist/
+e2e/test-results/
+e2e/playwright-report/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Secrets & real data
+.env
+.env.*
+data/
+*.db
+
+# Claude local overrides
+.claude/settings.local.json
+
+# OS
+.DS_Store
+Thumbs.db
