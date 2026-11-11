@@ -1,0 +1,4 @@
+# Active for every Gradle test run (see build.gradle.kts): in-memory H2, isolated from the dev file DB.
+spring:
+  datasource:
+    url: jdbc:h2:mem:optionmgr-test;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1

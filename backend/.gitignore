@@ -1,0 +1,4 @@
+# Local H2 database files (also covered by root .gitignore: data/, *.db)
+data/
+*.mv.db
+*.trace.db
