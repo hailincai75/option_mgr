@@ -4,6 +4,7 @@ import { CashPage } from './pages/CashPage'
 import { HomePage } from './pages/HomePage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { OpenTradePage } from './pages/OpenTradePage'
+import { PositionsPage } from './pages/PositionsPage'
 import { TradeListPage } from './pages/TradeListPage'
 
 const NAV_ITEMS = [
@@ -12,6 +13,14 @@ const NAV_ITEMS = [
     label: (
       <Link to="/trades" data-testid="nav-trades">
         交易
+      </Link>
+    ),
+  },
+  {
+    key: '/positions',
+    label: (
+      <Link to="/positions" data-testid="nav-positions">
+        持仓
       </Link>
     ),
   },
@@ -70,6 +79,7 @@ export function App() {
       <Route element={<AppLayout />}>
         <Route index element={<HomePage />} />
         <Route path="trades" element={<TradeListPage />} />
+        <Route path="positions" element={<PositionsPage />} />
         <Route path="trades/new" element={<OpenTradePage />} />
         <Route path="cash" element={<CashPage />} />
         <Route path="*" element={<NotFoundPage />} />

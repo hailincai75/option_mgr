@@ -3,20 +3,7 @@ import type { ColumnsType } from 'antd/es/table'
 import type { HTMLAttributes, ReactNode } from 'react'
 import type { OptionTrade } from '../../api/types'
 import { decimalSign, EMPTY_VALUE, formatDateTimeNY, formatMoney } from '../../utils/format'
-
-const ACTION_LABELS: Record<string, string> = {
-  BTO: 'BTO（买入开仓）',
-  STO: 'STO（卖出开仓）',
-  BTC: 'BTC（买入平仓）',
-  STC: 'STC（卖出平仓）',
-}
-
-/** Known actions get "code（中文）"; unknown ones are shown as-is. */
-function tradeActionLabel(action: string): string {
-  return ACTION_LABELS[action] ?? action
-}
-
-const SIGN_COLORS = { 1: '#389e0d', [-1]: '#cf1322', 0: undefined } as const
+import { SIGNED_MONEY_COLORS, tradeActionLabel } from './tradeLabels'
 
 interface TradeTableProps {
   trades: OptionTrade[]
@@ -84,7 +71,7 @@ export function TradeTable({ trades, loading, empty, onContractClick }: TradeTab
         <span
           data-testid="trade-cell-net-amount"
           style={{
-            color: SIGN_COLORS[decimalSign(trade.cashChange)],
+            color: SIGNED_MONEY_COLORS[decimalSign(trade.cashChange)],
             fontVariantNumeric: 'tabular-nums',
           }}
         >

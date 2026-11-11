@@ -25,6 +25,7 @@ export async function apiTrade(t: {
   netAmount: string
   time: string
   multiplier?: number
+  note?: string
 }): Promise<{ id: number; tradedAt: string; tradedAtLocal: string }> {
   const r = await fetch(`${BACKEND_URL}/api/option-trades`, {
     method: 'POST',
@@ -39,7 +40,7 @@ export async function apiTrade(t: {
       netAmount: t.netAmount,
       tradedAtLocal: t.time,
       multiplier: t.multiplier ?? 100,
-      note: null,
+      note: t.note ?? null,
     }),
   })
   if (r.status !== 201) throw new Error(`seed trade failed: ${r.status} ${await r.text()}`)

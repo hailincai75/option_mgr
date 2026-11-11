@@ -225,3 +225,62 @@ export interface OptionTradePage {
   /** 0 when nothing matches. */
   totalPages: number
 }
+
+// ---------------------------------------------------------------------------
+// FEAT-003 期权持仓汇总
+// ---------------------------------------------------------------------------
+
+/** SHORT (built by STO) / LONG (built by BTO). Open type for safety: unknown values shown as-is. */
+export type PositionDirection = 'SHORT' | 'LONG' | (string & {})
+
+/** ACTIVE (dte > 0) / EXPIRES_TODAY (dte = 0) / EXPIRED (dte < 0). */
+export type ExpirationStatus = 'ACTIVE' | 'EXPIRES_TODAY' | 'EXPIRED' | (string & {})
+
+/** Contract: `GET /api/option-positions` → `positions[].lots[]` (FIFO order). */
+export interface OptionPositionLot {
+  tradeId: number
+  action: string
+  tradedAt: InstantString
+  tradedAtLocal: LocalDateTimeString
+  originalContracts: number
+  remainingContracts: number
+  /** Signed by cash direction (short +, long −). */
+  originalNetAmount: MoneyString
+  remainingNetAmount: MoneyString
+  originalFrozen: MoneyString
+  remainingFrozen: MoneyString
+  note: string | null
+}
+
+/** Contract: `GET /api/option-positions` → `positions[]`. Every value is display-ready. */
+export interface OptionPosition {
+  symbol: string
+  expirationDate: LocalDateString
+  /** Trailing zeros removed; usable as-is as the FEAT-002 `strike` filter. */
+  strike: string
+  optionType: OptionType
+  contractLabel: string
+  direction: PositionDirection
+  contracts: number
+  multiplier: number
+  /** Signed: short +, long −. */
+  openingNetTotal: MoneyString
+  /** HALF_UP to the cent, display only. */
+  averageNetPerContract: MoneyString
+  frozenCash: MoneyString
+  dte: number
+  expirationStatus: ExpirationStatus
+  /** N in "已过期 N 天"; 0 when not expired. */
+  daysPastExpiration: number
+  lotCount: number
+  lots: OptionPositionLot[]
+}
+
+/** Contract: `GET /api/option-positions` → 200. */
+export interface OptionPositionsResponse {
+  /** "Today" in New York, "YYYY-MM-DD". */
+  asOfDate: LocalDateString
+  positionCount: number
+  frozenTotal: MoneyString
+  positions: OptionPosition[]
+}

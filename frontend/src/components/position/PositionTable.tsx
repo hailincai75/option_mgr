@@ -1,0 +1,269 @@
+import { Button, Table, Tag, Typography } from 'antd'
+import type { ColumnsType } from 'antd/es/table'
+import type { HTMLAttributes, ReactNode } from 'react'
+import { Link } from 'react-router-dom'
+import type { OptionPosition, OptionPositionLot } from '../../api/types'
+import { decimalSign, EMPTY_VALUE, formatDateTimeNY, formatMoney } from '../../utils/format'
+import { SIGNED_MONEY_COLORS, tradeActionLabel } from '../trade/tradeLabels'
+import { tradesUrlForPosition } from './positionLinks'
+
+const DIRECTION_TAGS: Record<string, { label: string; color: string }> = {
+  SHORT: { label: '空头', color: 'orange' },
+  LONG: { label: '多头', color: 'blue' },
+}
+
+function SignedMoney({ value, testId }: { value: string; testId: string }) {
+  return (
+    <span
+      data-testid={testId}
+      style={{
+        color: SIGNED_MONEY_COLORS[decimalSign(value)],
+        fontVariantNumeric: 'tabular-nums',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {formatMoney(value, { signed: true })}
+    </span>
+  )
+}
+
+function FrozenMoney({ value, testId }: { value: string; testId: string }) {
+  return (
+    <span data-testid={testId} style={{ fontVariantNumeric: 'tabular-nums' }}>
+      {decimalSign(value) === 0 ? EMPTY_VALUE : formatMoney(value)}
+    </span>
+  )
+}
+
+/** DTE from the backend: number, "0 今天到期", or red "已过期 N 天" (no client-side date math). */
+function DteCell({ position }: { position: OptionPosition }) {
+  if (position.expirationStatus === 'EXPIRED') {
+    return (
+      <Typography.Text type="danger" strong data-testid="position-cell-dte">
+        已过期 {position.daysPastExpiration} 天
+      </Typography.Text>
+    )
+  }
+  if (position.expirationStatus === 'EXPIRES_TODAY') {
+    return (
+      <span data-testid="position-cell-dte" style={{ whiteSpace: 'nowrap' }}>
+        {position.dte}{' '}
+        <Tag color="warning" data-testid="position-cell-dte-today">
+          今天到期
+        </Tag>
+      </span>
+    )
+  }
+  return <span data-testid="position-cell-dte">{position.dte}</span>
+}
+
+const lotColumns: ColumnsType<OptionPositionLot> = [
+  {
+    title: '开仓时间（美东）',
+    key: 'tradedAt',
+    render: (_value: unknown, lot) => (
+      <span data-testid="lot-cell-time" style={{ whiteSpace: 'nowrap' }}>
+        {formatDateTimeNY(lot.tradedAt)}
+      </span>
+    ),
+  },
+  {
+    title: '方向',
+    key: 'action',
+    render: (_value: unknown, lot) => (
+      <span data-testid="lot-cell-action">{tradeActionLabel(lot.action)}</span>
+    ),
+  },
+  {
+    title: '剩余 / 原张数',
+    key: 'contracts',
+    align: 'right',
+    render: (_value: unknown, lot) => (
+      <span data-testid="lot-cell-contracts">
+        {lot.remainingContracts} / {lot.originalContracts}
+      </span>
+    ),
+  },
+  {
+    title: '剩余开仓净额',
+    key: 'remainingNetAmount',
+    align: 'right',
+    render: (_value: unknown, lot) => (
+      <SignedMoney value={lot.remainingNetAmount} testId="lot-cell-net-amount" />
+    ),
+  },
+  {
+    title: '冻结',
+    key: 'remainingFrozen',
+    align: 'right',
+    render: (_value: unknown, lot) => (
+      <FrozenMoney value={lot.remainingFrozen} testId="lot-cell-frozen" />
+    ),
+  },
+  {
+    title: '备注',
+    key: 'note',
+    render: (_value: unknown, lot) => {
+      const note = lot.note?.trim() ? lot.note : null
+      return (
+        <Typography.Text
+          data-testid="lot-cell-note"
+          style={{ maxWidth: 240 }}
+          ellipsis={note === null ? false : { tooltip: note }}
+          title={note ?? undefined}
+        >
+          {note ?? EMPTY_VALUE}
+        </Typography.Text>
+      )
+    },
+  },
+]
+
+function LotTable({ lots }: { lots: OptionPositionLot[] }) {
+  return (
+    <Table<OptionPositionLot>
+      rowKey="tradeId"
+      size="small"
+      columns={lotColumns}
+      dataSource={lots}
+      pagination={false}
+      onRow={(lot) =>
+        ({ 'data-testid': 'lot-row', 'data-trade-id': lot.tradeId }) as HTMLAttributes<HTMLElement>
+      }
+      data-testid="position-lots"
+    />
+  )
+}
+
+const columns: ColumnsType<OptionPosition> = [
+  {
+    title: '合约',
+    key: 'contract',
+    render: (_value: unknown, position) => (
+      <Link
+        to={tradesUrlForPosition(position)}
+        data-testid="position-cell-contract"
+        style={{ whiteSpace: 'nowrap' }}
+      >
+        {position.contractLabel}
+      </Link>
+    ),
+  },
+  {
+    title: '方向',
+    key: 'direction',
+    render: (_value: unknown, position) => {
+      const tag = DIRECTION_TAGS[position.direction]
+      return (
+        <Tag color={tag?.color} data-testid="position-cell-direction">
+          {tag?.label ?? position.direction}
+        </Tag>
+      )
+    },
+  },
+  {
+    title: '张数',
+    key: 'contracts',
+    align: 'right',
+    render: (_value: unknown, position) => (
+      <span data-testid="position-cell-contracts" style={{ whiteSpace: 'nowrap' }}>
+        {position.contracts}
+        {position.multiplier !== 100 && `（multiplier ${String(position.multiplier)}）`}
+      </span>
+    ),
+  },
+  {
+    title: '开仓净额合计',
+    key: 'openingNetTotal',
+    align: 'right',
+    render: (_value: unknown, position) => (
+      <SignedMoney value={position.openingNetTotal} testId="position-cell-opening-net" />
+    ),
+  },
+  {
+    title: '每张平均净额（仅供参考）',
+    key: 'averageNetPerContract',
+    align: 'right',
+    render: (_value: unknown, position) => (
+      <SignedMoney value={position.averageNetPerContract} testId="position-cell-average-net" />
+    ),
+  },
+  {
+    title: '冻结现金',
+    key: 'frozenCash',
+    align: 'right',
+    render: (_value: unknown, position) => (
+      <FrozenMoney value={position.frozenCash} testId="position-cell-frozen" />
+    ),
+  },
+  {
+    title: '到期日',
+    key: 'expirationDate',
+    render: (_value: unknown, position) => (
+      <span data-testid="position-cell-expiration">{position.expirationDate}</span>
+    ),
+  },
+  {
+    title: 'DTE',
+    key: 'dte',
+    align: 'right',
+    render: (_value: unknown, position) => <DteCell position={position} />,
+  },
+  {
+    title: '批次数',
+    key: 'lotCount',
+    align: 'right',
+    render: (_value: unknown, position) => (
+      <span data-testid="position-cell-lot-count">{position.lotCount}</span>
+    ),
+  },
+]
+
+interface PositionTableProps {
+  positions: OptionPosition[]
+  loading: boolean
+  empty: ReactNode
+}
+
+/** Read-only positions in backend order; each row expands to its FIFO lots. */
+export function PositionTable({ positions, loading, empty }: PositionTableProps) {
+  return (
+    <Table<OptionPosition>
+      rowKey="contractLabel"
+      size="small"
+      columns={columns}
+      dataSource={positions}
+      loading={loading}
+      pagination={false}
+      onRow={(position) =>
+        ({
+          'data-testid': 'position-row',
+          'data-contract': position.contractLabel,
+        }) as HTMLAttributes<HTMLElement>
+      }
+      expandable={{
+        expandedRowRender: (position) => <LotTable lots={position.lots} />,
+        expandIcon: ({ expanded, onExpand, record }) => (
+          <Button
+            type="text"
+            size="small"
+            aria-expanded={expanded}
+            aria-label={
+              expanded
+                ? `收起 ${record.contractLabel} 的批次`
+                : `展开 ${record.contractLabel} 的批次`
+            }
+            onClick={(event) => {
+              onExpand(record, event)
+            }}
+            data-testid="position-expand"
+          >
+            {expanded ? '−' : '+'}
+          </Button>
+        ),
+      }}
+      locale={{ emptyText: empty }}
+      scroll={{ x: 'max-content' }}
+    />
+  )
+}

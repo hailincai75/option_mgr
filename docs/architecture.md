@@ -64,6 +64,8 @@ com.optionmgr
 - **FEAT-004 接入方式**：平仓（BTC/STC）也存进 `option_trade`，`PositionReplay` 已按符号处理平仓（减少持仓）；FEAT-004 在 `PositionStep` 上加平仓检查（如平仓张数 ≤ 插入点持仓、方向必须与持仓相反、补录后之后的平仓仍不超量），新增 `CashSourceType.OPTION_CLOSE` 和释放冻结的负 `frozen_change`；FIFO 批次匹配按同一 `(traded_at, id)` 顺序
 - 已知限制：每次开仓检查加载该合约的全部交易（按合约索引 `ix_option_trade_contract`）
 - **交易列表（FEAT-002）**：`GET /api/option-trades`。`web/TradeListQuery` 解析/校验 query 参数（无法解析 → `BAD_REQUEST`，规则不满足 → `VALIDATION_ERROR`，`field` = 参数名）→ `domain/TradeFilter`（纯 Java；美东日期范围换算为 `[startDate 00:00 NY, endDate+1 00:00 NY)` 的 Instant 区间）→ `repository/OptionTradeSpecifications`（JPA Specification）→ 数据库分页，固定排序 `traded_at DESC, id DESC`。列表项与按 id 查询共用 `OptionTradeService.withLedgerEntries`：一页的交易一次批量查出对应流水（`CashLedgerService.findBySources`），取 `cashChange`/`frozenChange`/`ledgerEntryId`
+- **持仓汇总（FEAT-003）**：`GET /api/option-positions`（`web/OptionPositionController` → `service/OptionPositionService`）。不落库：读出全部交易（`traded_at, id` 顺序）和对应流水，按合约分组，`domain/PositionBuilder` 把每个合约的交易按 FIFO（`LotTrade.FIFO_ORDER`）重放为 `OptionPosition`（方向、multiplier、`PositionLot` 列表；张数/开仓净额合计/每张平均（HALF_UP）/冻结都由批次求和得出），按 `OptionPosition.DISPLAY_ORDER`（到期日 → 标的 → 行权价数值 → CALL 在 PUT 前）排序。批次的开仓净额与冻结**取自该笔交易的现金流水**（`amount`、`frozen_change`），所以持仓冻结合计与现金汇总的冻结一致。"今天" = `Clock` 当前时间的美东日期，DTE = `ChronoUnit.DAYS.between(today, expiration)`
+- `PositionLot` 有原值/剩余值（张数、净额、冻结）。**FEAT-004 接入**：在 `PositionBuilder.build` 中处理平仓交易——按 FIFO 从最早批次扣减剩余张数，并按 FEAT-004 定的规则（Q21）扣减剩余净额/冻结，剩余张数为 0 的批次移除；目前遇到平仓交易会抛 `UnsupportedOperationException`（FEAT-004 之前不可能存在）
 - 交易对应的流水来源类型集中在 `OptionTradeService.TRADE_SOURCE_TYPES`（目前 `{OPTION_OPEN}`）。**FEAT-004 把 `OPTION_CLOSE` 加进这个集合**后，平仓交易会自动出现在列表与按 id 查询中，方向筛选已支持 BTC/STC
 
 ### E2E 测试支持（`e2e` profile）
@@ -107,11 +109,12 @@ frontend/
     ├── api/
     │   ├── types.ts      按 API 契约手写的请求/响应类型（含统一错误格式 ApiErrorResponse）
     │   ├── client.ts     fetch 封装 apiRequest<T>() 与 ApiError
-    │   └── <feature>.ts  每个领域一个文件：请求函数 + queryKey（health.ts；cash.ts: getCashSummary/getCashLedger/createCashTransfer、cashQueryKeys；optionTrades.ts: createOptionTrade/getOptionTrade/listOptionTrades、optionTradeQueryKeys）
-    ├── pages/            路由级页面组件（HomePage、CashPage、OpenTradePage、TradeListPage、NotFoundPage）
+    │   └── <feature>.ts  每个领域一个文件：请求函数 + queryKey（health.ts；cash.ts: getCashSummary/getCashLedger/createCashTransfer、cashQueryKeys；optionTrades.ts: createOptionTrade/getOptionTrade/listOptionTrades、optionTradeQueryKeys；optionPositions.ts: getOptionPositions、optionPositionQueryKeys）
+    ├── pages/            路由级页面组件（HomePage、CashPage、OpenTradePage、TradeListPage、PositionsPage、NotFoundPage）
     ├── components/       跨页面复用组件：QueryError（查询错误 + 重试）
     │   ├── cash/         CashSummaryCard（可复用现金汇总）、CashTransferForm + cashTransferValidation、CashLedgerTable
-    │   └── trade/        OpenTradeForm + openTradeValidation、OpenTradeConfirmation（FEAT-001）；TradeFilterForm、TradeTable、tradeListFilters（FEAT-002 列表筛选与 URL 状态）
+    │   └── trade/        OpenTradeForm + openTradeValidation、OpenTradeConfirmation（FEAT-001）；TradeFilterForm、TradeTable、tradeListFilters（FEAT-002 列表筛选与 URL 状态）；tradeLabels（方向文案、正负颜色，共用）
+    │   └── position/     PositionTable（可展开批次）、positionLinks（持仓 → 交易列表 URL）（FEAT-003）
     ├── utils/format.ts   统一的显示格式化（时间、金额）
     └── test/             setup.ts（jest-dom、matchMedia / ResizeObserver polyfill、清理 mock）、render.tsx（renderWithProviders、jsonResponse、mockFetch）
 ```
@@ -122,6 +125,7 @@ frontend/
 |------|------|------|
 | `/` | `HomePage` | 调 `GET /api/health` 显示后端状态、版本、服务器时间（纽约时区） |
 | `/trades` | `TradeListPage` | FEAT-002 交易列表：筛选 + 只读表格 + 分页；筛选/页码/每页条数都在 URL 查询参数里（导航"交易"） |
+| `/positions` | `PositionsPage` | FEAT-003 期权持仓：截至日期/持仓数/冻结合计 + 持仓表（可展开 FIFO 批次，合约链接到 `/trades` 筛选）（导航"持仓"） |
 | `/trades/new` | `OpenTradePage` | FEAT-001 录入开仓（BTO/STO）：现金汇总 + 开仓表单 + 成功确认（导航"录入开仓"） |
 | `/cash` | `CashPage` | FEAT-007 资金：现金汇总、入金/出金表单、现金流水（导航"资金"） |
 | `*` | `NotFoundPage` | 404 |
@@ -134,7 +138,7 @@ frontend/
   - 请求没到服务器 → `code: 'NETWORK_ERROR'`，`status: 0`
   - 响应不是 JSON 或错误体不符合契约（例如 Vite 代理在后端未启动时返回的 502）→ `code: 'INVALID_RESPONSE'`
 - 每个查询在页面上处理 loading / error（显示错误信息 + 重试按钮，可用 `components/QueryError`）/ 空数据三种状态
-- 写操作成功后 invalidate 该领域的根 key（如 `cashQueryKeys.all` = `["cash"]`），依赖它的组件（如 `CashSummaryCard`）自动刷新；以后任何改变现金的操作也要 invalidate `["cash"]`；任何新增/修改交易的操作还要 invalidate `optionTradeQueryKeys.lists` = `["option-trades","list"]`（FEAT-001 开仓已这样做）
+- 写操作成功后 invalidate 该领域的根 key（如 `cashQueryKeys.all` = `["cash"]`），依赖它的组件（如 `CashSummaryCard`）自动刷新；以后任何改变现金的操作也要 invalidate `["cash"]`；任何新增/修改交易的操作还要 invalidate `optionTradeQueryKeys.lists` = `["option-trades","list"]` 和 `optionPositionQueryKeys.all` = `["option-positions"]`（FEAT-001 开仓已这样做）
 - 列表页的筛选/分页状态以 URL 查询参数为唯一来源（`useSearchParams`），改变时 push 历史，后退可恢复；URL 中不合法的筛选值回填并在字段下报错、不发请求，不合法的 page/size 回退到默认值
 - 表单提交失败：`VALIDATION_ERROR` / `BAD_REQUEST` 的 `details[].field` 用 `form.setFields` 显示到同名字段；无法对应字段的错误和业务错误（如 `CASH_INSUFFICIENT`，message 是中文可直接显示）显示在提交按钮上方；保留用户输入
 
@@ -144,8 +148,9 @@ frontend/
 - 金额用 `formatMoney(value, { signed? })`：纯字符串处理（不转浮点、不四舍五入），千分位、至少 2 位小数、负号 `−`(U+2212)，`signed` 时正数加 `+`；颜色用 `decimalSign()` 判断正负（正绿 `#389e0d`、负红 `#cf1322`）
 - 用户录入的时间：原生 `datetime-local` 输入美东本地时间，原样以 `YYYY-MM-DDTHH:mm` 发给后端（`occurredAtLocal` 之类字段），前端不做时区换算；默认值用 `nowLocalDateTimeNY()`
 - 交互元素和关键显示值加 `data-testid`，供 E2E 使用。已有：`nav-home`、`nav-cash`、`health-card`、`health-loading`、`health-status`、`health-version`、`health-time`、`health-error`、`health-retry`、`not-found`
-- FEAT-007 资金页的 testid 列表见 `docs/requirements/FEAT-007-cash-account.md` 的 Frontend Implementation Notes；FEAT-001 录入开仓页见 `docs/requirements/FEAT-001-open-option-trade.md`；FEAT-002 交易列表见 `docs/requirements/FEAT-002-trade-list.md`
+- FEAT-007 资金页的 testid 列表见 `docs/requirements/FEAT-007-cash-account.md` 的 Frontend Implementation Notes；FEAT-001 录入开仓页见 `docs/requirements/FEAT-001-open-option-trade.md`；FEAT-002 交易列表见 `docs/requirements/FEAT-002-trade-list.md`；FEAT-003 持仓见 `docs/requirements/FEAT-003-option-positions.md`
 - 用户录入的日期（如到期日）用原生 `type="date"`，原样以 `YYYY-MM-DD` 发送
 - 表单只做格式校验，文案尽量与后端 `details[].message` 一致；业务校验（担保、现金、持仓方向、multiplier）只在后端，422 的 `message` 原文显示
 - 交易方向显示 `代码（中文）`：BTO 买入开仓、STO 卖出开仓、BTC 买入平仓、STC 卖出平仓，未知值原样显示
+- 持仓 DTE、到期状态、平均净额、冻结等全部取后端字段显示（`expirationStatus` 决定"今天到期"/红色"已过期 N 天"），前端不做日期或金额计算
 - 现金流水：已知 `sourceType` 显示中文（`DEPOSIT` 入金、`WITHDRAWAL` 出金、`OPTION_OPEN` 期权开仓），未知值原样显示；`frozenChange` 单独一列，0 显示 `—`

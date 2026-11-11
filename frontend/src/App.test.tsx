@@ -90,3 +90,23 @@ describe('trades route', () => {
     expect(selected[0]).toHaveTextContent('交易')
   })
 })
+
+describe('positions route', () => {
+  it('navigates to the positions page from the nav link', async () => {
+    mockFetch().mockImplementation((input) => {
+      const url = typeof input === 'string' ? input : ''
+      if (url === '/api/option-positions') {
+        return Promise.resolve(
+          jsonResponse({ asOfDate: '2026-11-11', positionCount: 0, frozenTotal: '0.00', positions: [] }),
+        )
+      }
+      return Promise.resolve(jsonResponse({ status: 'UP', version: 'dev', time: '2026-11-10T22:09:08Z' }))
+    })
+
+    renderWithProviders(<App />, { route: '/' })
+    await userEvent.click(screen.getByTestId('nav-positions'))
+
+    expect(screen.getByTestId('positions-page')).toBeInTheDocument()
+    expect(await screen.findByTestId('positions-empty')).toHaveTextContent('暂无持仓')
+  })
+})

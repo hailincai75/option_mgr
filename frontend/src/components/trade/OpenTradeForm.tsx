@@ -4,6 +4,7 @@ import type { RuleObject } from 'antd/es/form'
 import { useState } from 'react'
 import { cashQueryKeys } from '../../api/cash'
 import { ApiError } from '../../api/client'
+import { optionPositionQueryKeys } from '../../api/optionPositions'
 import { createOptionTrade, optionTradeQueryKeys } from '../../api/optionTrades'
 import type {
   CreateOptionTradeRequest,
@@ -126,10 +127,11 @@ export function OpenTradeForm() {
       form.resetFields()
       form.setFieldsValue(initialValues())
       queryClient.setQueryData(optionTradeQueryKeys.detail(trade.id), trade)
-      // Cash summary/ledger and every trade list page must show the new trade without reload.
+      // Cash summary/ledger, trade lists and positions must show the new trade without reload.
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: cashQueryKeys.all }),
         queryClient.invalidateQueries({ queryKey: optionTradeQueryKeys.lists }),
+        queryClient.invalidateQueries({ queryKey: optionPositionQueryKeys.all }),
       ])
     },
     onError: (error) => {
