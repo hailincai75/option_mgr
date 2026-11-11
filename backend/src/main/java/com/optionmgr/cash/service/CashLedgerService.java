@@ -3,6 +3,7 @@ package com.optionmgr.cash.service;
 import com.optionmgr.cash.domain.CashBalance;
 import com.optionmgr.cash.domain.CashMovement;
 import com.optionmgr.cash.domain.CashReplay;
+import com.optionmgr.cash.domain.CashSourceType;
 import com.optionmgr.cash.domain.InsertionCheck;
 import com.optionmgr.cash.domain.ReplayStep;
 import com.optionmgr.cash.repository.CashAccountEntity;
@@ -14,8 +15,12 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -69,6 +74,29 @@ public class CashLedgerService {
                 clock.instant()));
     }
 
+    /** The ledger entry written for an originating record (e.g. a trade), if any. */
+    @Transactional(readOnly = true)
+    public Optional<CashLedgerEntryEntity> findBySource(CashSourceType sourceType, long sourceId) {
+        return entries.findFirstBySourceTypeAndSourceIdOrderByIdAsc(sourceType, sourceId);
+    }
+
+    /**
+     * First ledger entry per source id, for originating records of the given kinds that share one id space
+     * (e.g. all option trade kinds reference option_trade.id). Records without an entry are absent from the map.
+     */
+    @Transactional(readOnly = true)
+    public Map<Long, CashLedgerEntryEntity> findBySources(Collection<CashSourceType> sourceTypes,
+                                                          Collection<Long> sourceIds) {
+        Map<Long, CashLedgerEntryEntity> bySource = new HashMap<>();
+        if (sourceIds.isEmpty()) {
+            return bySource;
+        }
+        for (CashLedgerEntryEntity e : entries.findBySourceTypeInAndSourceIdInOrderByIdAsc(sourceTypes, sourceIds)) {
+            bySource.putIfAbsent(e.getSourceId(), e);
+        }
+        return bySource;
+    }
+
     /** Current total / frozen / available cash (every entry is not later than now). */
     @Transactional(readOnly = true)
     public CashBalance currentBalance() {
@@ -90,7 +118,7 @@ public class CashLedgerService {
                 throw new IllegalStateException("ledger replay order mismatch");
             }
             lines.add(new LedgerLine(e.getId(), e.getOccurredAt(), e.getSourceType(), e.getSourceId(),
-                    e.getAmount(), step.after().total(), e.getDescription(), e.getRemark()));
+                    e.getAmount(), step.after().total(), e.getFrozenChange(), e.getDescription(), e.getRemark()));
         }
         Collections.reverse(lines);
 

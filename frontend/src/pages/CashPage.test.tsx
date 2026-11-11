@@ -23,6 +23,7 @@ const depositEntry: CashLedgerEntry = {
   sourceId: 1,
   amount: '30000.00',
   balanceAfter: '30000.00',
+  frozenChange: '0.00',
   description: null,
   remark: '初始资金',
 }
@@ -34,6 +35,7 @@ const withdrawalEntry: CashLedgerEntry = {
   sourceId: 2,
   amount: '-2500.50',
   balanceAfter: '27499.50',
+  frozenChange: '0.00',
   description: null,
   remark: null,
 }
@@ -363,36 +365,52 @@ describe('CashPage', () => {
     expect(requests.some((r) => r.method === 'POST')).toBe(false)
   })
 
-  it('shows outflows with a minus sign in red and unknown source types as-is', async () => {
+  it('shows outflows in red, option-open entries with description and frozen change, unknown types as-is', async () => {
     const optionEntry: CashLedgerEntry = {
       ...depositEntry,
       id: 3,
       sourceType: 'OPTION_OPEN',
       amount: '350.00',
       balanceAfter: '27849.50',
-      description: 'STO 1 AAPL 2026-12-18 200 P',
+      frozenChange: '20000.00',
+      description: 'STO 1 张 AAPL 2026-12-18 200 P',
+      remark: null,
+    }
+    const futureEntry: CashLedgerEntry = {
+      ...depositEntry,
+      id: 4,
+      sourceType: 'SOMETHING_NEW',
+      description: null,
       remark: null,
     }
     startFakeServer({
       summary: ZERO_SUMMARY,
-      ledger: () => ledgerPage([optionEntry, withdrawalEntry, depositEntry]),
+      ledger: () => ledgerPage([futureEntry, optionEntry, withdrawalEntry, depositEntry]),
     })
 
     renderWithProviders(<CashPage />)
     const rows = await screen.findAllByTestId('cash-ledger-row')
 
-    const option = within(rows[0] as HTMLElement)
-    expect(option.getByTestId('cash-ledger-type')).toHaveTextContent('OPTION_OPEN')
-    expect(option.getByTestId('cash-ledger-note')).toHaveTextContent('STO 1 AAPL 2026-12-18 200 P')
+    expect(within(rows[0] as HTMLElement).getByTestId('cash-ledger-type')).toHaveTextContent(
+      'SOMETHING_NEW',
+    )
 
-    const withdrawal = within(rows[1] as HTMLElement)
+    const option = within(rows[1] as HTMLElement)
+    expect(option.getByTestId('cash-ledger-type')).toHaveTextContent('期权开仓')
+    expect(option.getByTestId('cash-ledger-note')).toHaveTextContent(
+      'STO 1 张 AAPL 2026-12-18 200 P',
+    )
+    expect(option.getByTestId('cash-ledger-frozen')).toHaveTextContent('+20,000.00')
+
+    const withdrawal = within(rows[2] as HTMLElement)
+    expect(withdrawal.getByTestId('cash-ledger-frozen')).toHaveTextContent('—')
     expect(withdrawal.getByTestId('cash-ledger-type')).toHaveTextContent('出金')
     expect(withdrawal.getByTestId('cash-ledger-amount')).toHaveTextContent('−2,500.50')
     expect(withdrawal.getByTestId('cash-ledger-amount')).toHaveStyle({ color: '#cf1322' })
     expect(withdrawal.getByTestId('cash-ledger-time')).toHaveTextContent('2026-11-03 09:30')
     expect(withdrawal.getByTestId('cash-ledger-note')).toHaveTextContent('—')
 
-    const deposit = within(rows[2] as HTMLElement)
+    const deposit = within(rows[3] as HTMLElement)
     expect(deposit.getByTestId('cash-ledger-amount')).toHaveStyle({ color: '#389e0d' })
   })
 
@@ -404,6 +422,7 @@ describe('CashPage', () => {
       sourceId: n,
       amount: '1.00',
       balanceAfter: `${n}.00`,
+      frozenChange: '0.00',
       description: null,
       remark: null,
     })

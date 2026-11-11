@@ -1,11 +1,11 @@
 # FEAT-001: 录入开仓期权交易（BTO / STO）
 
-- **Status:** Approved
+- **Status:** Verified
 - **Priority:** P0
 - **Depends on:** FEAT-007（资金账户：入金/出金、总现金/冻结/可用现金与流水）——必须先做
 - **Scope:**
-  - [ ] Backend: Done
-  - [ ] Frontend: Done
+  - [x] Backend: Done
+  - [x] Frontend: Done
 
 ## 背景 / 用户故事
 作为一个期权交易者，我想要把在券商成交的**开仓**期权交易（买入开仓 BTO、卖出开仓 STO）记进系统，只填一个含手续费的净额，并且系统帮我检查现金够不够、卖 put 时自动冻结担保现金，以便我的账上现金和券商一致、永远不会出现透支。
@@ -26,6 +26,9 @@
 - 补录历史记录按时间重放，之后每个时点现金都不能为负；同一时间按录入顺序（Q19）
 - 同一合约有未平仓持仓时 multiplier 必须一致（Q23）
 - 格式限制：行权价最多 3 位小数；标的 1–10 位字母/数字/点；备注最多 500 字符（Q25）
+- 补录较早的开仓时，Q7（多空冲突）和 Q23（multiplier 一致）不只检查本笔成交时点，还要检查**从插入点起该合约之后的每一笔已有交易**；只要会让之后任一笔违反 Q7 或 Q23 就拒绝。例：已有 2026-11-11 的 STO 1 张 AAPL 2026-12-18 200 P，补录同一合约 2026-11-10 的 BTO → 拒绝（Q27）
+- 担保金额 = 行权价 × multiplier × 张数，不是整分时**向上取整到分**。例：行权价 12.345 × multiplier 1 × 1 张 = 12.345 → 冻结 12.35（Q28）
+- 数值上限：行权价 ≤ 9,999,999.999；张数 ≤ 100,000；multiplier ≤ 10,000；净额与入金金额上限相同，≤ 9,999,999,999,999.99（整数部分最多 13 位）。超过返回字段校验错误（Q29）
 
 ## 需要的数据和操作（给 backend）
 
@@ -34,13 +37,13 @@
 |------|-------------|
 | 标的 | 必填。去掉首尾空格、转大写；只允许字母、数字和 `.`（如 `BRK.B`），长度 1–10 |
 | 到期日 | 必填，日期（无时间）。不得早于成交时间所在的美东日期；可以等于（0DTE） |
-| 行权价 | 必填，> 0，最多 3 位小数（如 12.5、200） |
+| 行权价 | 必填，> 0，最多 3 位小数（如 12.5、200），≤ 9,999,999.999（Q29） |
 | 类型 | Call 或 Put |
 | 方向 | 本需求只允许 BTO、STO |
-| 张数 | 必填，正整数 |
-| 净额 | 必填，> 0，最多 2 位小数（Q17）。用户只填正数，方向决定现金流入还是流出 |
+| 张数 | 必填，正整数，≤ 100,000（Q29） |
+| 净额 | 必填，> 0，最多 2 位小数（Q17）。≤ 9,999,999,999,999.99，与入金金额上限相同（Q29）。用户只填正数，方向决定现金流入还是流出 |
 | 成交时间 | 必填，用户提供的是美东时间的日期 + 时刻；保存为 UTC 时间点；不得晚于当前时间 |
-| multiplier | 必填，正整数，默认 100 |
+| multiplier | 必填，正整数，默认 100，≤ 10,000（Q29） |
 | 备注 | 可选，最多 500 字符 |
 
 - 合约唯一标识 = 标的 + 到期日 + 行权价 + Call/Put。同一合约多次开仓保存为多笔独立交易（为 FIFO 批次做准备）。
@@ -50,18 +53,20 @@
 保存前按顺序检查，任一失败就整笔拒绝、不保存任何东西，并返回能直接给用户看的原因（含具体数字）：
 
 1. **字段校验**：按上表。
-2. **多空冲突（Q7）**：该合约在成交时间点已有空头持仓时不能 BTO，已有多头持仓时不能 STO。提示用户使用 Buy to Close / Sell to Close。
+2. **多空冲突（Q7、Q27）**：该合约在成交时间点已有空头持仓时不能 BTO，已有多头持仓时不能 STO。提示用户使用 Buy to Close / Sell to Close。
+   - 补录（本笔之后该合约还有已有交易）时，把本笔按成交时间插入后，**从插入点起该合约的每一笔已有交易**也都不能变成多空冲突；否则拒绝（Q27）。
 3. **STO call（Q16）**：M1 拒绝所有 STO call，提示"需要股票持仓功能（FEAT-011）后才能卖出 call"。
-4. **multiplier 一致（Q23）**：该合约已有未平仓持仓时，新开仓的 multiplier 必须与之相同。
+4. **multiplier 一致（Q23、Q27）**：该合约已有未平仓持仓时，新开仓的 multiplier 必须与之相同。
+   - 补录时同样检查插入点之后：插入后会与该合约之后任一笔已有交易处于同一段未平仓持仓、但 multiplier 不同的，拒绝（Q27）。
 5. **现金检查（Q13、Q18、Q19）**：
    - BTO：需要的现金 = 净额。
-   - STO put：需要的担保 = 行权价 × multiplier × 张数，要求**本笔录入前**的可用现金 ≥ 担保金额（本笔收到的权利金不算进去，Q18）。
+   - STO put：需要的担保 = 行权价 × multiplier × 张数（不是整分时向上取整到分，Q28），要求**本笔录入前**的可用现金 ≥ 担保金额（本笔收到的权利金不算进去，Q18）。
    - 按成交时间把本笔插入到已有的现金记录（入金、出金、其它交易）中按时间顺序重放：插入后**从本笔成交时间起的每个时点**，总现金和可用现金都不能为负（Q19）。同一时间点的记录按录入顺序排列。
    - 现金不足时提示"需要 X，可用 Y"（Y 为该时点的可用现金）。
 
 保存成功后的效果：
 - BTO：总现金减少净额；冻结不变。
-- STO put：总现金增加净额；冻结增加 行权价 × multiplier × 张数。
+- STO put：总现金增加净额；冻结增加 行权价 × multiplier × 张数（不是整分时向上取整到分，Q28）。
 - 每笔交易在 FEAT-007 的现金流水中产生一条记录：时间 = 成交时间，金额 = +净额（STO）或 −净额（BTO），说明能看出是哪笔交易（方向、标的、到期日、行权价、C/P、张数）。
 - 冻结金额本需求内不会被释放（释放在 FEAT-004 平仓、M2 到期/指派中做）。
 
@@ -179,6 +184,33 @@
     **Given** 第 4 条的拒绝场景 **Then** 表单上所有已填字段仍保留原值。
     **Given** 第 1 条的成功场景 **Then** 页面显示确认信息 `AAPL 2026-12-18 200 P`、STO、1 张、349.35、2026-11-10 10:30（美东），现金汇总无需手动刷新即显示 30,349.35 / 20,000.00 / 10,349.35。
 
+17. **补录较早开仓不能让之后的已有交易违规（Q27）**
+    **Given** 入金 50,000.00（2026-11-02 10:00），已录入 STO 1 张 AAPL 2026-12-18 200 P 净额 349.35（成交 2026-11-11 10:00）；现金汇总 50,349.35 / 20,000.00 / 30,349.35
+    **When** 补录 BTO 1 张 AAPL 2026-12-18 200 P，净额 300.00，成交时间 2026-11-10 10:00（该时点本身还没有持仓）
+    **Then** 被拒绝，错误为多空冲突（`POSITION_DIRECTION_CONFLICT`）：插入后 2026-11-11 那笔 STO 会变成"持有多头时卖出开仓"；没有新增交易和流水，现金汇总仍为 50,349.35 / 20,000.00 / 30,349.35。
+    **And When** 改为补录 STO 1 张 AAPL 2026-12-18 200 P，净额 340.00，成交时间 2026-11-10 10:00（同方向，不冲突）**Then** 保存成功，系统中该合约有 2 笔交易；现金汇总为 50,689.35 / 40,000.00 / 10,689.35。
+    **And Given** 另一空库：入金 30,000.00（2026-11-02 10:00），已录入 STO 1 张 XYZ 2026-12-18 200 P，multiplier 10，净额 34.35（成交 2026-11-11 10:00）；现金汇总 30,034.35 / 2,000.00 / 28,034.35
+    **When** 补录 STO 1 张 XYZ 2026-12-18 200 P，multiplier 100，净额 300.00，成交时间 2026-11-10 10:00
+    **Then** 被拒绝，错误为 multiplier 不一致（`MULTIPLIER_MISMATCH`），提示该合约 multiplier 为 10；现金汇总不变。
+    **And When** 同样补录但 multiplier 10、净额 30.00 **Then** 保存成功，现金汇总为 30,064.35 / 4,000.00 / 26,064.35。
+
+18. **担保金额不是整分时向上取整（Q28）**
+    **Given** 入金 100.00
+    **When** 录入 STO 1 张 F 2026-12-18 12.345 P，multiplier 1，净额 0.50
+    **Then** 保存成功，冻结 12.35（12.345 × 1 × 1 = 12.345 向上取整到分）；现金汇总为 100.50 / 12.35 / 88.15；该交易的冻结变化为 12.35。
+    **And Given** 另一空库，入金 12.34 **When** 同样的录入 **Then** 被拒绝，提示"可用现金不足以担保卖出 put：需要 12.35，可用 12.34"。
+
+19. **数值上限（Q29）**
+    **Given** 入金 100,000.00
+    **When** 分别单独提交以下 BTO（其余字段：AAPL 2026-12-18 C，1 张，multiplier 100，净额 1.00，除被测字段外都合法）
+    - 行权价 10000000（> 9,999,999.999）
+    - 张数 100,001（> 100,000）
+    - multiplier 10,001（> 10,000）
+    - 净额 10,000,000,000,000.00（> 9,999,999,999,999.99）
+    **Then** 每一项都被拒绝，后端返回 `VALIDATION_ERROR`，错误显示在对应字段下；不保存，现金汇总仍为 100,000.00 / 0.00 / 100,000.00。
+    **And When** 提交 BTO 1 张 AAPL 2026-12-18 9999999.999 C，净额 1.00 **Then** 保存成功（等于上限允许）。
+    **And When** 再提交 BTO 100,000 张 MSFT 2026-12-18 300 C，multiplier 10,000，净额 1.00 **Then** 保存成功；现金汇总为 99,998.00 / 0.00 / 99,998.00。
+
 ## 边界情况
 - **同一合约多次开仓**：每次都是独立一笔，冻结累加（验收 7）。
 - **到期日当天开仓（0DTE）**：允许（验收 12）。
@@ -187,6 +219,9 @@
 - **同一成交时间的多条记录**：按录入顺序排列（Q19）。
 - **可用现金恰好等于需要的金额**：允许，可用变为 0.00（验收 4、5、6）。
 - **夏令时切换**：成交时间按 America/New_York 规则换算（验收 11）。夏令时切换当天不存在/重复的时刻（如 2026-03-08 02:30、2026-11-01 01:30）如何处理，由后端按 Java 时区库的默认规则处理并在 Implementation Notes 说明。
+- **补录早于已有交易的开仓**：多空冲突和 multiplier 一致要检查插入点之后该合约的每一笔已有交易（Q27，验收 17）。
+- **担保金额不是整分**：向上取整到分（Q28，验收 18）。
+- **数值等于上限**：允许；超过上限拒绝（Q29，验收 19）。
 - **标的拆股**：不在本需求（FEAT-028）。
 
 ## Out of Scope
@@ -200,8 +235,67 @@
 - 任何券商下单或接入
 
 ## Open Questions
-无。原有问题 Q16、Q17、Q18、Q19、Q23、Q25（格式限制）均已由用户确认，见上方"已定的口径"和 backlog。
+无。原有问题 Q16、Q17、Q18、Q19、Q23、Q25（格式限制），以及 backend 实现中提出的 Q27（补录检查之后的交易）、Q28（担保向上取整到分）、Q29（数值上限）均已由用户确认，见上方"已定的口径"和 backlog。
 
 ## Implementation Notes
 ### Backend
+**API**（详见 `docs/api/api-contract.md` 的 FEAT-001 小节）
+- `POST /api/option-trades` → 201，新增开仓交易。请求字段：`symbol`、`expirationDate`（`YYYY-MM-DD`）、`strike`（字符串）、`optionType`（`CALL`/`PUT`）、`action`（`BTO`/`STO`）、`contracts`（整数）、`netAmount`（字符串）、`tradedAtLocal`（**美东本地时间** `YYYY-MM-DDTHH:mm[:ss]`，与 FEAT-007 `occurredAtLocal` 同规则）、`multiplier`（整数，可省略，默认 100）、`note`
+- `GET /api/option-trades/{id}` → 200，响应体与 POST 的 201 相同；不存在 404
+- 响应里给前端直接显示用的字段：`contractLabel`（如 `AAPL 2026-12-18 200 P`）、`strike`（去尾零，如 `"12.5"`）、`tradedAt`（UTC）+ `tradedAtLocal`（美东 `YYYY-MM-DDTHH:mm:ss`）、`cashChange`（带符号）、`frozenChange`、`ledgerEntryId`
+- 现金汇总/流水仍用 FEAT-007 接口；流水新 `sourceType` = `OPTION_OPEN`，流水项**新增 `frozenChange` 字段**（兼容变更），`description` 如 `STO 1 张 AAPL 2026-12-18 200 P`（multiplier ≠ 100 时加 `（multiplier 10）`），`remark` = 交易备注
+- 错误（前端按 `code` 分支；422 的 `message` 是可直接显示的中文，`details` 为 `[]`）：
+  - 400 `VALIDATION_ERROR`：`details[].field` = 请求字段名，中文 message 可显示在字段下（文案表见契约）。`tradedAtLocal` 晚于当前、`expirationDate` 早于成交日这两项在其它字段都通过后才检查
+  - 400 `BAD_REQUEST`：值无法解析（枚举不对、非数字、日期/时间格式错或不存在）
+  - 422 `POSITION_DIRECTION_CONFLICT`（Q7）、`SELL_CALL_NOT_SUPPORTED`（Q16）、`MULTIPLIER_MISMATCH`（Q23）、`CASH_INSUFFICIENT`（Q13/Q18/Q19）
+
+**文件**
+- 新增 `backend/src/main/resources/db/migration/V3__option_trade.sql`（表 `option_trade`）
+- 新增 `backend/src/main/java/com/optionmgr/trade/`：`domain/`（`ContractKey`、`Symbols`、`OptionType`、`TradeAction`、`OpenTradeTerms`、`PositionEvent`、`PositionStep`、`PositionReplay`、`PositionInsertionCheck`、`TradeRejectionMessages`）、`repository/`（`OptionTradeEntity`、`OptionTradeRepository`）、`service/OptionTradeService`、`web/`（`OptionTradeController`、`OptionTradeDtos`、`OpeningAction`）
+- 修改 `cash/`：`CashSourceType`（加 `OPTION_OPEN`）、`CashShortfallMessages`（可指定前缀）、`CashLedgerService`（`findBySource`；流水行带 `frozenChange`）、`CashLedgerEntryRepository`、`LedgerLine`、`CashDtos`/`CashController`（流水输出 `frozenChange`）
+- 修改 `common/error/ErrorCode`（3 个新 422 码）、`GlobalExceptionHandler`（同一字段相同 message 去重）
+- 测试：`trade/domain/PositionReplayTest`、`trade/domain/OpenTradeTermsTest`、`trade/web/OptionTradeControllerTest`（验收 1–15，可调时钟）；`testsupport/TestSupportResetE2eProfileTest` 断言 `option_trade` 被重置覆盖
+- 文档：`docs/api/api-contract.md`（FEAT-001 小节；FEAT-007 流水加 `frozenChange`、`OPTION_OPEN`）、`docs/architecture.md`（"期权交易与持仓模型"）
+
+**设计决定**
+- 检查顺序严格按需求：字段 → Q7 → Q16 → Q23 → 现金。所以已有多头时 STO 同一 call 报 Q7（提示 STC），不报 Q16（验收 8）
+- **按时点持仓**：持仓不落库，按 `(成交时间, 交易 id)` 重放该合约的交易累加带符号张数；同一时间的已有交易排在本笔之前。Q7/Q23 既检查本笔成交时点，也检查**本笔之后**该合约的已有交易：例如已有 11-11 的 STO，再补录 11-10 的 BTO 会被拒绝（否则 11-11 那笔 STO 变成"有多头时卖出开仓"，违反 Q7"任一时刻只能纯多或纯空"）。这一点需求只写了"成交时间点"，是按 Q7 原意的推论，见 Open issues
+- 现金：BTO 需要 = 净额；STO put 先做 Q18（插入点之前的可用 ≥ 担保，权利金不算），再做 Q19 重放（`+净额 / +担保` 插入后每个时点 总现金 ≥ 0 且 可用 ≥ 0）。提示文案：`可用现金不足：需要 X，可用 Y` / `可用现金不足以担保卖出 put：需要 X，可用 Y`，之后某时点变负时为 `…：需要 X；T 时可用现金将变为 Z`
+- 担保金额 = 行权价 × multiplier × 张数，**按分向上取整**（`RoundingMode.CEILING`）。只有行权价有 3 位小数且 multiplier 不是 10 的倍数时才会舍入（如 12.345 × 1 × 1 → 12.35）；向上取整保证冻结不少于真实担保
+- `contracts`/`multiplier` 按 `BigDecimal` 接收再校验整数，避免 Jackson 把 `1.5` 静默截断成 1；`multiplier` 省略/`null` → 100
+- 范围上限（需求没写，防溢出）：`strike` ≤ 9,999,999.999、`contracts` ≤ 100,000、`multiplier` ≤ 10,000、`netAmount` 与入金金额同（≤ 9,999,999,999,999.99）
+- 标的：去首尾空白后，只有全是 ASCII 字母/数字/点时才转大写（避免 `ß` 之类转大写后变成合法字母）；校验在规范化之后做
+- `action` = `BTC`/`STC` 返回 400 `VALIDATION_ERROR`（`本功能只支持开仓（BTO / STO），平仓请使用平仓功能`），FEAT-004 再放开；表和枚举已包含平仓值
+- 成交时间：与 FEAT-007 相同（美东本地输入，严格解析，存 UTC，等于当前时间允许）。夏令时开始当天不存在的时刻（2026-03-08 02:30）顺延 1 小时按 03:30 EDT 保存（`07:30Z`）；结束当天重复的时刻（2026-11-01 01:30）取较早的 EDT（`05:30Z`）。"成交日"取换算后 Instant 的美东日期
+- 交易事务与入金/出金共用 `cash_account` 行锁，持仓检查、现金检查和写入串行
+- 备注：最多 500 字符，空白保存为 `null`；同时写入流水 `remark`
+
+**已知限制**
+- 不检查到期日/成交时间是否为周末、假日（FEAT-009），不检查过期合约（补录已过期合约的开仓允许，持仓保持未平仓）
+- 每次开仓加载该合约全部交易与全部现金流水做重放（数据量小，可接受）
+- 不能修改/删除交易（FEAT-005）
+
 ### Frontend
+**页面与组件**
+- 新路由 `/trades/new`（`pages/OpenTradePage`），顶部导航"录入开仓"（`nav-open-trade`）。页面上方复用 `CashSummaryCard size="small"`，下方是表单
+- `components/trade/OpenTradeForm`：字段 方向（BTO/STO 单选，无默认值）、标的、到期日（原生 `type="date"`）、行权价、Call/Put、张数、净额、成交时间（原生 `datetime-local`，标注"美东时间"，默认 `nowLocalDateTimeNY()`）、Multiplier（默认 100）、备注。净额标签随方向切换：STO "实收净额（已扣手续费）"、BTO "实付总额（含手续费）"、未选 "净额（含手续费）"
+- `components/trade/openTradeValidation.ts`：只做格式校验（必填；标的 1–10 位字母/数字/点；行权价 > 0、≤ 3 位小数、整数部分 ≤ 7 位；净额 > 0、≤ 2 位小数、整数部分 ≤ 13 位；张数/multiplier 正整数且 ≤ 100000 / 10000；成交时间不晚于浏览器当前美东时间；到期日不早于成交时间的日期（字符串比较，0DTE 允许）；备注 ≤ 500）。文案与后端 `details[].message` 一致。不计算担保、不预测现金
+- `components/trade/OpenTradeConfirmation`：成功后显示响应里的 `contractLabel`、方向、张数（multiplier ≠ 100 时附注）、净额、成交时间（`formatDateTimeNY(tradedAt)` + "（美东）"）、现金变动 `cashChange`、冻结变动 `frozenChange`；可关闭
+- 请求：`api/optionTrades.ts`（`createOptionTrade`、`getOptionTrade`、`optionTradeQueryKeys`）；类型 `CreateOptionTradeRequest` / `OptionTrade` 在 `api/types.ts`。标的按用户输入原样发送（由后端去空白转大写）；净额/行权价去掉千分位逗号和空格后发送；`contracts`/`multiplier` 以 JSON 整数发送
+- 成功：invalidate `["cash"]`（现金汇总与流水自动刷新），清空表单（时间重置为当前美东时间、multiplier 100），确认信息保留到下次提交或手动关闭。另有"清空"按钮
+- 失败：`VALIDATION_ERROR`/`BAD_REQUEST` 的 `details` 显示在同名字段下；422（`POSITION_DIRECTION_CONFLICT` / `SELL_CALL_NOT_SUPPORTED` / `MULTIPLIER_MISMATCH` / `CASH_INSUFFICIENT`）及其它错误的 `message` 原文显示在提交按钮上方（`open-trade-error`，带 `data-error-code`）；所有输入保留
+- 现金流水表（FEAT-007 页）：`OPTION_OPEN` 显示为"期权开仓"，说明列显示后端 `description`（如 `STO 1 张 AAPL 2026-12-18 200 P`）+ 备注；新增"冻结变动"列（`cash-ledger-frozen`，非 0 时带符号显示，0 显示 `—`）
+
+**data-testid**
+- 页面/表单：`open-trade-page`、`open-trade-card`、`open-trade-form`
+- 字段：`open-trade-action-sto`、`open-trade-action-bto`（radio input 本身）、`open-trade-symbol`、`open-trade-expiration`、`open-trade-strike`、`open-trade-type-call`、`open-trade-type-put`、`open-trade-contracts`、`open-trade-net-amount`、`open-trade-net-amount-label`、`open-trade-time`、`open-trade-multiplier`、`open-trade-note`
+- 操作/错误：`open-trade-submit`、`open-trade-clear`、`open-trade-error`（属性 `data-error-code`）；字段错误在对应输入所在的 `.ant-form-item` 内
+- 确认：`open-trade-confirmation`、`open-trade-confirmation-contract`、`-action`（如 `STO（卖出开仓）`）、`-contracts`（如 `1 张`）、`-multiplier`（仅 ≠ 100）、`-net-amount`、`-time`（如 `2026-11-10 10:30（美东）`）、`-cash-change`、`-frozen-change`
+- 现金汇总沿用 `cash-summary-total` / `cash-summary-frozen` / `cash-summary-available`；流水新增 `cash-ledger-frozen`
+
+**测试**：`openTradeValidation.test.ts`（各字段边界）、`pages/OpenTradePage.test.tsx`（成功 + 汇总刷新 + 请求体、4 种 422 原文显示且输入保留、字段错误映射、净额标签切换、默认美东时间含夏令时、前端校验不提交、清空）、`CashPage.test.tsx`（期权开仓流水与冻结变动列）、`App.test.tsx`（导航）。真实联调（e2e profile 内存库）：入金 30,000 后通过页面录入 STO 1 AAPL 2026-12-18 200 P 净额 349.35 → 确认信息正确，汇总 30,349.35 / 20,000.00 / 10,349.35；STO call 被拒并原文显示 `需要股票持仓功能（FEAT-011）后才能卖出 call`，输入保留
+
+**已知限制**
+- 前端"成交时间不晚于当前"用浏览器时钟粗查，以后端为准；到期日 vs 成交日只比较日期字符串
+- 到期日、成交时间用原生日期/时间输入，外观随浏览器而异
+- 没有交易列表页（FEAT-002），成功后只显示本笔确认信息

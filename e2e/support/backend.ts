@@ -1,16 +1,21 @@
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
-import { createWriteStream, existsSync, mkdirSync, readdirSync } from 'node:fs'
+import { execFileSync, spawn } from 'node:child_process'
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+/**
+ * One backend for the whole suite, started with the `e2e` Spring profile (in-memory H2 enforced by the backend,
+ * startup fails otherwise) and reset before every test via POST /api/test-support/reset.
+ * That endpoint only exists under the `e2e` profile: a 404 means the server on 8080 is NOT an e2e backend
+ * (maybe the developer's backend on the file DB), and the suite stops immediately without writing anything.
+ */
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 export const BACKEND_URL = 'http://localhost:8080'
 const BACKEND_DIR = path.resolve(here, '../../backend')
-const LOG_DIR = path.resolve(here, '../.backend-logs')
-
-/** In-memory H2: a brand-new empty database for every backend process. Never the dev file DB. */
-const E2E_DB_URL =
-  'jdbc:h2:mem:e2e;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1'
+const STATE_DIR = path.resolve(here, '../.backend-logs')
+/** PID of the backend process started by this suite (shared by global setup, workers and teardown). */
+const PID_FILE = path.join(STATE_DIR, 'backend.pid')
 
 export function javaExecutable(): string {
   const home = process.env.E2E_JAVA_HOME ?? 'C:/Program Files/Eclipse Adoptium/jdk-21.0.13.9-hotspot'
@@ -46,66 +51,92 @@ async function waitFor(cond: () => Promise<boolean>, timeoutMs: number, what: st
   throw new Error(`Timed out waiting for ${what}`)
 }
 
-/** A backend process owned by one test. */
-export class E2EBackend {
-  private proc: ChildProcess | null = null
-  private runs = 0
-
-  constructor(private readonly label: string) {}
-
-  async start(): Promise<void> {
-    if (this.proc) throw new Error('backend already started')
-    if (await backendIsUp()) {
-      // Something else (e.g. a dev backend on the file DB) holds 8080: refuse, never write test data there.
-      throw new Error('Port 8080 is already serving /api/health. Stop the other backend before running E2E.')
-    }
-    mkdirSync(LOG_DIR, { recursive: true })
-    const log = createWriteStream(path.join(LOG_DIR, `${this.label}-${++this.runs}.log`))
-    const proc = spawn(
-      javaExecutable(),
-      ['-XX:TieredStopAtLevel=1', '-jar', bootJar(), '--server.port=8080'],
-      {
-        cwd: LOG_DIR,
-        env: { ...process.env, SPRING_DATASOURCE_URL: E2E_DB_URL, SPRING_PROFILES_ACTIVE: '' },
-        stdio: ['ignore', 'pipe', 'pipe'],
-        windowsHide: true,
-      },
-    )
-    proc.stdout?.pipe(log)
-    proc.stderr?.pipe(log)
-    this.proc = proc
-    let exited = false
-    proc.once('exit', () => {
-      exited = true
-    })
-    await waitFor(
-      async () => {
-        if (exited) throw new Error(`backend exited during startup, see ${LOG_DIR}`)
-        return backendIsUp()
-      },
-      90_000,
-      'backend /api/health',
-    )
-    // Prove it is a fresh, empty database.
-    const s = (await (await fetch(`${BACKEND_URL}/api/cash/summary`)).json()) as { totalCash: string }
-    if (s.totalCash !== '0.00') throw new Error(`fresh backend is not empty: ${JSON.stringify(s)}`)
+/**
+ * Empties the database (fresh migrated state, ids restart at 1). Requires 204; anything else — in particular
+ * 404 from a backend without the e2e profile — aborts.
+ */
+export async function resetBackend(): Promise<void> {
+  let r: Response
+  try {
+    r = await fetch(`${BACKEND_URL}/api/test-support/reset`, { method: 'POST', signal: AbortSignal.timeout(10_000) })
+  } catch (e) {
+    throw new Error(`E2E backend not reachable on 8080 for reset: ${String(e)}`)
   }
-
-  async stop(): Promise<void> {
-    const proc = this.proc
-    if (!proc) return
-    this.proc = null
-    if (proc.exitCode === null && proc.pid !== undefined) {
-      try {
-        if (process.platform === 'win32') {
-          execFileSync('taskkill', ['/PID', String(proc.pid), '/T', '/F'], { stdio: 'ignore' })
-        } else {
-          proc.kill('SIGKILL')
-        }
-      } catch {
-        // already gone
-      }
-    }
-    await waitFor(async () => !(await backendIsUp()), 30_000, 'backend to stop')
+  if (r.status === 404) {
+    throw new Error(
+      'POST /api/test-support/reset returned 404: the backend on 8080 is NOT running with the e2e profile ' +
+        '(maybe your dev backend on backend/data). Refusing to run E2E against it. Stop it and re-run.',
+    )
   }
+  if (r.status !== 204) throw new Error(`POST /api/test-support/reset returned ${r.status}, expected 204`)
 }
+
+/**
+ * Starts a backend with the e2e profile, waits for health and confirms the reset endpoint exists.
+ * If 8080 is already taken: an e2e-profile backend (reset → 204) is reused and not stopped afterwards;
+ * anything else (reset → 404) aborts before any data is written.
+ */
+export async function startBackend(label = 'backend'): Promise<number | null> {
+  if (await backendIsUp()) {
+    await resetBackend() // throws on 404: not an e2e backend
+    return null
+  }
+  mkdirSync(STATE_DIR, { recursive: true })
+  const logFd = openSync(path.join(STATE_DIR, `${label}-${Date.now()}.log`), 'w')
+  const env: NodeJS.ProcessEnv = { ...process.env, SPRING_PROFILES_ACTIVE: 'e2e' }
+  delete env.SPRING_DATASOURCE_URL // application-e2e.yml decides (in-memory)
+  // Detached, logging straight to a file: the process does not depend on whoever started it
+  // (a worker may restart it), and global teardown stops it via the PID file.
+  const proc = spawn(javaExecutable(), ['-XX:TieredStopAtLevel=1', '-jar', bootJar(), '--server.port=8080'], {
+    cwd: STATE_DIR,
+    env,
+    stdio: ['ignore', logFd, logFd],
+    detached: true,
+    windowsHide: true,
+  })
+  closeSync(logFd)
+  if (proc.pid === undefined) throw new Error('failed to spawn backend')
+  writeFileSync(PID_FILE, String(proc.pid))
+  let exited = false
+  proc.once('exit', () => {
+    exited = true
+  })
+  proc.unref()
+  await waitFor(
+    async () => {
+      if (exited) throw new Error(`backend exited during startup, see logs in ${STATE_DIR}`)
+      return backendIsUp()
+    },
+    90_000,
+    'backend /api/health',
+  )
+  await resetBackend()
+  return proc.pid
+}
+
+/** Stops the backend started by this suite (PID file); no-op if none. */
+export async function stopBackend(): Promise<void> {
+  if (!existsSync(PID_FILE)) return
+  const pid = readFileSync(PID_FILE, 'utf8').trim()
+  rmSync(PID_FILE, { force: true })
+  try {
+    if (process.platform === 'win32') {
+      execFileSync('taskkill', ['/PID', pid, '/T', '/F'], { stdio: 'ignore' })
+    } else {
+      process.kill(-Number(pid), 'SIGKILL')
+    }
+  } catch {
+    // already gone
+  }
+  await waitFor(async () => !(await backendIsUp()), 30_000, 'backend to stop')
+}
+
+/** Handle given to tests (e.g. to simulate the backend being down). */
+export const e2eBackend = {
+  reset: resetBackend,
+  stop: stopBackend,
+  start: async (): Promise<void> => {
+    await startBackend('restarted')
+  },
+}
+export type E2EBackend = typeof e2eBackend

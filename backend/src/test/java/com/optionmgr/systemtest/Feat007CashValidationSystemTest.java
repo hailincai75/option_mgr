@@ -69,13 +69,9 @@ class Feat007CashValidationSystemTest extends CashSystemTestBase {
     }
 
     @Test
-    @DisplayName("AC9 金额空串 → 400，字段 amount")
+    @DisplayName("AC9 金额空串 → 视为缺失：VALIDATION_ERROR amount「金额不能为空」")
     void ac9_amountEmptyString() {
-        Resp r = postTransfer(transferBody("DEPOSIT", "", "2026-11-02T10:00", null));
-        assertThat(r.status()).isEqualTo(400);
-        assertThat(r.body().get("code").asText()).isIn("VALIDATION_ERROR", "BAD_REQUEST");
-        assertThat(detailFields(r)).containsExactly("amount");
-        assertNothingStored();
+        assertValidation(transferBody("DEPOSIT", "", "2026-11-02T10:00", null), "amount", "金额不能为空");
     }
 
     @ParameterizedTest(name = "AC9 金额 {0} → VALIDATION_ERROR amount（入金）")

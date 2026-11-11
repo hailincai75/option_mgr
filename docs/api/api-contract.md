@@ -114,6 +114,33 @@
 
 错误：只有通用错误（如 `DELETE /api/health` → 405 `METHOD_NOT_ALLOWED`）。
 
+### 测试支持（仅 `e2e` profile，正常运行时不存在）
+
+> ⚠️ **只供 E2E 测试使用。** 以下接口只在后端以 `e2e` profile 启动时存在（`SPRING_PROFILES_ACTIVE=e2e` 或 `--spring.profiles.active=e2e`）。默认运行、`test` profile 及任何其它情况下，这些路径和任何未知路径一样返回 404 `NOT_FOUND`。前端页面不得调用。
+>
+> `e2e` profile 强制使用内存 H2（`jdbc:h2:mem:e2e`）；如果最终生效的 `spring.datasource.url` 不是 `jdbc:h2:mem:...`（例如被 `SPRING_DATASOURCE_URL` 改成文件库），后端**拒绝启动**，所以不可能误清开发库 `backend/data/`。
+
+#### `POST /api/test-support/reset`
+删除所有业务数据，把数据库恢复成"刚完成 Flyway 迁移的新库"状态：
+- 所有表（除 `flyway_schema_history`）恢复到启动时迁移完成那一刻的内容：业务表清空，迁移写入的初始数据（如 `cash_account` 唯一一行）保持/恢复原样
+- 所有自增 id 重新从 1 开始（或从迁移初始数据的最大 id + 1 开始），所以重置后的写入与新库完全一致（如第一笔入金 `id = 1`、`ledgerEntryId = 1`，流水录入顺序从头开始）
+- 在一个事务里执行，并持有所有现金写操作使用的 `cash_account` 行锁：不会与并发写操作交错（正在进行的写操作先完成，重置后到的写操作在重置之后执行）
+
+无请求参数，无请求体。
+
+响应 `204 No Content`（无响应体）。重复调用是安全的（幂等）。
+
+错误：只有通用错误（如 `GET /api/test-support/reset` → 405 `METHOD_NOT_ALLOWED`；未启用 `e2e` profile → 404 `NOT_FOUND`）。
+
+示例：
+```
+POST /api/test-support/reset
+→ 204 No Content
+
+GET /api/cash/summary
+→ 200 {"totalCash": "0.00", "frozenCash": "0.00", "availableCash": "0.00"}
+```
+
 ### FEAT-007 资金账户（入金/出金、现金汇总、现金流水）
 
 单账户、只有 USD。所有金额 scale 固定为 2（`"0.00"`、`"30000.00"`、`"-2500.50"`），JSON 字符串，**不带千分位**；千分位、`+`/`−` 号由前端格式化。
@@ -122,13 +149,14 @@
 - **现金流水（ledger entry）**：所有现金变动的统一记录。每条流水有来源类型 `sourceType` 和来源记录 id `sourceId`（如入金记录 id；以后是交易 id）。
 - **录入顺序**：流水 `id` 单调递增，即录入顺序。所有排序、重放都按 `(occurredAt, id)`：先按时间，同一时间按录入顺序。
 - **总现金** = 所有流水 `amount` 之和；**冻结现金** = 所有流水的冻结变动之和（FEAT-007 内始终 `0.00`，FEAT-001 STO put 开始产生）；**可用现金** = 总现金 − 冻结现金。
-- **重放检查（Q19）**：出金时，把本笔按 `(occurredAt, 新 id)` 插入所有已有流水中按顺序重放；从本笔起（含本笔）的每一条流水之后，总现金和可用现金都必须 ≥ 0，否则整笔拒绝、不保存。同一时间的已有流水都排在本笔之前（本笔是最新录入的）。入金不做此检查。
+- **重放检查（Q19）**：出金（以及 FEAT-001 的期权开仓）时，把本笔按 `(occurredAt, 新 id)` 插入所有已有流水中按顺序重放；从本笔起（含本笔）的每一条流水之后，总现金和可用现金都必须 ≥ 0，否则整笔拒绝、不保存。同一时间的已有流水都排在本笔之前（本笔是最新录入的）。入金不做此检查。
 
 #### `sourceType` 取值
 | 值 | 含义 | 来自 |
 |----|------|------|
 | `DEPOSIT` | 入金 | FEAT-007 |
 | `WITHDRAWAL` | 出金 | FEAT-007 |
+| `OPTION_OPEN` | 期权开仓（BTO / STO），`sourceId` = 交易 id（`GET /api/option-trades/{id}`） | FEAT-001 |
 
 以后的需求会新增取值（如 FEAT-001 的期权开仓），新增取值属于兼容变更。前端遇到不认识的取值时应原样显示，不要报错。
 
@@ -204,7 +232,7 @@
 
 | code | HTTP | 何时 |
 |------|------|------|
-| `VALIDATION_ERROR` | 400 | `type` 缺失；`amount` 缺失、≤ 0、超过 2 位小数或过大；`occurredAtLocal` 缺失或晚于当前时间；`remark` 超过 500 字符。`details[].field` 为对应字段名，`details[].message` 为中文说明，可直接显示在字段下 |
+| `VALIDATION_ERROR` | 400 | `type` 缺失；`amount` 缺失、为 `null` 或空串 `""`（视为缺失，message 为"金额不能为空"）、≤ 0、超过 2 位小数或过大；`occurredAtLocal` 缺失或晚于当前时间；`remark` 超过 500 字符。`details[].field` 为对应字段名，`details[].message` 为中文说明，可直接显示在字段下 |
 | `BAD_REQUEST` | 400 | `type` 不是允许的取值、`amount` 不是数字、`occurredAtLocal` 格式不对（含带了时区或小数秒）或日期时间不存在（如 `2026-02-30T10:00`、`2026-11-02T24:00`，严格校验，不会被改成月末）、JSON 语法错误。`details` 指出字段（JSON 语法错误除外） |
 | `CASH_INSUFFICIENT` | 422 | 出金会让本笔时点或之后某个时点的总现金/可用现金变负。`message` 是**中文、可直接显示给用户**的原因，`details` 为 `[]`。不保存任何东西 |
 
@@ -269,6 +297,7 @@
       "sourceId": 2,
       "amount": "-2500.50",
       "balanceAfter": "27499.50",
+      "frozenChange": "0.00",
       "description": null,
       "remark": "转回银行"
     },
@@ -279,6 +308,7 @@
       "sourceId": 1,
       "amount": "30000.00",
       "balanceAfter": "30000.00",
+      "frozenChange": "0.00",
       "description": null,
       "remark": "初始资金"
     }
@@ -298,10 +328,315 @@
 | `items[].sourceId` | number | 来源记录 id（入金/出金为 `POST /api/cash/transfers` 返回的 `id`） |
 | `items[].amount` | string | 带符号金额：流入为正，流出为负（如 `"-2500.50"`） |
 | `items[].balanceAfter` | string | 按 `(occurredAt, id)` 顺序累计到该条（含）为止的**总现金**。补录历史记录后，之后各条的值会随之变化（每次查询时重新计算） |
-| `items[].description` | string \| null | 系统生成的说明（入金/出金为 `null`；以后交易流水会写明交易，如 `STO 1 AAPL 2026-12-18 200 P`） |
+| `items[].frozenChange` | string | 该条流水带来的冻结现金变动（带符号，scale 2）：入金/出金、BTO 为 `"0.00"`；STO put 为 `+担保金额`（如 `"20000.00"`）；以后的平仓/到期释放为负。**FEAT-001 新增字段（兼容变更）** |
+| `items[].description` | string \| null | 系统生成的说明（入金/出金为 `null`；期权交易流水写明交易，如 `STO 1 张 AAPL 2026-12-18 200 P`，格式见 FEAT-001） |
 | `items[].remark` | string \| null | 用户备注 |
 | `page` / `size` | number | 本次使用的分页参数 |
 | `totalItems` | number | 流水总条数 |
 | `totalPages` | number | 总页数；没有流水时为 `0` |
 
 空库：`{"items": [], "page": 1, "size": 20, "totalItems": 0, "totalPages": 0}`。
+
+### FEAT-001 录入开仓期权交易（BTO / STO）
+
+单账户、只有 USD。一笔交易只记**含手续费的净额**（Q6）。交易成功后同一事务内自动产生一条现金流水（`sourceType = OPTION_OPEN`，`sourceId` = 交易 id），现金汇总和流水沿用 FEAT-007 的 `GET /api/cash/summary`、`GET /api/cash/ledger`（流水项新增 `frozenChange` 字段，见上）。
+
+#### 概念
+- **合约** = `symbol` + `expirationDate` + `strike` + `optionType`。`strike` 按数值比较（`200`、`200.0`、`200.000` 是同一合约）。同一合约多次开仓保存为多笔独立交易（以后 FIFO 批次）。
+- **方向** `action`：`BTO`（买入开仓，多头 +张数）、`STO`（卖出开仓，空头 −张数）。`BTC` / `STC`（平仓）属于 FEAT-004，本接口目前拒绝（见错误表）。
+- **持仓（按时点）**：某合约在某时点的持仓 = 该合约所有交易按 `(成交时间, 交易 id)` 顺序累加到该时点为止的带符号张数（BTO/BTC 为 +，STO/STC 为 −）。同一时间的已有交易排在本笔之前（本笔是最新录入的）。FEAT-001 只有开仓，所以持仓只增不减；FEAT-004 起平仓会减少持仓。
+- **现金影响**：
+  - BTO：总现金 −净额，冻结不变
+  - STO put：总现金 +净额，冻结 +担保；**担保 = 行权价 × multiplier × 张数**，按分向上取整（只有 multiplier 不是 10 的倍数且行权价有 3 位小数时才会真正发生，如 `12.345 × 1 × 1 = 12.35`）
+  - 冻结在本需求中不会释放（FEAT-004 / M2）
+
+#### `POST /api/option-trades`
+新增一笔开仓交易。
+
+请求体：
+```json
+{
+  "symbol": " aapl ",
+  "expirationDate": "2026-12-18",
+  "strike": "200",
+  "optionType": "PUT",
+  "action": "STO",
+  "contracts": 1,
+  "netAmount": "349.35",
+  "tradedAtLocal": "2026-11-10T10:30",
+  "multiplier": 100,
+  "note": "第一笔 CSP"
+}
+```
+
+| 字段 | 类型 | 必填 | 规则 |
+|------|------|------|------|
+| `symbol` | string | 是 | 先去掉首尾空白、转大写，再校验：只允许字母 `A–Z`、数字和 `.`，长度 1–10（如 `BRK.B`）。保存规范化后的值 |
+| `expirationDate` | string | 是 | `YYYY-MM-DD`（严格校验，`2026-02-30` 为 400 `BAD_REQUEST`）。不得早于成交时间所在的**美东日期**；可以等于（0DTE） |
+| `strike` | string | 是 | > 0，最多 3 位小数，≤ `9999999.999` |
+| `optionType` | string | 是 | `CALL` 或 `PUT` |
+| `action` | string | 是 | `BTO` 或 `STO`（`BTC`/`STC` → 400 `VALIDATION_ERROR`，见下） |
+| `contracts` | number | 是 | 正整数，≤ 100000。`1.5`、`0`、`-1` → 400 `VALIDATION_ERROR`（不会被截断成整数） |
+| `netAmount` | string | 是 | 含手续费的净额：STO = 扣除手续费后的实收，BTO = 含手续费的实付。> 0，最多 2 位小数，整数部分最多 13 位；只填正数，方向决定流入/流出 |
+| `tradedAtLocal` | string | 是 | **美东时间**本地日期时间，格式与规则同 FEAT-007 `occurredAtLocal`（`YYYY-MM-DDTHH:mm[:ss]`，不带时区，严格解析，夏令时按 Java 默认规则：不存在的时刻顺延 1 小时，重复的时刻取较早的 EDT）。换算后不得晚于服务器当前时间 |
+| `multiplier` | number | 否 | 正整数，≤ 10000。缺省或 `null` 时为 `100` |
+| `note` | string | 否 | 最多 500 个字符；`null`、空串、全空白保存为 `null` |
+
+检查顺序（任一失败即整笔拒绝，不保存交易、流水和冻结）：
+1. 字段校验 → 400 `VALIDATION_ERROR` / `BAD_REQUEST`。先做与请求体本身有关的校验（必填、格式、范围）；全部通过后再做与时间有关的两项：`tradedAtLocal` 晚于当前时间、`expirationDate` 早于成交日（这两项可能一起出现在 `details` 中）
+2. 多空冲突（Q7）→ 422 `POSITION_DIRECTION_CONFLICT`
+3. STO call（Q16）→ 422 `SELL_CALL_NOT_SUPPORTED`
+4. multiplier 一致（Q23）→ 422 `MULTIPLIER_MISMATCH`
+5. 现金（Q13、Q18、Q19）→ 422 `CASH_INSUFFICIENT`
+
+第 2、4 步按"持仓（按时点）"重放该合约的全部交易（本笔插入其中）：既检查本笔成交时点，也检查本笔之后该合约的已有交易——补录一笔较早的交易不能让之后已有的开仓变成多空冲突或 multiplier 不一致（Q7"任一时刻只能纯多或纯空"）。
+
+响应 `201 Created`：
+```json
+{
+  "id": 1,
+  "symbol": "AAPL",
+  "expirationDate": "2026-12-18",
+  "strike": "200",
+  "optionType": "PUT",
+  "action": "STO",
+  "contracts": 1,
+  "multiplier": 100,
+  "netAmount": "349.35",
+  "tradedAt": "2026-11-10T15:30:00Z",
+  "tradedAtLocal": "2026-11-10T10:30:00",
+  "cashChange": "349.35",
+  "frozenChange": "20000.00",
+  "contractLabel": "AAPL 2026-12-18 200 P",
+  "note": "第一笔 CSP",
+  "ledgerEntryId": 2,
+  "createdAt": "2026-11-10T15:45:00.123456Z"
+}
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | number | 交易 id（即流水的 `sourceId`） |
+| `symbol` | string | 规范化后的标的（大写、无首尾空白） |
+| `expirationDate` | string | 到期日 `YYYY-MM-DD` |
+| `strike` | string | 行权价，**去掉末尾多余的 0**（`"200"`、`"12.5"`、`"12.345"`），可直接用于显示 |
+| `optionType` | string | `CALL` / `PUT` |
+| `action` | string | `BTO` / `STO` |
+| `contracts` | number | 张数（JSON 整数） |
+| `multiplier` | number | 合约乘数（JSON 整数） |
+| `netAmount` | string | 用户录入的净额（正数，scale 2） |
+| `tradedAt` | string | 成交时间，ISO-8601 UTC Instant |
+| `tradedAtLocal` | string | 同一成交时间的美东本地时间 `YYYY-MM-DDTHH:mm:ss`（无时区），方便显示；与 `tradedAt` 一一对应 |
+| `cashChange` | string | 本笔对总现金的带符号影响（scale 2）：STO 为 `+净额`，BTO 为 `−净额`（如 `"-512.65"`） |
+| `frozenChange` | string | 本笔对冻结现金的影响（scale 2）：STO put 为担保金额，BTO 为 `"0.00"` |
+| `contractLabel` | string | 合约显示名：`<symbol> <expirationDate> <strike> <C 或 P>`，如 `"AAPL 2026-12-18 200 P"` |
+| `note` | string \| null | 备注 |
+| `ledgerEntryId` | number | 本笔产生的现金流水 id |
+| `createdAt` | string | 录入时间（服务器时间），ISO-8601 UTC Instant |
+
+本笔产生的现金流水（`GET /api/cash/ledger` 中）：`occurredAt` = `tradedAt`，`sourceType` = `"OPTION_OPEN"`，`sourceId` = 交易 `id`，`amount` = `cashChange`，`frozenChange` = 本笔 `frozenChange`，`remark` = `note`，`description` = `"<action> <contracts> 张 <contractLabel>"`，multiplier 不是 100 时再加 `"（multiplier <m>）"`，例：
+- `STO 1 张 AAPL 2026-12-18 200 P`
+- `BTO 2 张 F 2026-12-18 12.5 C`
+- `STO 1 张 XYZ 2026-12-18 200 P（multiplier 10）`
+
+错误：
+
+| code | HTTP | 何时 |
+|------|------|------|
+| `VALIDATION_ERROR` | 400 | 字段不满足上表规则；`action` 为 `BTC`/`STC`；`tradedAtLocal` 晚于当前时间；`expirationDate` 早于成交日（美东）。`details[].field` 为请求体字段名，`details[].message` 为中文，可直接显示在字段下（见下表） |
+| `BAD_REQUEST` | 400 | 值无法解析：`optionType`/`action` 不是枚举值、`strike`/`netAmount`/`contracts`/`multiplier` 不是数字、`expirationDate`/`tradedAtLocal` 格式不对或日期不存在、JSON 语法错误。`details` 指出字段（JSON 语法错误除外） |
+| `POSITION_DIRECTION_CONFLICT` | 422 | Q7：成交时点该合约为空头时录 BTO、为多头时录 STO；或补录后该合约之后的某笔已有开仓会与持仓方向冲突 |
+| `SELL_CALL_NOT_SUPPORTED` | 422 | Q16：M1 不允许 STO call |
+| `MULTIPLIER_MISMATCH` | 422 | Q23：成交时点该合约有未平仓持仓且 multiplier 不同；或补录后该合约之后的某笔已有交易与持仓 multiplier 不同 |
+| `CASH_INSUFFICIENT` | 422 | Q13/Q18/Q19 现金不足（同 FEAT-007） |
+
+所有 422 的 `message` 都是**中文、可直接显示给用户**的完整原因，`details` 为 `[]`。前端按 `code` 分支即可，不需要解析 `message`。
+
+`VALIDATION_ERROR` 的 `details[].message`：
+
+| field | message |
+|-------|---------|
+| `symbol` | `标的不能为空`、`标的只能包含字母、数字和点`、`标的最多 10 个字符` |
+| `expirationDate` | `到期日不能为空`、`到期日不能早于成交日（2026-11-10）`（括号内为成交时间的美东日期） |
+| `strike` | `行权价不能为空`、`行权价必须大于 0`、`行权价最多 3 位小数`、`行权价过大` |
+| `optionType` | `请选择 Call 或 Put` |
+| `action` | `请选择方向`、`本功能只支持开仓（BTO / STO），平仓请使用平仓功能` |
+| `contracts` | `张数不能为空`、`张数必须是正整数`、`张数过大` |
+| `netAmount` | `净额不能为空`、`净额必须大于 0`、`净额最多 2 位小数`、`净额过大` |
+| `tradedAtLocal` | `成交时间不能为空`、`成交时间不能晚于当前时间` |
+| `multiplier` | `multiplier 必须是正整数`、`multiplier 过大` |
+| `note` | `备注最多 500 个字符` |
+
+一个字段可能同时有多条 message（如 `strike` 为 `-5.1234`）；同一字段相同的 message 只出现一次。
+
+422 `message` 格式（金额千分位 2 位小数、负数用 `−`(U+2212)，时间为美东 `YYYY-MM-DD HH:mm`，合约为 `contractLabel`）：
+- `POSITION_DIRECTION_CONFLICT`
+  - 成交时点为空头、录 BTO：`该合约（AAPL 2026-12-18 200 P）在成交时为空头持仓（1 张），不能买入开仓；如要平仓请使用 Buy to Close（BTC）`
+  - 成交时点为多头、录 STO：`该合约（AAPL 2026-12-18 210 C）在成交时为多头持仓（1 张），不能卖出开仓；如要平仓请使用 Sell to Close（STC）`
+  - 补录后之后某笔冲突：`补录后该合约（AAPL 2026-12-18 200 P）在 2026-11-11 11:00 的 STO 将与多头持仓（1 张）冲突；一个合约任一时刻只能纯多或纯空`
+- `SELL_CALL_NOT_SUPPORTED`：`需要股票持仓功能（FEAT-011）后才能卖出 call`
+- `MULTIPLIER_MISMATCH`
+  - 成交时点：`该合约（XYZ 2026-12-18 200 P）已有未平仓持仓，multiplier 为 10，新开仓的 multiplier 必须相同`
+  - 补录后之后某笔不一致：`补录后该合约（XYZ 2026-12-18 200 P）在 2026-11-11 11:00 的交易 multiplier 为 10，与当时持仓的 multiplier 100 不一致`
+- `CASH_INSUFFICIENT`
+  - BTO，本笔时点不够：`可用现金不足：需要 512.65，可用 500.00`（"可用"为本笔录入前该时点的可用现金）
+  - BTO，之后某时点变负：`可用现金不足：需要 1,500.00；2026-11-05 10:00 时可用现金将变为 −500.00`
+  - STO put，录入前可用 < 担保（Q18，不含本笔权利金）：`可用现金不足以担保卖出 put：需要 20,000.00，可用 19,999.99`
+  - STO put，之后某时点变负：`可用现金不足以担保卖出 put：需要 20,000.00；2026-11-05 10:00 时可用现金将变为 −150.65`
+
+示例（422）：
+```json
+{
+  "code": "CASH_INSUFFICIENT",
+  "message": "可用现金不足以担保卖出 put：需要 20,000.00，可用 19,999.99",
+  "status": 422,
+  "path": "/api/option-trades",
+  "timestamp": "2026-11-12T15:00:00Z",
+  "details": []
+}
+```
+
+示例（400）：
+```json
+{
+  "code": "VALIDATION_ERROR",
+  "message": "Request validation failed",
+  "status": 400,
+  "path": "/api/option-trades",
+  "timestamp": "2026-11-12T15:00:00Z",
+  "details": [
+    { "field": "contracts", "message": "张数必须是正整数" },
+    { "field": "symbol", "message": "标的只能包含字母、数字和点" }
+  ]
+}
+```
+
+#### `GET /api/option-trades/{id}`
+按 id 查一笔交易。响应 `200 OK`，响应体与 `POST /api/option-trades` 的 `201` 响应完全相同（含 `ledgerEntryId`）。
+
+错误：`id` 不是整数 → 400 `BAD_REQUEST`（`details[].field = "id"`）；不存在 → 404 `NOT_FOUND`（`message`：`Option trade 99 not found`）。
+
+### FEAT-002 交易列表与筛选
+
+只读：不新增、不修改任何数据，不影响现金汇总和流水。列出所有期权交易（不论方向；FEAT-004 之后的 BTC / STC 也会自动出现，不需要改接口）。
+
+#### `GET /api/option-trades`
+按筛选条件过滤、按固定顺序排序、分页。
+
+**排序（固定）**：成交时间 `tradedAt` 倒序；成交时间相同时，后录入的（交易 `id` 大的）在上。
+
+**query 参数**（全部可选；不传、空串或全空白 = 不按该条件筛选；多个条件之间是"并且"）：
+
+| 参数 | 类型 | 规则 |
+|------|------|------|
+| `symbol` | string | 先去首尾空白、转大写，再与交易的标的**精确**相等（`aapl` 查到 `AAPL`；`AAP` 查不到 `AAPL`）。规范化后须满足 FEAT-001 的标的格式（1–10 位字母/数字/点），否则 `VALIDATION_ERROR` |
+| `expirationDate` | string | `YYYY-MM-DD`，与交易的到期日相等。格式不对或日期不存在（如 `2026-02-30`）→ `BAD_REQUEST` |
+| `strike` | string | 按**数值**与交易的行权价相等（`200`、`200.0`、`200.000` 等价）。不是数字 → `BAD_REQUEST`；≤ 0、超过 3 位小数、> `9999999.999` → `VALIDATION_ERROR` |
+| `optionType` | string | `CALL` 或 `PUT`（区分大小写，与 FEAT-001 一致）。其它值 → `BAD_REQUEST` |
+| `action` | string，可多值 | `BTO` / `STO` / `BTC` / `STC`，选中的方向之间是"或者"。多值写法：重复参数 `action=BTO&action=STO`，或逗号分隔 `action=BTO,STO`（两种可混用；空项忽略）。`BTC` / `STC` 现在就合法（FEAT-004 之前结果为空，不报错）。不认识的值 → `BAD_REQUEST` |
+| `startDate` | string | `YYYY-MM-DD`，**美东日期**。成交时间换算成美东日期后 ≥ `startDate` 的交易。格式不对 → `BAD_REQUEST` |
+| `endDate` | string | `YYYY-MM-DD`，**美东日期**。成交时间换算成美东日期后 ≤ `endDate` 的交易（包含当天整天，直到美东 23:59:59.999…）。格式不对 → `BAD_REQUEST`。两端都填且 `startDate` 晚于 `endDate` → `VALIDATION_ERROR`，`field` 为 **`endDate`** |
+| `page` | number | 默认 `1`，≥ 1；超出最后一页时 `items` 为空数组（不是错误） |
+| `size` | number | 默认 `20`，1–100 |
+
+日期范围可以只填一端，也可以包含未来日期（不报错）。美东日期举例：美东 2026-11-03 23:30（= `2026-11-04T04:30:00Z`）属于 2026-11-03；夏令时美东 2026-07-15 21:00（= `2026-07-16T01:00:00Z`）属于 2026-07-15。实现上 `startDate` 换算为该美东日期 00:00 的时间点（含），`endDate` 换算为次日美东 00:00 的时间点（不含），夏令时切换当天（23 / 25 小时）同样正确。
+
+示例：
+```
+GET /api/option-trades?symbol=aapl&action=STO&startDate=2026-11-03&endDate=2026-11-04&page=1&size=20
+```
+
+响应 `200 OK`：
+```json
+{
+  "items": [
+    {
+      "id": 4,
+      "symbol": "AAPL",
+      "expirationDate": "2026-12-18",
+      "strike": "200",
+      "optionType": "PUT",
+      "action": "STO",
+      "contracts": 1,
+      "multiplier": 100,
+      "netAmount": "360.00",
+      "tradedAt": "2026-11-04T16:00:00Z",
+      "tradedAtLocal": "2026-11-04T11:00:00",
+      "cashChange": "360.00",
+      "frozenChange": "20000.00",
+      "contractLabel": "AAPL 2026-12-18 200 P",
+      "note": "加仓",
+      "ledgerEntryId": 5,
+      "createdAt": "2026-11-05T15:00:00Z"
+    },
+    {
+      "id": 1,
+      "symbol": "AAPL",
+      "expirationDate": "2026-12-18",
+      "strike": "200",
+      "optionType": "PUT",
+      "action": "STO",
+      "contracts": 1,
+      "multiplier": 100,
+      "netAmount": "349.35",
+      "tradedAt": "2026-11-03T15:30:00Z",
+      "tradedAtLocal": "2026-11-03T10:30:00",
+      "cashChange": "349.35",
+      "frozenChange": "20000.00",
+      "contractLabel": "AAPL 2026-12-18 200 P",
+      "note": "第一笔 CSP",
+      "ledgerEntryId": 2,
+      "createdAt": "2026-11-05T15:00:00Z"
+    }
+  ],
+  "page": 1,
+  "size": 20,
+  "totalItems": 2,
+  "totalPages": 1
+}
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `items[]` | array | 本页交易。每项与 `GET /api/option-trades/{id}` 的响应体**完全相同**（字段说明见 FEAT-001）：`cashChange` 为对总现金的带符号影响（STO/STC +，BTO/BTC −），`frozenChange` 为对冻结现金的带符号影响（STO put 为 +担保，BTO 为 `"0.00"`，以后 BTC 平空头 put 释放冻结为负） |
+| `page` / `size` | number | 本次使用的分页参数 |
+| `totalItems` | number | 符合筛选条件的总条数 |
+| `totalPages` | number | 总页数；没有符合条件的交易时为 `0` |
+
+没有符合条件的交易：`{"items": [], "page": 1, "size": 20, "totalItems": 0, "totalPages": 0}`。
+
+错误：
+
+| code | HTTP | 何时 |
+|------|------|------|
+| `VALIDATION_ERROR` | 400 | 能解析但不满足规则：`symbol` 格式、`strike` 范围/小数位、`startDate` 晚于 `endDate`、`page` < 1、`size` 不在 1–100。所有这类问题一起放在 `details` 里，`details[].field` 为 query 参数名，`message` 为中文、可直接显示在对应筛选项下 |
+| `BAD_REQUEST` | 400 | 值无法解析：`expirationDate`/`startDate`/`endDate` 不是合法日期，`strike` 不是数字，`optionType`/`action` 不是允许的取值，`page`/`size` 不是整数。`details[].field` 为 query 参数名，`message` 为中文（`page`/`size` 不是整数时沿用通用的英文 `must be a valid int`）。有 `BAD_REQUEST` 问题时先报它，不再报 `VALIDATION_ERROR` |
+
+`details[].message`：
+
+| field | code | message |
+|-------|------|---------|
+| `symbol` | `VALIDATION_ERROR` | `标的只能包含字母、数字和点`、`标的最多 10 个字符` |
+| `strike` | `VALIDATION_ERROR` | `行权价必须大于 0`、`行权价最多 3 位小数`、`行权价过大` |
+| `strike` | `BAD_REQUEST` | `行权价必须是数字` |
+| `expirationDate` / `startDate` / `endDate` | `BAD_REQUEST` | `日期格式不正确（YYYY-MM-DD）` |
+| `endDate` | `VALIDATION_ERROR` | `开始日期不能晚于结束日期` |
+| `optionType` | `BAD_REQUEST` | `类型只能是 CALL 或 PUT` |
+| `action` | `BAD_REQUEST` | `方向只能是 BTO、STO、BTC、STC` |
+| `page` | `VALIDATION_ERROR` | `page 必须 ≥ 1` |
+| `size` | `VALIDATION_ERROR` | `size 必须在 1 到 100 之间` |
+
+示例（400）：
+```json
+{
+  "code": "VALIDATION_ERROR",
+  "message": "Request validation failed",
+  "status": 400,
+  "path": "/api/option-trades",
+  "timestamp": "2026-11-05T15:00:00Z",
+  "details": [
+    { "field": "endDate", "message": "开始日期不能晚于结束日期" },
+    { "field": "symbol", "message": "标的只能包含字母、数字和点" }
+  ]
+}
+```

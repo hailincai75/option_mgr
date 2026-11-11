@@ -46,7 +46,8 @@ public final class CashDtos {
     }
 
     public record LedgerEntryResponse(long id, Instant occurredAt, CashSourceType sourceType, long sourceId,
-                                      BigDecimal amount, BigDecimal balanceAfter, String description,
+                                      BigDecimal amount, BigDecimal balanceAfter, BigDecimal frozenChange,
+                                      String description,
                                       String remark) {
     }
 

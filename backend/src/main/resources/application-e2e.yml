@@ -1,0 +1,7 @@
+# Profile "e2e" (Playwright suite only): enables POST /api/test-support/reset and forces a fresh in-memory H2.
+# Activate with SPRING_PROFILES_ACTIVE=e2e or --spring.profiles.active=e2e. Never use it for real data.
+# Safeguard: startup fails if the effective spring.datasource.url (e.g. overridden by SPRING_DATASOURCE_URL)
+# is not jdbc:h2:mem:... (see com.optionmgr.testsupport.E2eDatasourceGuard).
+spring:
+  datasource:
+    url: jdbc:h2:mem:e2e;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1

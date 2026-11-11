@@ -8,7 +8,7 @@
   - `Feat007CashAcceptanceSystemTest.java`（20 个用例）：完整场景、Q19 重放、同时刻排序、DST、精度、分页
   - `Feat007CashValidationSystemTest.java`（复测后 44 个用例，含参数化）：字段校验、错误体契约、分页参数、并发出金
 - **E2E 测试:** `e2e/tests/feat-007-cash.spec.ts`（27 个用例，Chromium）
-  - 隔离方式：每个测试启动一个**全新的后端进程**（`java -jar` boot jar，`SPRING_DATASOURCE_URL=jdbc:h2:mem:e2e…`），测试结束后关闭 → 每个测试都从空库开始，不碰 `backend/data/` 的开发库。若 8080 已被其它后端占用，测试直接报错拒绝运行
+  - 隔离方式（2026-11-11 起）：global setup 用 Spring profile `e2e`（后端强制内存 H2）启动**一个**后端，每个测试前调用 `POST /api/test-support/reset`（要求 204）并确认汇总为 0.00；8080 上若是非 e2e 后端（reset → 404）整轮立即失败、不写数据。详见 `e2e/README.md`。（首测时为“每个测试重启一个后端进程”）
   - 前端复用已运行的 Vite dev server（5173）；未运行时 Playwright 会自动 `npm run dev`
   - 前置：`cd backend && gradlew.bat bootJar`（或 `build`）；JDK 路径可用 `E2E_JAVA_HOME` 覆盖
 
@@ -78,4 +78,13 @@
 ## 疑问 / 需求不清楚的地方
 - 首测时关于“仅 BUG-001 失败是否可 Verified”的疑问已不再需要：BUG-001 已修复并复测通过。
 - 金额空串 `""` 走 API 时契约没写是 `VALIDATION_ERROR` 还是 `BAD_REQUEST`；测试只要求 400 且 field 为 `amount`（实际行为符合）。
-- 给 backend-dev 的建议（非 bug）：E2E 目前靠“每个测试重启后端”实现空库（每个测试约 +5 秒）。如果以后用例增多，希望提供一个只在 e2e profile 下启用的重置端点（不在 `backend/src/main` 默认启用），由 backend-dev 决定是否实现。
+- 首测时提出的“e2e 专用重置端点”已由 backend-dev 实现（`POST /api/test-support/reset`，仅 `e2e` profile），E2E 已切换，见下"E2E 隔离方式切换"。
+
+## E2E 隔离方式切换（2026-11-11）
+把“每个测试重启后端”改成“一个 `e2e` profile 后端 + 每个测试前 `POST /api/test-support/reset`”。
+
+| 项目 | 结果 |
+|------|------|
+| `npx playwright test`（重建 boot jar 后） | **27 passed (1.6m)**，0 失败；之前每个测试重启后端时为 5.3m（首测 4.2m）。整条命令含 Vite 启动共 102 秒 |
+| 安全检查：8080 上先跑一个**非 e2e** 后端（`SPRING_DATASOURCE_URL=jdbc:h2:mem:safety…`，不是 `backend/data`），先入金 123.45 作为标记，再跑套件 | 7 秒内失败，0 个用例执行，报错 `POST /api/test-support/reset returned 404: the backend on 8080 is NOT running with the e2e profile…`；之后该后端汇总仍为 123.45、流水 1 条，**没有写入也没有清空** |
+| 跑完后的进程 | 8080、5173 都没有监听，也没有残留的 java 进程 |

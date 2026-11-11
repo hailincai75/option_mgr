@@ -50,6 +50,7 @@ public class GlobalExceptionHandler {
                 .map(e -> new ErrorResponse.FieldError(
                         e instanceof FieldError fe ? fe.getField() : e.getObjectName(),
                         e.getDefaultMessage()))
+                .distinct()
                 .sorted(byField())
                 .toList();
         return build(ErrorCode.VALIDATION_ERROR, VALIDATION_FAILED, details, req);

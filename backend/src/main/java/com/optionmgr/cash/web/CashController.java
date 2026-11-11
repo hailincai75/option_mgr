@@ -58,7 +58,8 @@ public class CashController {
         LedgerPage p = ledger.ledgerPage(page, size);
         return new LedgerPageResponse(
                 p.items().stream().map(l -> new LedgerEntryResponse(l.id(), l.occurredAt(), l.sourceType(),
-                        l.sourceId(), l.amount(), l.balanceAfter(), l.description(), l.remark())).toList(),
+                        l.sourceId(), l.amount(), l.balanceAfter(), l.frozenChange(), l.description(),
+                        l.remark())).toList(),
                 p.page(), p.size(), p.totalItems(), p.totalPages());
     }
 }

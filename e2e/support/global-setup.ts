@@ -1,11 +1,14 @@
-import { backendIsUp, bootJar, javaExecutable } from './backend'
+import { bootJar, javaExecutable, startBackend, stopBackend } from './backend'
 
-export default async function globalSetup(): Promise<void> {
+/**
+ * Starts ONE e2e-profile backend for the whole run (fails fast if 8080 is taken or the reset endpoint is
+ * missing) and returns the teardown that stops it.
+ */
+export default async function globalSetup(): Promise<() => Promise<void>> {
   javaExecutable()
   bootJar()
-  if (await backendIsUp()) {
-    throw new Error(
-      'A backend is already running on 8080. E2E starts its own in-memory backend per test; stop the other one first.',
-    )
+  await startBackend('suite')
+  return async () => {
+    await stopBackend()
   }
 }

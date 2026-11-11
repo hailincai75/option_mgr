@@ -6,9 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.nio.charset.StandardCharsets;
-import java.time.Clock;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
@@ -42,9 +40,18 @@ abstract class CashSystemTestBase {
     static class FixedClock {
         @Bean
         @Primary
-        Clock qaFixedClock() {
-            return Clock.fixed(NOW, ZoneOffset.UTC);
+        MutableClock qaFixedClock() {
+            return new MutableClock(NOW);
         }
+    }
+
+    /** "Now" used by the backend; reset to {@link #now()} before every test. */
+    @Autowired
+    MutableClock clock;
+
+    /** The fixed "now" for this test class; subclasses may override. */
+    Instant now() {
+        return NOW;
     }
 
     /** Response as status + parsed JSON body (decoded as UTF-8, so Chinese messages are compared exactly). */
@@ -62,6 +69,7 @@ abstract class CashSystemTestBase {
 
     @BeforeEach
     void cleanBefore() {
+        clock.set(now());
         emptyLedger();
     }
 
@@ -73,6 +81,7 @@ abstract class CashSystemTestBase {
     void emptyLedger() {
         jdbc.update("DELETE FROM cash_ledger_entry");
         jdbc.update("DELETE FROM cash_transfer");
+        jdbc.update("DELETE FROM option_trade");
     }
 
     // ------------------------------------------------------------------ HTTP

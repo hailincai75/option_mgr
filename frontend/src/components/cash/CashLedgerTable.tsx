@@ -10,6 +10,7 @@ import { QueryError } from '../QueryError'
 const SOURCE_TYPE_LABELS: Record<string, string> = {
   DEPOSIT: '入金',
   WITHDRAWAL: '出金',
+  OPTION_OPEN: '期权开仓',
 }
 
 /** Known source types get a Chinese label; unknown ones (added by later features) are shown as-is. */
@@ -58,6 +59,18 @@ const columns: ColumnsType<CashLedgerEntry> = [
     render: (value: string) => (
       <span data-testid="cash-ledger-balance" style={{ fontVariantNumeric: 'tabular-nums' }}>
         {formatMoney(value)}
+      </span>
+    ),
+  },
+  {
+    title: '冻结变动',
+    dataIndex: 'frozenChange',
+    key: 'frozenChange',
+    align: 'right',
+    // Zero (deposits, withdrawals, BTO) is shown as a dash to keep the column quiet.
+    render: (value: string | undefined) => (
+      <span data-testid="cash-ledger-frozen" style={{ fontVariantNumeric: 'tabular-nums' }}>
+        {decimalSign(value) === 0 ? EMPTY_VALUE : formatMoney(value, { signed: true })}
       </span>
     ),
   },

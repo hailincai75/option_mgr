@@ -3,10 +3,12 @@ import { defineConfig, devices } from '@playwright/test'
 /**
  * E2E for Option Manager.
  * - Frontend: Vite dev server on 5173 (reused if already running, otherwise started here).
- * - Backend: NOT started here. Each test starts its own fresh backend (in-memory H2) on 8080 and stops it
- *   afterwards (see support/fixtures.ts), so every test begins with an empty database and the developer's
- *   file DB (backend/data/) is never touched. Requires the boot jar: `cd backend && gradlew.bat bootJar`.
- * - Tests share port 8080, so they run serially (workers: 1).
+ * - Backend: global setup starts ONE backend from the boot jar with the `e2e` Spring profile (in-memory H2,
+ *   enforced by the backend) on 8080 and stops it at the end. Before every test the fixture calls
+ *   POST /api/test-support/reset (must be 204) so each test starts with an empty database. If 8080 is held by a
+ *   backend without the e2e profile (reset → 404) the run aborts before writing anything; the developer's file
+ *   DB (backend/data/) is never touched. Requires the boot jar: `cd backend && gradlew.bat bootJar`.
+ * - All tests share one database, so they run serially (workers: 1, not fully parallel).
  */
 export default defineConfig({
   testDir: './tests',

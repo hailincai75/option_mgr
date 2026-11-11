@@ -94,7 +94,7 @@ export interface CashTransfer {
  * Ledger source type. Later features add values (e.g. option open); unknown values must be
  * displayed as-is, so the type stays open.
  */
-export type CashSourceType = 'DEPOSIT' | 'WITHDRAWAL' | (string & {})
+export type CashSourceType = 'DEPOSIT' | 'WITHDRAWAL' | 'OPTION_OPEN' | (string & {})
 
 /** Contract: `GET /api/cash/ledger` → `items[]`. */
 export interface CashLedgerEntry {
@@ -106,6 +106,12 @@ export interface CashLedgerEntry {
   amount: MoneyString
   /** Total cash after this entry (in (occurredAt, id) order). */
   balanceAfter: MoneyString
+  /**
+   * Signed change of frozen cash caused by this entry (FEAT-001, compatible addition):
+   * "0.00" for deposits/withdrawals/BTO, +collateral for STO put.
+   */
+  frozenChange: MoneyString
+  /** System description, e.g. "STO 1 张 AAPL 2026-12-18 200 P"; null for deposits/withdrawals. */
   description: string | null
   remark: string | null
 }
@@ -122,3 +128,100 @@ export interface CashLedgerPage {
 
 /** Contract: FEAT-007 feature-specific error code (HTTP 422); `message` is user-facing Chinese. */
 export const CASH_INSUFFICIENT = 'CASH_INSUFFICIENT'
+
+// ---------------------------------------------------------------------------
+// FEAT-001 录入开仓期权交易
+// ---------------------------------------------------------------------------
+
+/** "YYYY-MM-DD". */
+export type LocalDateString = string
+
+export type OptionType = 'CALL' | 'PUT'
+
+/** FEAT-001 only accepts opening actions (BTC / STC come with FEAT-004). */
+export type OpeningAction = 'BTO' | 'STO'
+
+/** Contract: `POST /api/option-trades` request body. */
+export interface CreateOptionTradeRequest {
+  /** Sent as typed; the backend trims and upper-cases it. */
+  symbol: string
+  expirationDate: LocalDateString
+  /** > 0, at most 3 decimals. */
+  strike: string
+  optionType: OptionType
+  action: OpeningAction
+  /** Positive integer. */
+  contracts: number
+  /** Net amount incl. fees: STO = received after fees, BTO = paid incl. fees. > 0, ≤ 2 decimals. */
+  netAmount: MoneyString
+  /** New York local time; the backend converts it to UTC. */
+  tradedAtLocal: LocalDateTimeString
+  /** Positive integer; null → 100. */
+  multiplier: number | null
+  /** At most 500 characters; null / blank = no note. */
+  note: string | null
+}
+
+/** Contract: `POST /api/option-trades` → 201 and `GET /api/option-trades/{id}` → 200. */
+export interface OptionTrade {
+  id: number
+  symbol: string
+  expirationDate: LocalDateString
+  /** Trailing zeros removed, e.g. "200", "12.5". */
+  strike: string
+  optionType: OptionType
+  /** Open string type: FEAT-004 adds BTC / STC. */
+  action: OpeningAction | (string & {})
+  contracts: number
+  multiplier: number
+  netAmount: MoneyString
+  tradedAt: InstantString
+  /** Same instant as New York local "YYYY-MM-DDTHH:mm:ss". */
+  tradedAtLocal: LocalDateTimeString
+  /** Signed effect on total cash. */
+  cashChange: MoneyString
+  /** Effect on frozen cash. */
+  frozenChange: MoneyString
+  /** e.g. "AAPL 2026-12-18 200 P". */
+  contractLabel: string
+  note: string | null
+  ledgerEntryId: number
+  createdAt: InstantString
+}
+
+// ---------------------------------------------------------------------------
+// FEAT-002 交易列表与筛选
+// ---------------------------------------------------------------------------
+
+/** All trade actions accepted by the list filter (BTC / STC are valid now, results empty until FEAT-004). */
+export type TradeAction = 'BTO' | 'STO' | 'BTC' | 'STC'
+
+/**
+ * Contract: `GET /api/option-trades` query parameters. All filters optional; omitted = no filter.
+ * `action` is multi-valued (sent as repeated `action=` params).
+ */
+export interface OptionTradeListParams {
+  symbol?: string
+  expirationDate?: LocalDateString
+  strike?: string
+  optionType?: OptionType
+  action?: TradeAction[]
+  /** New York date, inclusive. */
+  startDate?: LocalDateString
+  /** New York date, inclusive. */
+  endDate?: LocalDateString
+  /** From 1. */
+  page: number
+  /** 1–100. */
+  size: number
+}
+
+/** Contract: `GET /api/option-trades` → 200. Items have the same shape as `GET /api/option-trades/{id}`. */
+export interface OptionTradePage {
+  items: OptionTrade[]
+  page: number
+  size: number
+  totalItems: number
+  /** 0 when nothing matches. */
+  totalPages: number
+}

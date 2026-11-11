@@ -1,5 +1,6 @@
 import { test as base, expect, type Locator, type Page } from '@playwright/test'
-import { BACKEND_URL, E2EBackend } from './backend'
+import { BACKEND_URL, backendIsUp, e2eBackend, startBackend, type E2EBackend } from './backend'
+import { TradeForm } from './trade'
 
 export { expect }
 
@@ -7,27 +8,32 @@ export { expect }
 export const MINUS = '−'
 
 type Fixtures = {
-  /** Fresh backend (empty in-memory DB) started before the test and stopped after it. Auto-used. */
+  /**
+   * The suite's shared e2e-profile backend (started in global setup), reset to an empty database before each
+   * test via POST /api/test-support/reset. Auto-used. Tests may stop/start it to simulate an outage.
+   */
   backend: E2EBackend
   cash: CashPage
+  trade: TradeForm
 }
 
 export const test = base.extend<Fixtures>({
   backend: [
-    async ({}, use, testInfo) => {
-      const label = testInfo.titlePath.slice(1).join('_').replace(/[^\w-]+/g, '_').slice(0, 80)
-      const backend = new E2EBackend(label)
-      await backend.start()
-      try {
-        await use(backend)
-      } finally {
-        await backend.stop()
-      }
+    async ({}, use) => {
+      // Self-heal if a previous test left the backend stopped (e.g. it failed during the outage test).
+      if (!(await backendIsUp())) await startBackend('recovered')
+      await e2eBackend.reset()
+      const s = (await (await fetch(`${BACKEND_URL}/api/cash/summary`)).json()) as { totalCash?: string }
+      if (s.totalCash !== '0.00') throw new Error(`database not empty after reset: ${JSON.stringify(s)}`)
+      await use(e2eBackend)
     },
-    { auto: true, timeout: 120_000 },
+    { auto: true, timeout: 30_000 },
   ],
   cash: async ({ page }, use) => {
     await use(new CashPage(page))
+  },
+  trade: async ({ page }, use) => {
+    await use(new TradeForm(page))
   },
 })
 
@@ -43,6 +49,7 @@ export interface LedgerRow {
   type: string
   amount: string
   balance: string
+  frozen: string
   note: string
 }
 
@@ -171,6 +178,7 @@ export class CashPage {
           amount: t('cash-ledger-amount'),
           balance: t('cash-ledger-balance'),
           note: t('cash-ledger-note'),
+          frozen: t('cash-ledger-frozen'),
         }
       }),
     )
