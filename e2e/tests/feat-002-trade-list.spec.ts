@@ -154,13 +154,13 @@ test.describe('FEAT-002 交易列表与筛选', () => {
     const headers = (await page.getByTestId('trade-list').locator('th').allTextContents()).join('|')
     expect(headers).toContain('美东时间')
     expect(headers).not.toMatch(/价格|手续费/)
-    // nav highlight: only 交易 selected here; only 录入开仓 on /trades/new
+    // nav highlight: only 交易 selected here; only 录入交易 on /trades/new
     await expect(page.locator('.ant-menu-item-selected')).toHaveCount(1)
     await expect(page.locator('.ant-menu-item-selected')).toContainText('交易')
     await page.getByTestId('trade-list-new').click()
     await expect(page).toHaveURL(/\/trades\/new$/)
     await expect(page.locator('.ant-menu-item-selected')).toHaveCount(1)
-    await expect(page.locator('.ant-menu-item-selected')).toContainText('录入开仓')
+    await expect(page.locator('.ant-menu-item-selected')).toContainText('录入交易')
   })
 
   test('AC2 标的精确匹配：aapl / " AAPL " → T4 T2 T1；AAP → 没有符合条件的交易、共 0 条、清除筛选；$AAPL → 字段错误', async ({ page }) => {

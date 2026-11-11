@@ -135,103 +135,126 @@ function LotTable({ lots }: { lots: OptionPositionLot[] }) {
   )
 }
 
-const columns: ColumnsType<OptionPosition> = [
-  {
-    title: '合约',
-    key: 'contract',
-    render: (_value: unknown, position) => (
-      <Link
-        to={tradesUrlForPosition(position)}
-        data-testid="position-cell-contract"
-        style={{ whiteSpace: 'nowrap' }}
-      >
-        {position.contractLabel}
-      </Link>
-    ),
-  },
-  {
-    title: '方向',
-    key: 'direction',
-    render: (_value: unknown, position) => {
-      const tag = DIRECTION_TAGS[position.direction]
-      return (
-        <Tag color={tag?.color} data-testid="position-cell-direction">
-          {tag?.label ?? position.direction}
-        </Tag>
-      )
+function positionColumns(
+  onClosePosition: (position: OptionPosition) => void,
+): ColumnsType<OptionPosition> {
+  return [
+    {
+      title: '合约',
+      key: 'contract',
+      render: (_value: unknown, position) => (
+        <Link
+          to={tradesUrlForPosition(position)}
+          data-testid="position-cell-contract"
+          style={{ whiteSpace: 'nowrap' }}
+        >
+          {position.contractLabel}
+        </Link>
+      ),
     },
-  },
-  {
-    title: '张数',
-    key: 'contracts',
-    align: 'right',
-    render: (_value: unknown, position) => (
-      <span data-testid="position-cell-contracts" style={{ whiteSpace: 'nowrap' }}>
-        {position.contracts}
-        {position.multiplier !== 100 && `（multiplier ${String(position.multiplier)}）`}
-      </span>
-    ),
-  },
-  {
-    title: '开仓净额合计',
-    key: 'openingNetTotal',
-    align: 'right',
-    render: (_value: unknown, position) => (
-      <SignedMoney value={position.openingNetTotal} testId="position-cell-opening-net" />
-    ),
-  },
-  {
-    title: '每张平均净额（仅供参考）',
-    key: 'averageNetPerContract',
-    align: 'right',
-    render: (_value: unknown, position) => (
-      <SignedMoney value={position.averageNetPerContract} testId="position-cell-average-net" />
-    ),
-  },
-  {
-    title: '冻结现金',
-    key: 'frozenCash',
-    align: 'right',
-    render: (_value: unknown, position) => (
-      <FrozenMoney value={position.frozenCash} testId="position-cell-frozen" />
-    ),
-  },
-  {
-    title: '到期日',
-    key: 'expirationDate',
-    render: (_value: unknown, position) => (
-      <span data-testid="position-cell-expiration">{position.expirationDate}</span>
-    ),
-  },
-  {
-    title: 'DTE',
-    key: 'dte',
-    align: 'right',
-    render: (_value: unknown, position) => <DteCell position={position} />,
-  },
-  {
-    title: '批次数',
-    key: 'lotCount',
-    align: 'right',
-    render: (_value: unknown, position) => (
-      <span data-testid="position-cell-lot-count">{position.lotCount}</span>
-    ),
-  },
-]
+    {
+      title: '方向',
+      key: 'direction',
+      render: (_value: unknown, position) => {
+        const tag = DIRECTION_TAGS[position.direction]
+        return (
+          <Tag color={tag?.color} data-testid="position-cell-direction">
+            {tag?.label ?? position.direction}
+          </Tag>
+        )
+      },
+    },
+    {
+      title: '张数',
+      key: 'contracts',
+      align: 'right',
+      render: (_value: unknown, position) => (
+        <span data-testid="position-cell-contracts" style={{ whiteSpace: 'nowrap' }}>
+          {position.contracts}
+          {position.multiplier !== 100 && `（multiplier ${String(position.multiplier)}）`}
+        </span>
+      ),
+    },
+    {
+      title: '开仓净额合计',
+      key: 'openingNetTotal',
+      align: 'right',
+      render: (_value: unknown, position) => (
+        <SignedMoney value={position.openingNetTotal} testId="position-cell-opening-net" />
+      ),
+    },
+    {
+      title: '每张平均净额（仅供参考）',
+      key: 'averageNetPerContract',
+      align: 'right',
+      render: (_value: unknown, position) => (
+        <SignedMoney value={position.averageNetPerContract} testId="position-cell-average-net" />
+      ),
+    },
+    {
+      title: '冻结现金',
+      key: 'frozenCash',
+      align: 'right',
+      render: (_value: unknown, position) => (
+        <FrozenMoney value={position.frozenCash} testId="position-cell-frozen" />
+      ),
+    },
+    {
+      title: '到期日',
+      key: 'expirationDate',
+      render: (_value: unknown, position) => (
+        <span data-testid="position-cell-expiration">{position.expirationDate}</span>
+      ),
+    },
+    {
+      title: 'DTE',
+      key: 'dte',
+      align: 'right',
+      render: (_value: unknown, position) => <DteCell position={position} />,
+    },
+    {
+      title: '批次数',
+      key: 'lotCount',
+      align: 'right',
+      render: (_value: unknown, position) => (
+        <span data-testid="position-cell-lot-count">{position.lotCount}</span>
+      ),
+    },
+    {
+      title: '操作',
+      key: 'actions',
+      // FEAT-004: only while today (NY) ≤ expiration (backend `closable`).
+      render: (_value: unknown, position) =>
+        position.closable ? (
+          <Button
+            size="small"
+            onClick={() => {
+              onClosePosition(position)
+            }}
+            data-testid="position-close"
+          >
+            平仓
+          </Button>
+        ) : null,
+    },
+  ]
+}
 
 interface PositionTableProps {
   positions: OptionPosition[]
   loading: boolean
   empty: ReactNode
+  /** Opens the 平仓 dialog for a closable position. */
+  onClosePosition: (position: OptionPosition) => void
 }
 
-/** Read-only positions in backend order; each row expands to its FIFO lots. */
-export function PositionTable({ positions, loading, empty }: PositionTableProps) {
+/** Positions in backend order; each row expands to its FIFO lots and, if closable, has 平仓. */
+export function PositionTable({ positions, loading, empty, onClosePosition }: PositionTableProps) {
   return (
     <Table<OptionPosition>
       rowKey="contractLabel"
       size="small"
-      columns={columns}
+      columns={positionColumns(onClosePosition)}
       dataSource={positions}
       loading={loading}
       pagination={false}

@@ -61,9 +61,14 @@ public record OpenTradeTerms(ContractKey contract, TradeAction action, int contr
         return freezesCollateral() ? collateral() : Money.ZERO;
     }
 
-    /** Ledger description, e.g. {@code STO 1 张 AAPL 2026-12-18 200 P} (+ "（multiplier 10）" if not 100). */
-    public String description() {
+    /** Ledger description of any trade (open or close), e.g. {@code BTC 2 张 AAPL 2026-12-18 200 P}. */
+    public static String describe(TradeAction action, int contracts, int multiplier, ContractKey contract) {
         String text = action.name() + " " + contracts + " 张 " + contract.label();
         return multiplier == DEFAULT_MULTIPLIER ? text : text + "（multiplier " + multiplier + "）";
+    }
+
+    /** Ledger description, e.g. {@code STO 1 张 AAPL 2026-12-18 200 P} (+ "（multiplier 10）" if not 100). */
+    public String description() {
+        return describe(action, contracts, multiplier, contract);
     }
 }

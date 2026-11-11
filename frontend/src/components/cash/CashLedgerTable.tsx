@@ -11,6 +11,7 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
   DEPOSIT: '入金',
   WITHDRAWAL: '出金',
   OPTION_OPEN: '期权开仓',
+  OPTION_CLOSE: '期权平仓',
 }
 
 /** Known source types get a Chinese label; unknown ones (added by later features) are shown as-is. */

@@ -94,7 +94,7 @@ export interface CashTransfer {
  * Ledger source type. Later features add values (e.g. option open); unknown values must be
  * displayed as-is, so the type stays open.
  */
-export type CashSourceType = 'DEPOSIT' | 'WITHDRAWAL' | 'OPTION_OPEN' | (string & {})
+export type CashSourceType = 'DEPOSIT' | 'WITHDRAWAL' | 'OPTION_OPEN' | 'OPTION_CLOSE' | (string & {})
 
 /** Contract: `GET /api/cash/ledger` → `items[]`. */
 export interface CashLedgerEntry {
@@ -187,6 +187,10 @@ export interface OptionTrade {
   note: string | null
   ledgerEntryId: number
   createdAt: InstantString
+  /** FEAT-004: lots closed by this trade (FIFO order); null for opening trades. */
+  coveredLots: CoveredLot[] | null
+  /** FEAT-004: realized P&L of this close (profit +, loss −); null for opening trades. */
+  realizedPnl: MoneyString | null
 }
 
 // ---------------------------------------------------------------------------
@@ -254,6 +258,12 @@ export interface OptionPositionLot {
 
 /** Contract: `GET /api/option-positions` → `positions[]`. Every value is display-ready. */
 export interface OptionPosition {
+  /** FEAT-004: action that closes this position (short → BTC, long → STC). */
+  closeAction: ClosingAction
+  /** FEAT-004: contract counts that can be closed now (cumulative whole earliest lots), ascending. */
+  allowedCloseContracts: number[]
+  /** FEAT-004: today (NY) ≤ expiration; the 平仓 button is shown only when true. */
+  closable: boolean
   symbol: string
   expirationDate: LocalDateString
   /** Trailing zeros removed; usable as-is as the FEAT-002 `strike` filter. */
@@ -283,4 +293,37 @@ export interface OptionPositionsResponse {
   positionCount: number
   frozenTotal: MoneyString
   positions: OptionPosition[]
+}
+
+// ---------------------------------------------------------------------------
+// FEAT-004 录入平仓交易
+// ---------------------------------------------------------------------------
+
+export type ClosingAction = 'BTC' | 'STC'
+
+/** Contract: trade representation `coveredLots[]` (lots closed by a BTC / STC). */
+export interface CoveredLot {
+  tradeId: number
+  action: string
+  tradedAt: InstantString
+  tradedAtLocal: LocalDateTimeString
+  contracts: number
+  /** Opening net amount, signed by cash direction (STO +, BTO −). */
+  netAmount: MoneyString
+  /** Frozen cash of the lot (released by BTC of a short put); "0.00" if none. */
+  frozen: MoneyString
+}
+
+/** Contract: `POST /api/option-trades/closes` request body (no multiplier: taken from the position). */
+export interface CreateCloseTradeRequest {
+  symbol: string
+  expirationDate: LocalDateString
+  strike: string
+  optionType: OptionType
+  action: ClosingAction
+  contracts: number
+  /** BTC = paid incl. fees, STC = received after fees. > 0, ≤ 2 decimals. */
+  netAmount: MoneyString
+  tradedAtLocal: LocalDateTimeString
+  note: string | null
 }

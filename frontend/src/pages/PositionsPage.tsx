@@ -1,16 +1,21 @@
 import { useQuery } from '@tanstack/react-query'
 import { Card, Space, Spin, Typography } from 'antd'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getOptionPositions, optionPositionQueryKeys } from '../api/optionPositions'
+import { ClosePositionModal } from '../components/position/ClosePositionModal'
 import { PositionTable } from '../components/position/PositionTable'
 import { QueryError } from '../components/QueryError'
+import type { OptionPosition } from '../api/types'
 import { formatMoney } from '../utils/format'
 
 /**
  * 持仓 page (FEAT-003): every current option position from `GET /api/option-positions`,
- * in backend order, with expandable FIFO lots. Read-only; every number comes from the backend.
+ * in backend order, with expandable FIFO lots and a 平仓 button (FEAT-004) on closable rows.
+ * Every number comes from the backend.
  */
 export function PositionsPage() {
+  const [closing, setClosing] = useState<OptionPosition | null>(null)
   const { data, error, isPending, isFetching, refetch } = useQuery({
     queryKey: optionPositionQueryKeys.all,
     queryFn: ({ signal }) => getOptionPositions(signal),
@@ -53,6 +58,7 @@ export function PositionsPage() {
         <PositionTable
           positions={data.positions}
           loading={isFetching}
+          onClosePosition={setClosing}
           empty={
             <Space orientation="vertical" data-testid="positions-empty">
               <span>暂无持仓</span>
@@ -69,6 +75,15 @@ export function PositionsPage() {
   return (
     <Card title="期权持仓" data-testid="positions-page">
       {content}
+      {closing !== null && (
+        <ClosePositionModal
+          key={closing.contractLabel}
+          position={closing}
+          onDone={() => {
+            setClosing(null)
+          }}
+        />
+      )}
     </Card>
   )
 }

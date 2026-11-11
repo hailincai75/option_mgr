@@ -8,5 +8,8 @@ public enum CashSourceType {
     DEPOSIT,
     WITHDRAWAL,
     /** FEAT-001 opening option trade (BTO / STO); source id = option_trade.id. */
-    OPTION_OPEN
+    OPTION_OPEN,
+    /** FEAT-004 closing option trade (BTC / STC); source id = option_trade.id. Its frozen change may be corrected
+     *  when an earlier trade is back-filled and the FIFO lot matching changes (Q39). */
+    OPTION_CLOSE
 }

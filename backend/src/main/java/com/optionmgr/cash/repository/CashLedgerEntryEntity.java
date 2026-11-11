@@ -69,6 +69,14 @@ public class CashLedgerEntryEntity {
         this.createdAt = createdAt;
     }
 
+    /**
+     * Corrects the frozen-cash change of a trade entry whose FIFO lot matching changed because an earlier trade was
+     * back-filled (FEAT-004 Q39). The cash amount never changes.
+     */
+    public void correctFrozenChange(BigDecimal frozenChange) {
+        this.frozenChange = frozenChange;
+    }
+
     public CashMovement toMovement() {
         return new CashMovement(occurredAt, id, amount, frozenChange);
     }

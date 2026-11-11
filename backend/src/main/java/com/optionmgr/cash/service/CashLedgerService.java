@@ -65,6 +65,33 @@ public class CashLedgerService {
                 CashMovement.pending(occurredAt, Money.of(cashChange), Money.of(frozenChange)));
     }
 
+    /**
+     * As {@link #checkInsertion(Instant, BigDecimal, BigDecimal)}, with the frozen change of some existing entries
+     * replaced (ledger id -&gt; new frozen change) - the state after {@link #correctFrozenChanges} would apply them.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public InsertionCheck checkInsertion(Instant occurredAt, BigDecimal cashChange, BigDecimal frozenChange,
+                                         Map<Long, BigDecimal> frozenOverrides) {
+        lockAccount();
+        List<CashMovement> movements = loadMovements().stream()
+                .map(m -> frozenOverrides.containsKey(m.sequence())
+                        ? new CashMovement(m.occurredAt(), m.sequence(), m.cashChange(),
+                                Money.of(frozenOverrides.get(m.sequence())))
+                        : m)
+                .toList();
+        return CashReplay.checkInsertion(movements,
+                CashMovement.pending(occurredAt, Money.of(cashChange), Money.of(frozenChange)));
+    }
+
+    /** Applies frozen-change corrections (ledger id -&gt; new value), see {@link CashLedgerEntryEntity#correctFrozenChange}. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void correctFrozenChanges(Map<Long, BigDecimal> frozenOverrides) {
+        lockAccount();
+        frozenOverrides.forEach((id, frozen) -> entries.findById(id)
+                .orElseThrow(() -> new IllegalStateException("ledger entry " + id + " missing"))
+                .correctFrozenChange(Money.of(frozen)));
+    }
+
     /** Appends a ledger entry; its id becomes its entry order. Caller must have checked and locked first. */
     @Transactional(propagation = Propagation.MANDATORY)
     public CashLedgerEntryEntity append(NewLedgerEntry entry) {

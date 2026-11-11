@@ -63,4 +63,19 @@ public record OptionPosition(ContractKey contract, PositionDirection direction, 
     public ExpirationStatus expirationStatus(LocalDate today) {
         return ExpirationStatus.of(dte(today));
     }
+
+    /** FEAT-004: a position can be closed on or before its expiration date (Q36). */
+    public boolean closable(LocalDate today) {
+        return dte(today) >= 0;
+    }
+
+    /** FEAT-004: BTC closes a short position, STC a long one. */
+    public TradeAction closeAction() {
+        return direction == PositionDirection.SHORT ? TradeAction.BTC : TradeAction.STC;
+    }
+
+    /** Q21: allowed close sizes = cumulative contracts of the earliest 1, 2, ... whole lots. */
+    public List<Integer> allowedCloseContracts() {
+        return ContractReplay.cumulativeContracts(lots);
+    }
 }

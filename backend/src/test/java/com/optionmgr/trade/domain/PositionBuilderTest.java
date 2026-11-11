@@ -1,7 +1,6 @@
 package com.optionmgr.trade.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.optionmgr.common.time.MarketTime;
 import java.math.BigDecimal;
@@ -133,11 +132,18 @@ class PositionBuilderTest {
     }
 
     @Test
-    void noTradesNoPositionAndClosesAreNotYetSupported() {
+    void noTradesNoPositionAndClosesRemoveWholeLots() {
         assertThat(PositionBuilder.build(contract("A", EXP, "1", OptionType.PUT), List.of())).isEmpty();
-        assertThatThrownBy(() -> build(contract("A", EXP, "1", OptionType.PUT),
-                lot(1, "2026-11-02T10:00", TradeAction.STO, 1, 100, "1.00", "100.00"),
-                lot(2, "2026-11-03T10:00", TradeAction.BTC, 1, 100, "-1.00", "-100.00")))
-                .isInstanceOf(UnsupportedOperationException.class);
+        OptionPosition p = build(contract("A", EXP, "200", OptionType.PUT),
+                lot(1, "2026-11-03T10:30", TradeAction.STO, 2, 100, "698.70", "40000.00"),
+                lot(2, "2026-11-04T11:00", TradeAction.STO, 1, 100, "360.00", "20000.00"),
+                lot(3, "2026-11-05T10:00", TradeAction.BTC, 2, 100, "-241.30", "0.00"));
+        assertThat(p.lots()).extracting(PositionLot::tradeId).containsExactly(2L);
+        assertThat(p.allowedCloseContracts()).containsExactly(1);
+        assertThat(p.closeAction()).isEqualTo(TradeAction.BTC);
+        assertThat(p.frozenCash()).hasToString("20000.00");
+        assertThat(PositionBuilder.build(contract("A", EXP, "200", OptionType.PUT), List.of(
+                lot(1, "2026-11-03T10:30", TradeAction.STO, 2, 100, "698.70", "40000.00"),
+                lot(3, "2026-11-05T10:00", TradeAction.BTC, 2, 100, "-241.30", "0.00")))).isEmpty();
     }
 }

@@ -101,6 +101,60 @@ public final class OptionTradeDtos {
             String contractLabel,
             String note,
             long ledgerEntryId,
-            Instant createdAt) {
+            Instant createdAt,
+            List<CoveredLotResponse> coveredLots,
+            BigDecimal realizedPnl) {
+    }
+
+    /** FEAT-004: one whole lot covered by a close. */
+    public record CoveredLotResponse(long tradeId, TradeAction action, Instant tradedAt, String tradedAtLocal,
+                                     int contracts, BigDecimal netAmount, BigDecimal frozen) {
+    }
+
+    /** FEAT-004 closing trade; no multiplier (taken from the position; an extra "multiplier" property is ignored). */
+    public record CloseTradeRequest(
+            @NotEmpty(message = "标的不能为空")
+            @Size(max = Symbols.MAX_LENGTH, message = "标的最多 10 个字符")
+            @Pattern(regexp = Symbols.NORMALIZED_PATTERN, message = "标的只能包含字母、数字和点")
+            String symbol,
+
+            @NotNull(message = "到期日不能为空")
+            LocalDate expirationDate,
+
+            @NotNull(message = "行权价不能为空")
+            @Positive(message = "行权价必须大于 0")
+            @Digits(integer = 100, fraction = 3, message = "行权价最多 3 位小数")
+            @DecimalMax(value = "9999999.999", message = "行权价过大")
+            BigDecimal strike,
+
+            @NotNull(message = "请选择 Call 或 Put")
+            OptionType optionType,
+
+            @NotNull(message = "请选择方向")
+            @ClosingAction
+            TradeAction action,
+
+            @NotNull(message = "张数不能为空")
+            @Positive(message = "张数必须是正整数")
+            @Digits(integer = 100, fraction = 0, message = "张数必须是正整数")
+            @DecimalMax(value = "100000", message = "张数过大")
+            BigDecimal contracts,
+
+            @NotNull(message = "净额不能为空")
+            @Positive(message = "净额必须大于 0")
+            @Digits(integer = 100, fraction = 2, message = "净额最多 2 位小数")
+            @DecimalMax(value = "9999999999999.99", message = "净额过大")
+            BigDecimal netAmount,
+
+            @NotNull(message = "成交时间不能为空")
+            @JsonDeserialize(using = MarketLocalDateTimeDeserializer.class)
+            LocalDateTime tradedAtLocal,
+
+            @Size(max = 500, message = "备注最多 500 个字符")
+            String note) {
+
+        public CloseTradeRequest {
+            symbol = Symbols.normalize(symbol);
+        }
     }
 }

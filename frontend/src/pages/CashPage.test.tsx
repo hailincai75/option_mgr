@@ -414,6 +414,27 @@ describe('CashPage', () => {
     expect(deposit.getByTestId('cash-ledger-amount')).toHaveStyle({ color: '#389e0d' })
   })
 
+  it('shows OPTION_CLOSE as 期权平仓 with a negative frozen change (FEAT-004)', async () => {
+    const closeEntry: CashLedgerEntry = {
+      ...depositEntry,
+      id: 5,
+      sourceType: 'OPTION_CLOSE',
+      amount: '-241.30',
+      balanceAfter: '80817.40',
+      frozenChange: '-40000.00',
+      description: 'BTC 2 张 AAPL 2026-12-18 200 P',
+      remark: null,
+    }
+    startFakeServer({ summary: ZERO_SUMMARY, ledger: () => ledgerPage([closeEntry]) })
+
+    renderWithProviders(<CashPage />)
+    const row = within((await screen.findAllByTestId('cash-ledger-row'))[0] as HTMLElement)
+    expect(row.getByTestId('cash-ledger-type')).toHaveTextContent('期权平仓')
+    expect(row.getByTestId('cash-ledger-amount')).toHaveTextContent('−241.30')
+    expect(row.getByTestId('cash-ledger-frozen')).toHaveTextContent('−40,000.00')
+    expect(row.getByTestId('cash-ledger-note')).toHaveTextContent('BTC 2 张 AAPL 2026-12-18 200 P')
+  })
+
   it('pages through the ledger (AC 13)', async () => {
     const entryFor = (n: number): CashLedgerEntry => ({
       id: n,

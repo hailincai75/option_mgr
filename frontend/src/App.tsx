@@ -3,7 +3,7 @@ import { Link, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { CashPage } from './pages/CashPage'
 import { HomePage } from './pages/HomePage'
 import { NotFoundPage } from './pages/NotFoundPage'
-import { OpenTradePage } from './pages/OpenTradePage'
+import { TradeEntryPage } from './pages/TradeEntryPage'
 import { PositionsPage } from './pages/PositionsPage'
 import { TradeListPage } from './pages/TradeListPage'
 
@@ -28,7 +28,7 @@ const NAV_ITEMS = [
     key: '/trades/new',
     label: (
       <Link to="/trades/new" data-testid="nav-open-trade">
-        录入开仓
+        录入交易
       </Link>
     ),
   },
@@ -44,7 +44,7 @@ const NAV_ITEMS = [
 
 function AppLayout() {
   const { pathname } = useLocation()
-  // Longest matching key wins, so /trades/new selects 录入开仓 only, not 交易 as well.
+  // Longest matching key wins, so /trades/new selects 录入交易 only, not 交易 as well.
   const selected = NAV_ITEMS.map((item) => item.key)
     .filter((key) => pathname === key || pathname.startsWith(`${key}/`))
     .sort((a, b) => b.length - a.length)
@@ -80,7 +80,7 @@ export function App() {
         <Route index element={<HomePage />} />
         <Route path="trades" element={<TradeListPage />} />
         <Route path="positions" element={<PositionsPage />} />
-        <Route path="trades/new" element={<OpenTradePage />} />
+        <Route path="trades/new" element={<TradeEntryPage />} />
         <Route path="cash" element={<CashPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>

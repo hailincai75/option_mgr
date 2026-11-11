@@ -39,7 +39,9 @@ public class OptionPositionController {
                                    String contractLabel, PositionDirection direction, int contracts,
                                    int multiplier, BigDecimal openingNetTotal, BigDecimal averageNetPerContract,
                                    BigDecimal frozenCash, long dte, ExpirationStatus expirationStatus,
-                                   long daysPastExpiration, int lotCount, List<LotResponse> lots) {
+                                   long daysPastExpiration, int lotCount, List<LotResponse> lots,
+                                   TradeAction closeAction, List<Integer> allowedCloseContracts,
+                                   boolean closable) {
     }
 
     public record LotResponse(long tradeId, TradeAction action, Instant tradedAt, String tradedAtLocal,
@@ -61,7 +63,8 @@ public class OptionPositionController {
         return new PositionResponse(c.symbol(), c.expirationDate(), ContractKey.strikeText(c.strike()),
                 c.optionType(), c.label(), p.direction(), p.contracts(), p.multiplier(), p.openingNetTotal(),
                 p.averageNetPerContract(), p.frozenCash(), dte, p.expirationStatus(today), Math.max(0, -dte),
-                p.lots().size(), p.lots().stream().map(OptionPositionController::toResponse).toList());
+                p.lots().size(), p.lots().stream().map(OptionPositionController::toResponse).toList(),
+                p.closeAction(), p.allowedCloseContracts(), p.closable(today));
     }
 
     private static LotResponse toResponse(PositionLot l) {

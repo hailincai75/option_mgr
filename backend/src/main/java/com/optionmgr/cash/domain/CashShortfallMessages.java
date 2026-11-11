@@ -35,6 +35,12 @@ public final class CashShortfallMessages {
                 + " 时可用现金将变为 " + Money.display(violation.after().available());
     }
 
+    /** FEAT-004 Q20: "可用现金不足：需要 X，可用 A + 释放冻结 R = S" (frozen released before the check). */
+    public static String notEnoughWithRelease(BigDecimal required, BigDecimal available, BigDecimal released) {
+        return INSUFFICIENT + "：需要 " + Money.display(required) + "，可用 " + Money.display(available)
+                + " + 释放冻结 " + Money.display(released) + " = " + Money.display(available.add(released));
+    }
+
     /** "<prefix>：需要 X，可用 Y". */
     public static String notEnoughNow(String prefix, BigDecimal required, BigDecimal available) {
         return prefix + "：需要 " + Money.display(required) + "，可用 " + Money.display(available);

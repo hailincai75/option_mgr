@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ApiErrorResponse, CashSummary, OptionTrade } from '../api/types'
 import { jsonResponse, mockFetch, renderWithProviders } from '../test/render'
-import { OpenTradePage } from './OpenTradePage'
+import { TradeEntryPage } from './TradeEntryPage'
 
 interface RecordedRequest {
   method: string
@@ -73,6 +73,8 @@ const savedTrade: OptionTrade = {
   note: '第一笔 CSP',
   ledgerEntryId: 2,
   createdAt: '2026-11-10T15:45:00.123456Z',
+  coveredLots: null,
+  realizedPnl: null,
 }
 
 const byTestId = (id: string) => screen.getByTestId(id)
@@ -156,7 +158,7 @@ describe('OpenTradePage', () => {
     vi.setSystemTime(new Date('2026-11-10T14:45:00Z'))
     startFakeServer({ summary: SUMMARY_30000 })
 
-    renderWithProviders(<OpenTradePage />)
+    renderWithProviders(<TradeEntryPage />)
 
     expect(byTestId('open-trade-time')).toHaveValue('2026-11-10T09:45')
     expect(screen.getByText('成交时间（美东时间）')).toBeInTheDocument()
@@ -170,14 +172,14 @@ describe('OpenTradePage', () => {
     vi.setSystemTime(new Date('2026-07-15T14:30:00Z'))
     startFakeServer({ summary: SUMMARY_30000 })
 
-    renderWithProviders(<OpenTradePage />)
+    renderWithProviders(<TradeEntryPage />)
 
     expect(byTestId('open-trade-time')).toHaveValue('2026-07-15T10:30')
   })
 
   it('switches the net amount label with the action', async () => {
     startFakeServer({ summary: SUMMARY_30000 })
-    renderWithProviders(<OpenTradePage />)
+    renderWithProviders(<TradeEntryPage />)
     const label = byTestId('open-trade-net-amount-label')
     expect(label).toHaveTextContent('净额（含手续费）')
 
@@ -200,7 +202,7 @@ describe('OpenTradePage', () => {
     }
     const requests = startFakeServer(server)
 
-    renderWithProviders(<OpenTradePage />)
+    renderWithProviders(<TradeEntryPage />)
     expect(await screen.findByTestId('cash-summary-total')).toHaveTextContent('30,000.00')
 
     const user = await fillTrade({ ...AC1_TRADE, symbol: ' aapl ' })
@@ -256,7 +258,7 @@ describe('OpenTradePage', () => {
           201,
         ),
     })
-    renderWithProviders(<OpenTradePage />)
+    renderWithProviders(<TradeEntryPage />)
     const user = await fillTrade({ ...AC1_TRADE, symbol: 'XYZ', multiplier: '10' })
     await user.click(byTestId('open-trade-submit'))
 
@@ -300,7 +302,7 @@ describe('OpenTradePage', () => {
       })
       const input: TradeInput = { ...AC1_TRADE, ...overrides }
 
-      renderWithProviders(<OpenTradePage />)
+      renderWithProviders(<TradeEntryPage />)
       expect(await screen.findByTestId('cash-summary-total')).toHaveTextContent('30,000.00')
       const user = await fillTrade(input)
       await user.click(byTestId('open-trade-submit'))
@@ -330,7 +332,7 @@ describe('OpenTradePage', () => {
         ),
     })
 
-    renderWithProviders(<OpenTradePage />)
+    renderWithProviders(<TradeEntryPage />)
     const user = await fillTrade(AC1_TRADE)
     await user.click(byTestId('open-trade-submit'))
 
@@ -360,7 +362,7 @@ describe('OpenTradePage', () => {
           400,
         ),
     })
-    renderWithProviders(<OpenTradePage />)
+    renderWithProviders(<TradeEntryPage />)
     const user = await fillTrade(AC1_TRADE)
     await user.click(byTestId('open-trade-submit'))
 
@@ -371,7 +373,7 @@ describe('OpenTradePage', () => {
 
   it('validates required fields on the client and does not submit', async () => {
     const requests = startFakeServer({ summary: SUMMARY_30000 })
-    renderWithProviders(<OpenTradePage />)
+    renderWithProviders(<TradeEntryPage />)
     await userEvent.click(byTestId('open-trade-submit'))
 
     expect(await screen.findByText('请选择方向')).toBeInTheDocument()
@@ -388,7 +390,7 @@ describe('OpenTradePage', () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-11-10T14:45:00Z'))
     const requests = startFakeServer({ summary: SUMMARY_30000 })
-    renderWithProviders(<OpenTradePage />)
+    renderWithProviders(<TradeEntryPage />)
 
     const user = await fillTrade({
       ...AC1_TRADE,
@@ -420,7 +422,7 @@ describe('OpenTradePage', () => {
 
   it('clears the form with the clear button', async () => {
     startFakeServer({ summary: SUMMARY_30000 })
-    renderWithProviders(<OpenTradePage />)
+    renderWithProviders(<TradeEntryPage />)
     const user = await fillTrade(AC1_TRADE)
     await user.click(byTestId('open-trade-clear'))
 

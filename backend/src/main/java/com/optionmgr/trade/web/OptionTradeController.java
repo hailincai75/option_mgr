@@ -7,6 +7,10 @@ import com.optionmgr.trade.domain.OpenTradeTerms;
 import com.optionmgr.trade.repository.OptionTradeEntity;
 import com.optionmgr.trade.service.OptionTradeService;
 import com.optionmgr.trade.web.OptionTradeDtos.OpenTradeRequest;
+import com.optionmgr.trade.web.OptionTradeDtos.CloseTradeRequest;
+import com.optionmgr.trade.web.OptionTradeDtos.CoveredLotResponse;
+import com.optionmgr.trade.domain.CloseMatch;
+import com.optionmgr.trade.domain.PositionLot;
 import com.optionmgr.trade.web.OptionTradeDtos.TradePageResponse;
 import com.optionmgr.trade.web.OptionTradeDtos.TradeResponse;
 import com.optionmgr.trade.domain.TradeFilter;
@@ -23,7 +27,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Option trade API: record an opening trade (FEAT-001), read one back, list with filters (FEAT-002). */
+/** Option trade API: record an opening (FEAT-001) or closing (FEAT-004) trade, read one back, list (FEAT-002). */
 @RestController
 @RequestMapping("/api/option-trades")
 public class OptionTradeController {
@@ -45,6 +49,15 @@ public class OptionTradeController {
                 : req.multiplier().intValueExact();
         return toResponse(service.open(new OptionTradeService.OpenCommand(contract, req.action(),
                 req.contracts().intValueExact(), multiplier, req.netAmount(), req.tradedAtLocal(), req.note())));
+    }
+
+    /** FEAT-004: record a closing trade (BTC / STC). */
+    @PostMapping("/closes")
+    @ResponseStatus(HttpStatus.CREATED)
+    public TradeResponse close(@Valid @RequestBody CloseTradeRequest req) {
+        ContractKey contract = new ContractKey(req.symbol(), req.expirationDate(), req.strike(), req.optionType());
+        return toResponse(service.close(new OptionTradeService.CloseCommand(contract, req.action(),
+                req.contracts().intValueExact(), req.netAmount(), req.tradedAtLocal(), req.note())));
     }
 
     /** FEAT-002 trade list; all filters optional, see TradeListQuery. */
@@ -79,6 +92,15 @@ public class OptionTradeController {
                 ContractKey.strikeText(t.getStrike()), t.getOptionType(), t.getAction(), t.getContracts(),
                 t.getMultiplier(), t.getNetAmount(), t.getTradedAt(),
                 LOCAL_SECONDS.format(MarketTime.toLocal(t.getTradedAt())), e.getAmount(), e.getFrozenChange(),
-                contract.label(), t.getNote(), e.getId(), t.getCreatedAt());
+                contract.label(), t.getNote(), e.getId(), t.getCreatedAt(),
+                view.closeMatch().map(m -> m.coveredLots().stream().map(OptionTradeController::toCovered).toList())
+                        .orElse(null),
+                view.closeMatch().map(CloseMatch::realizedPnl).orElse(null));
+    }
+
+    private static CoveredLotResponse toCovered(PositionLot l) {
+        return new CoveredLotResponse(l.tradeId(), l.action(), l.tradedAt(),
+                LOCAL_SECONDS.format(MarketTime.toLocal(l.tradedAt())), l.originalContracts(), l.originalNetAmount(),
+                l.originalFrozen());
     }
 }

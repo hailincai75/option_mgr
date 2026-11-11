@@ -1,5 +1,6 @@
 import { apiRequest } from './client'
 import type {
+  CreateCloseTradeRequest,
   CreateOptionTradeRequest,
   OptionTrade,
   OptionTradeListParams,
@@ -20,6 +21,11 @@ export const optionTradeQueryKeys = {
 /** `POST /api/option-trades` → 201 (opening trade, BTO / STO). */
 export function createOptionTrade(request: CreateOptionTradeRequest): Promise<OptionTrade> {
   return apiRequest<OptionTrade>('/api/option-trades', { method: 'POST', body: request })
+}
+
+/** `POST /api/option-trades/closes` → 201 (closing trade, BTC / STC; FEAT-004). */
+export function createCloseTrade(request: CreateCloseTradeRequest): Promise<OptionTrade> {
+  return apiRequest<OptionTrade>('/api/option-trades/closes', { method: 'POST', body: request })
 }
 
 /** `GET /api/option-trades/{id}` → 200. */

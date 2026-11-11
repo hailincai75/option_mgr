@@ -50,6 +50,9 @@ function position(partial: Partial<OptionPosition> & Pick<OptionPosition, 'lots'
     expirationStatus: 'ACTIVE',
     daysPastExpiration: 0,
     lotCount: partial.lots.length,
+    closeAction: partial.direction === 'LONG' ? 'STC' : 'BTC',
+    allowedCloseContracts: [partial.contracts ?? 1],
+    closable: true,
     ...partial,
   }
   const cp = merged.optionType === 'CALL' ? 'C' : 'P'
@@ -295,12 +298,14 @@ describe('PositionsPage', () => {
     })
     expect(screen.getAllByText('每张平均净额（仅供参考）').length).toBeGreaterThan(0)
     expect(screen.getByText(/空头为实收、多头为实付，均已含手续费/)).toBeInTheDocument()
-    // Read-only: no action buttons besides the expand toggles.
-    expect(
-      screen
-        .getAllByRole('button')
-        .filter((b) => b.getAttribute('data-testid') !== 'position-expand'),
-    ).toHaveLength(0)
+    // Only expand toggles and (FEAT-004) one 平仓 button per closable row; nothing else.
+    // querySelectorAll instead of getAllByRole: role queries over the whole table are very slow.
+    const others = [...document.querySelectorAll('button')].filter(
+      (b) => b.getAttribute('data-testid') !== 'position-expand',
+    )
+    expect(others.map((b) => b.getAttribute('data-testid'))).toEqual(
+      Array(5).fill('position-close'),
+    )
   })
 
   it('expands rows into FIFO lots and collapses them again (AC 2)', async () => {
@@ -547,6 +552,8 @@ describe('PositionsPage', () => {
       note: null,
       ledgerEntryId: 8,
       createdAt: '2026-11-11T15:00:00Z',
+      coveredLots: null,
+      realizedPnl: null,
     }
     startFakeServer({
       positions: () => jsonResponse(current),

@@ -2,7 +2,6 @@ package com.optionmgr.trade.repository;
 
 import com.optionmgr.trade.domain.ContractKey;
 import com.optionmgr.trade.domain.OptionType;
-import com.optionmgr.trade.domain.PositionEvent;
 import com.optionmgr.trade.domain.TradeAction;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -88,10 +87,6 @@ public class OptionTradeEntity {
 
     public ContractKey contract() {
         return new ContractKey(symbol, expirationDate, strike, optionType);
-    }
-
-    public PositionEvent toPositionEvent() {
-        return new PositionEvent(tradedAt, id, action, contracts, multiplier);
     }
 
     public Long getId() {

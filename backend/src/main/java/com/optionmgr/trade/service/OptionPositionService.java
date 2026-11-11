@@ -57,9 +57,7 @@ public class OptionPositionService {
             if (e == null) {
                 throw new IllegalStateException("ledger entry missing for option trade " + t.getId());
             }
-            byContract.computeIfAbsent(t.contract(), k -> new ArrayList<>()).add(new LotTrade(t.getId(),
-                    t.getTradedAt(), t.getAction(), t.getContracts(), t.getMultiplier(), e.getAmount(),
-                    e.getFrozenChange(), t.getNote()));
+            byContract.computeIfAbsent(t.contract(), k -> new ArrayList<>()).add(OptionTradeService.toLotTrade(t, e));
         }
 
         List<OptionPosition> positions = byContract.entrySet().stream()

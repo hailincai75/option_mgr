@@ -29,6 +29,8 @@ function trade(partial: Partial<OptionTrade> & Pick<OptionTrade, 'id'>): OptionT
     note: null,
     ledgerEntryId: partial.id + 1,
     createdAt: '2026-11-05T15:00:00Z',
+    coveredLots: null,
+    realizedPnl: null,
   }
   const merged = { ...base, ...partial }
   const cp = merged.optionType === 'CALL' ? 'C' : 'P'

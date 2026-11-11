@@ -56,17 +56,19 @@ com.optionmgr
 - 表 `option_trade`（`V3__option_trade.sql`）：一行一笔交易（用户录入的原始记录）。合约 = `symbol` + `expiration_date` + `strike`（`NUMERIC(10,3)`，按数值比较）+ `option_type`（`CALL`/`PUT`）；`action` ∈ `BTO`/`STO`/`BTC`/`STC`（FEAT-001 只写 BTO/STO，约束已允许平仓值）；`contracts`、`multiplier` 正整数；`net_amount` 正数（含手续费净额）；`traded_at` UTC；`id` = 录入顺序。同一合约多次开仓是多行（以后 FIFO 批次）
 - 现金影响不存在交易表里：每笔交易在同一事务里写一条 `cash_ledger_entry`（`OPTION_OPEN`，`source_id` = 交易 id，`amount` = ±净额，`frozen_change` = STO put 担保）。两表之间没有外键（`source_id` 是多态引用）
 - 包 `trade/`：
-  - `domain/`（纯 Java）：`ContractKey`（合约标识 + 显示名 `AAPL 2026-12-18 200 P`，strike 去尾零）、`Symbols`（标的规范化）、`OptionType`、`TradeAction`（方向符号、是否开仓）、`OpenTradeTerms`（现金变动、担保 = 行权价 × multiplier × 张数 按分向上取整、流水说明）、`PositionEvent` / `PositionReplay` / `PositionStep` / `PositionInsertionCheck`（按时点持仓）、`TradeRejectionMessages`（中文拒绝原因）
-  - `service/OptionTradeService`：一个事务内按需求顺序检查 → 保存交易 → 追加流水
-  - `web/`：`OptionTradeController`（`POST /api/option-trades`、`GET /api/option-trades/{id}`）、`OptionTradeDtos`、`@OpeningAction` 校验
-- **按时点持仓**：持仓不落库。某合约的持仓 = 该合约所有交易按 `(traded_at, id)` 顺序累加带符号张数（BTO/BTC +，STO/STC −）。`PositionReplay.checkInsertion(existing, PositionEvent.pending(...))` 把新交易放在同一时间已有交易之后，返回插入点之前的持仓及**从插入点起**第一个多空冲突（Q7：开仓方向与非零持仓相反）和第一个 multiplier 不一致（Q23：持仓非零时交易 multiplier ≠ 持仓的 multiplier）。持仓回到 0 时 multiplier 清空
-- 并发：交易事务先调 `CashLedgerService.lockAccount()`（与入金/出金同一把 `cash_account` 行锁），所以持仓检查、现金检查和写入都串行
-- **FEAT-004 接入方式**：平仓（BTC/STC）也存进 `option_trade`，`PositionReplay` 已按符号处理平仓（减少持仓）；FEAT-004 在 `PositionStep` 上加平仓检查（如平仓张数 ≤ 插入点持仓、方向必须与持仓相反、补录后之后的平仓仍不超量），新增 `CashSourceType.OPTION_CLOSE` 和释放冻结的负 `frozen_change`；FIFO 批次匹配按同一 `(traded_at, id)` 顺序
-- 已知限制：每次开仓检查加载该合约的全部交易（按合约索引 `ix_option_trade_contract`）
-- **交易列表（FEAT-002）**：`GET /api/option-trades`。`web/TradeListQuery` 解析/校验 query 参数（无法解析 → `BAD_REQUEST`，规则不满足 → `VALIDATION_ERROR`，`field` = 参数名）→ `domain/TradeFilter`（纯 Java；美东日期范围换算为 `[startDate 00:00 NY, endDate+1 00:00 NY)` 的 Instant 区间）→ `repository/OptionTradeSpecifications`（JPA Specification）→ 数据库分页，固定排序 `traded_at DESC, id DESC`。列表项与按 id 查询共用 `OptionTradeService.withLedgerEntries`：一页的交易一次批量查出对应流水（`CashLedgerService.findBySources`），取 `cashChange`/`frozenChange`/`ledgerEntryId`
+  - `domain/`（纯 Java）：`ContractKey`（合约标识 + 显示名 `AAPL 2026-12-18 200 P`，strike 去尾零）、`Symbols`（标的规范化）、`OptionType`、`TradeAction`（方向符号、是否开仓）、`OpenTradeTerms`（现金变动、担保 = 行权价 × multiplier × 张数 按分向上取整、流水说明 `describe`）、`LotTrade` / `ContractReplay` / `ContractHistory` / `ReplayedTrade` / `ViolationKind` / `CloseMatch`（合约重放：按时点持仓、FIFO 批次、整笔平仓匹配）、`PositionLot` / `OptionPosition` / `PositionBuilder`（当前持仓）、`TradeRejectionMessages`（中文拒绝原因）
+  - `service/OptionTradeService`：一个事务内按需求顺序检查 → 保存交易 → 追加流水（→ 改正之后平仓的释放冻结，见 Q39）
+  - `web/`：`OptionTradeController`（`POST /api/option-trades` 开仓、`POST /api/option-trades/closes` 平仓、`GET /api/option-trades`、`GET /api/option-trades/{id}`）、`OptionTradeDtos`、`@OpeningAction` / `@ClosingAction` 校验
+- **合约重放（`ContractReplay`，FEAT-001/003/004 共用）**：持仓不落库。某合约的全部交易按 `(traded_at, id)` 重放：开仓（BTO/STO）成为一个批次（`PositionLot`）；平仓（BTC/STC）必须找到相反方向的持仓、不超过持仓、且**正好覆盖最早 1 笔或连续多笔整批次**（Q21），移除这些批次并得到 `CloseMatch`（被平批次、释放冻结 = 批次冻结之和、已实现盈亏 = 批次开仓净额之和 + 本笔现金变动）。每步记录之前的持仓、multiplier、可平张数（批次累计张数）和违规（`ViolationKind`：开仓多空冲突 Q7、multiplier 不一致 Q23、平仓无持仓 / 方向不对 / 超量 / 非整笔批次）。持仓回到 0 时 multiplier 清空，可以换方向和 multiplier 重新开仓
+- 写入时把新交易（id = `LotTrade.NOT_YET_ENTERED`，排在同一时间已有交易之后）加入重放，用 `ContractHistory.firstViolationFrom` 找**从新交易起**的第一个违规（Q27/Q39：之后的已有交易也必须仍然合法）。开仓的检查顺序：非 multiplier 违规 → Q16 → multiplier 违规 → 现金；平仓：任一违规（按时间先后）→ 现金
+- 并发：交易事务先调 `CashLedgerService.lockAccount()`（与入金/出金同一把 `cash_account` 行锁），所以重放检查、现金检查和写入都串行
+- **平仓（FEAT-004）**：平仓 multiplier 取成交时点持仓的 multiplier（请求不带）；流水来源 `OPTION_CLOSE`，`amount` = BTC −净额 / STC +净额，`frozen_change` = −释放冻结。现金检查把"释放冻结 + 扣现金"作为同一笔变动插入现金重放（Q20：先释放再检查）
+- **Q39 的存储选择**：被平批次和已实现盈亏**不落库**，每次读取（按 id、列表、持仓）时重放该合约得出，补录更早的交易后自动按新的 FIFO 匹配，不需要改写任何记录。释放的冻结**落在流水的 `frozen_change`**，因为现金重放（`CashReplay`）只认流水、不认识交易。写入新交易（开仓或平仓）时，比较重放后每笔已有平仓的释放冻结与其流水的 `frozen_change`，不同的在同一事务里改正（`CashLedgerService.correctFrozenChanges`），现金检查也用改正后的值（`checkInsertion(..., frozenOverrides)`）。同一合约所有批次单价相同，只有批次冻结的 Q28 取整差异（3 位小数行权价、multiplier 不是 10 的倍数）才会让释放额变化；流水的 `amount` 永远不变。这样现金汇总、流水与持仓冻结合计始终一致
+- 已知限制：每次写入加载该合约的全部交易和全部现金流水重放；读取平仓时按合约重放（个人数据量小）
+- **交易列表（FEAT-002）**：`GET /api/option-trades`。`web/TradeListQuery` 解析/校验 query 参数（无法解析 → `BAD_REQUEST`，规则不满足 → `VALIDATION_ERROR`，`field` = 参数名）→ `domain/TradeFilter`（纯 Java；美东日期范围换算为 `[startDate 00:00 NY, endDate+1 00:00 NY)` 的 Instant 区间）→ `repository/OptionTradeSpecifications`（JPA Specification）→ 数据库分页，固定排序 `traded_at DESC, id DESC`。列表项与按 id 查询共用 `OptionTradeService.views`：一页的交易一次批量查出对应流水（`CashLedgerService.findBySources`），取 `cashChange`/`frozenChange`/`ledgerEntryId`
 - **持仓汇总（FEAT-003）**：`GET /api/option-positions`（`web/OptionPositionController` → `service/OptionPositionService`）。不落库：读出全部交易（`traded_at, id` 顺序）和对应流水，按合约分组，`domain/PositionBuilder` 把每个合约的交易按 FIFO（`LotTrade.FIFO_ORDER`）重放为 `OptionPosition`（方向、multiplier、`PositionLot` 列表；张数/开仓净额合计/每张平均（HALF_UP）/冻结都由批次求和得出），按 `OptionPosition.DISPLAY_ORDER`（到期日 → 标的 → 行权价数值 → CALL 在 PUT 前）排序。批次的开仓净额与冻结**取自该笔交易的现金流水**（`amount`、`frozen_change`），所以持仓冻结合计与现金汇总的冻结一致。"今天" = `Clock` 当前时间的美东日期，DTE = `ChronoUnit.DAYS.between(today, expiration)`
-- `PositionLot` 有原值/剩余值（张数、净额、冻结）。**FEAT-004 接入**：在 `PositionBuilder.build` 中处理平仓交易——按 FIFO 从最早批次扣减剩余张数，并按 FEAT-004 定的规则（Q21）扣减剩余净额/冻结，剩余张数为 0 的批次移除；目前遇到平仓交易会抛 `UnsupportedOperationException`（FEAT-004 之前不可能存在）
-- 交易对应的流水来源类型集中在 `OptionTradeService.TRADE_SOURCE_TYPES`（目前 `{OPTION_OPEN}`）。**FEAT-004 把 `OPTION_CLOSE` 加进这个集合**后，平仓交易会自动出现在列表与按 id 查询中，方向筛选已支持 BTC/STC
+- `PositionLot` 有原值/剩余值（张数、净额、冻结）；整笔平仓规则（Q21）下剩余值总等于原值，批次被平即整体移除。`PositionBuilder.build` = `ContractReplay` 的 `openLots`；`OptionPosition` 另给出 `closeAction`、`allowedCloseContracts`、`closable(today)`（today ≤ 到期日，Q36）
+- 交易对应的流水来源类型集中在 `OptionTradeService.TRADE_SOURCE_TYPES`（`{OPTION_OPEN, OPTION_CLOSE}`）；以后新的交易来源（如 M2 到期作废/指派）加到这里。列表项和按 id 查询的平仓带 `coveredLots`、`realizedPnl`（同一页按合约各重放一次）
 
 ### E2E 测试支持（`e2e` profile）
 - 用途：Playwright 套件只启动一个后端，每个测试前调用 `POST /api/test-support/reset` 得到干净的库，代替每个测试重启后端
@@ -109,12 +111,12 @@ frontend/
     ├── api/
     │   ├── types.ts      按 API 契约手写的请求/响应类型（含统一错误格式 ApiErrorResponse）
     │   ├── client.ts     fetch 封装 apiRequest<T>() 与 ApiError
-    │   └── <feature>.ts  每个领域一个文件：请求函数 + queryKey（health.ts；cash.ts: getCashSummary/getCashLedger/createCashTransfer、cashQueryKeys；optionTrades.ts: createOptionTrade/getOptionTrade/listOptionTrades、optionTradeQueryKeys；optionPositions.ts: getOptionPositions、optionPositionQueryKeys）
-    ├── pages/            路由级页面组件（HomePage、CashPage、OpenTradePage、TradeListPage、PositionsPage、NotFoundPage）
+    │   └── <feature>.ts  每个领域一个文件：请求函数 + queryKey（health.ts；cash.ts: getCashSummary/getCashLedger/createCashTransfer、cashQueryKeys；optionTrades.ts: createOptionTrade/createCloseTrade/getOptionTrade/listOptionTrades、optionTradeQueryKeys；optionPositions.ts: getOptionPositions、optionPositionQueryKeys）
+    ├── pages/            路由级页面组件（HomePage、CashPage、TradeEntryPage、TradeListPage、PositionsPage、NotFoundPage）
     ├── components/       跨页面复用组件：QueryError（查询错误 + 重试）
     │   ├── cash/         CashSummaryCard（可复用现金汇总）、CashTransferForm + cashTransferValidation、CashLedgerTable
-    │   └── trade/        OpenTradeForm + openTradeValidation、OpenTradeConfirmation（FEAT-001）；TradeFilterForm、TradeTable、tradeListFilters（FEAT-002 列表筛选与 URL 状态）；tradeLabels（方向文案、正负颜色，共用）
-    │   └── position/     PositionTable（可展开批次）、positionLinks（持仓 → 交易列表 URL）（FEAT-003）
+    │   └── trade/        TradeEntryForm（录入交易，开仓 + 平仓）+ openTradeValidation、TradeConfirmation（开/平仓确认，含被平批次与已实现盈亏）、tradeFormSupport（字段错误映射、保存后刷新、净额标签）；TradeFilterForm、TradeTable、tradeListFilters（FEAT-002 列表筛选与 URL 状态）；tradeLabels（方向文案、正负颜色，共用）
+    │   └── position/     PositionTable（可展开批次、平仓按钮）、ClosePositionModal（平仓对话框，FEAT-004）、positionLinks（持仓 → 交易列表 URL）（FEAT-003）
     ├── utils/format.ts   统一的显示格式化（时间、金额）
     └── test/             setup.ts（jest-dom、matchMedia / ResizeObserver polyfill、清理 mock）、render.tsx（renderWithProviders、jsonResponse、mockFetch）
 ```
@@ -125,8 +127,8 @@ frontend/
 |------|------|------|
 | `/` | `HomePage` | 调 `GET /api/health` 显示后端状态、版本、服务器时间（纽约时区） |
 | `/trades` | `TradeListPage` | FEAT-002 交易列表：筛选 + 只读表格 + 分页；筛选/页码/每页条数都在 URL 查询参数里（导航"交易"） |
-| `/positions` | `PositionsPage` | FEAT-003 期权持仓：截至日期/持仓数/冻结合计 + 持仓表（可展开 FIFO 批次，合约链接到 `/trades` 筛选）（导航"持仓"） |
-| `/trades/new` | `OpenTradePage` | FEAT-001 录入开仓（BTO/STO）：现金汇总 + 开仓表单 + 成功确认（导航"录入开仓"） |
+| `/positions` | `PositionsPage` | FEAT-003 期权持仓：截至日期/持仓数/冻结合计 + 持仓表（可展开 FIFO 批次，合约链接到 `/trades` 筛选；FEAT-004 可平仓行有"平仓"按钮，打开平仓对话框）（导航"持仓"） |
+| `/trades/new` | `TradeEntryPage` | 录入交易（FEAT-001 开仓 BTO/STO + FEAT-004 平仓 BTC/STC，按方向调用不同接口）：现金汇总 + 表单 + 成功确认（导航"录入交易"） |
 | `/cash` | `CashPage` | FEAT-007 资金：现金汇总、入金/出金表单、现金流水（导航"资金"） |
 | `*` | `NotFoundPage` | 404 |
 
@@ -152,5 +154,6 @@ frontend/
 - 用户录入的日期（如到期日）用原生 `type="date"`，原样以 `YYYY-MM-DD` 发送
 - 表单只做格式校验，文案尽量与后端 `details[].message` 一致；业务校验（担保、现金、持仓方向、multiplier）只在后端，422 的 `message` 原文显示
 - 交易方向显示 `代码（中文）`：BTO 买入开仓、STO 卖出开仓、BTC 买入平仓、STC 卖出平仓，未知值原样显示
+- 平仓：张数只能从后端 `allowedCloseContracts` 中选，按钮按 `closable` 显示，方向取 `closeAction`；已实现盈亏、被平批次、冻结释放全部取后端值
 - 持仓 DTE、到期状态、平均净额、冻结等全部取后端字段显示（`expirationStatus` 决定"今天到期"/红色"已过期 N 天"），前端不做日期或金额计算
 - 现金流水：已知 `sourceType` 显示中文（`DEPOSIT` 入金、`WITHDRAWAL` 出金、`OPTION_OPEN` 期权开仓），未知值原样显示；`frozenChange` 单独一列，0 显示 `—`

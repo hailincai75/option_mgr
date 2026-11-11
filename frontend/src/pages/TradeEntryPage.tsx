@@ -1,9 +1,9 @@
 import { Space } from 'antd'
 import { CashSummaryCard } from '../components/cash/CashSummaryCard'
-import { OpenTradeForm } from '../components/trade/OpenTradeForm'
+import { TradeEntryForm } from '../components/trade/TradeEntryForm'
 
-/** 录入开仓 page (FEAT-001): current cash summary above the opening-trade form. */
-export function OpenTradePage() {
+/** 录入交易 page (FEAT-001 opens, FEAT-004 closes): current cash summary above the trade form. */
+export function TradeEntryPage() {
   return (
     <Space
       orientation="vertical"
@@ -12,7 +12,7 @@ export function OpenTradePage() {
       data-testid="open-trade-page"
     >
       <CashSummaryCard size="small" />
-      <OpenTradeForm />
+      <TradeEntryForm />
     </Space>
   )
 }
