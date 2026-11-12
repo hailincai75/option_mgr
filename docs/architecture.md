@@ -18,7 +18,8 @@ com.optionmgr
 ├── common/time/       MarketTime：美东本地时间 ↔ UTC Instant（America/New_York，java.time 默认 DST 规则）
 ├── health/            GET /api/health
 ├── cash/              FEAT-007 资金账户：入金/出金、现金汇总、统一现金流水（见下"现金流水模型"）
-├── trade/             FEAT-001 期权交易（目前只有开仓 BTO/STO）与按时点持仓重放、FEAT-002 交易列表与筛选（见下"期权交易与持仓模型"）
+├── trade/             期权交易：开仓 FEAT-001、列表 FEAT-002、持仓 FEAT-003、平仓 FEAT-004、修改/删除 FEAT-005（见下"期权交易与持仓模型"）
+├── audit/             FEAT-005 审计记录：只追加，GET /api/audit-log（见下"修改、删除与审计"）
 ├── testsupport/       仅 `e2e` profile：POST /api/test-support/reset（见下"E2E 测试支持"）
 └── <feature>/         以后的功能，例如 position/
     ├── web/           @RestController + 请求/响应 DTO（record），只做参数校验和映射
@@ -70,6 +71,17 @@ com.optionmgr
 - `PositionLot` 有原值/剩余值（张数、净额、冻结）；整笔平仓规则（Q21）下剩余值总等于原值，批次被平即整体移除。`PositionBuilder.build` = `ContractReplay` 的 `openLots`；`OptionPosition` 另给出 `closeAction`、`allowedCloseContracts`、`closable(today)`（today ≤ 到期日，Q36）
 - 交易对应的流水来源类型集中在 `OptionTradeService.TRADE_SOURCE_TYPES`（`{OPTION_OPEN, OPTION_CLOSE}`）；以后新的交易来源（如 M2 到期作废/指派）加到这里。列表项和按 id 查询的平仓带 `coveredLots`、`realizedPnl`（同一页按合约各重放一次）
 
+### 修改、删除与审计（FEAT-005）
+- 接口：`PUT` / `DELETE /api/option-trades/{id}`（`service/OptionTradeEditService`），`PUT` / `DELETE /api/cash/transfers/{id}`（`cash/service/CashTransferEditService`），`GET /api/audit-log`（`audit/`）
+- 原则：把改动应用到全部历史上重新检查，任何一笔交易或任何时点不成立就整笔拒绝，什么都不写。都在一个事务里，先拿 `cash_account` 行锁
+  - 交易：用同一个 id 替换（修改）或去掉（删除）该笔 `LotTrade`，`ContractReplay` 重放整个合约；被修改的那笔本身违规 → "在成交时……"文案，其它交易违规 → "修改后/删除后……"文案（`TradeRejectionMessages.of(..., verb)`）；删除被平仓覆盖的开仓且那笔平仓因此违规 → `deletedOpenStillClosed`
+  - 现金：`CashLedgerService.replayWithChanges(replacements, removals)` 用修改后的流水（同一流水 id，即录入顺序不变）重放整个现金流水，`CashReplay.firstViolation` 找第一个总现金/可用 < 0 的时点（Q19）；之后的 STO put 不重查 Q18（Q41），被修改的 STO put 本身在张数/multiplier/时间变化时按 Q18 检查
+  - 通过后：交易实体 `update(...)`、流水 `CashLedgerEntryEntity.update(...)`（原地，id 不变）或删除；其它平仓释放冻结的改正（`OptionTradeService.frozenCorrections`）与新增交易时相同，但记入审计的 `sideEffects`（Q42）
+  - 修改内容与原记录相同 → 422 `NO_CHANGES`，不写任何东西
+- 审计表 `audit_record`（`V4__audit_record.sql`）：只追加（实体 `@Immutable`，没有修改/删除接口）。`before_json` / `after_json`（完整内容）、`changes_json`（显示用的字段变化）、`side_effects_json`（连带变化）以 JSON 文本存 `VARCHAR(10000)`，读取时原样作为 JSON 对象返回。`AuditService.record` 要求在调用方事务里（`Propagation.MANDATORY`），与改动一起提交或回滚
+- 审计对象被删除后仍可在审计记录里按 `objectType` + `objectId` 查到（不设外键）
+- e2e 重置按元数据自动包含 `audit_record`（`TestSupportResetE2eProfileTest` 已断言）
+
 ### E2E 测试支持（`e2e` profile）
 - 用途：Playwright 套件只启动一个后端，每个测试前调用 `POST /api/test-support/reset` 得到干净的库，代替每个测试重启后端
 - 启用：`SPRING_PROFILES_ACTIVE=e2e` 或 `--spring.profiles.active=e2e`（例如 `java -jar build/libs/<boot jar> --spring.profiles.active=e2e`，或 `gradlew.bat bootRun --args="--spring.profiles.active=e2e"`）。不启用时 `testsupport` 的 bean（`TestSupportController`、`DatabaseResetService`，都标 `@Profile("e2e")`）不存在，路径返回 404
@@ -111,11 +123,12 @@ frontend/
     ├── api/
     │   ├── types.ts      按 API 契约手写的请求/响应类型（含统一错误格式 ApiErrorResponse）
     │   ├── client.ts     fetch 封装 apiRequest<T>() 与 ApiError
-    │   └── <feature>.ts  每个领域一个文件：请求函数 + queryKey（health.ts；cash.ts: getCashSummary/getCashLedger/createCashTransfer、cashQueryKeys；optionTrades.ts: createOptionTrade/createCloseTrade/getOptionTrade/listOptionTrades、optionTradeQueryKeys；optionPositions.ts: getOptionPositions、optionPositionQueryKeys）
-    ├── pages/            路由级页面组件（HomePage、CashPage、TradeEntryPage、TradeListPage、PositionsPage、NotFoundPage）
-    ├── components/       跨页面复用组件：QueryError（查询错误 + 重试）
+    │   └── <feature>.ts  每个领域一个文件：请求函数 + queryKey（health.ts；cash.ts: getCashSummary/getCashLedger/createCashTransfer、cashQueryKeys；optionTrades.ts: createOptionTrade/createCloseTrade/getOptionTrade/listOptionTrades/updateOptionTrade/deleteOptionTrade；cash.ts 另有 updateCashTransfer/deleteCashTransfer；auditLog.ts: getAuditLog、auditLogQueryKeys、optionTradeQueryKeys；optionPositions.ts: getOptionPositions、optionPositionQueryKeys）
+    ├── pages/            路由级页面组件（HomePage、CashPage、TradeEntryPage、TradeListPage、PositionsPage、AuditLogPage、NotFoundPage）
+    ├── components/       跨页面复用组件：QueryError（查询错误 + 重试）、DeleteConfirmModal（删除确认，FEAT-005）
     │   ├── cash/         CashSummaryCard（可复用现金汇总）、CashTransferForm + cashTransferValidation、CashLedgerTable
-    │   └── trade/        TradeEntryForm（录入交易，开仓 + 平仓）+ openTradeValidation、TradeConfirmation（开/平仓确认，含被平批次与已实现盈亏）、tradeFormSupport（字段错误映射、保存后刷新、净额标签）；TradeFilterForm、TradeTable、tradeListFilters（FEAT-002 列表筛选与 URL 状态）；tradeLabels（方向文案、正负颜色，共用）
+    │   └── trade/        TradeEntryForm（录入交易，开仓 + 平仓）、EditTradeModal（修改交易，FEAT-005）+ openTradeValidation、TradeConfirmation（开/平仓确认，含被平批次与已实现盈亏）、tradeFormSupport（字段错误映射、保存后刷新、净额标签）；TradeFilterForm、TradeTable、tradeListFilters（FEAT-002 列表筛选与 URL 状态）；tradeLabels（方向文案、正负颜色，共用）
+    │   ├── audit/        AuditTable（可展开修改前后）、auditSearch（审计页 URL 状态与校验）、auditLinks（各行"历史"链接）（FEAT-005）
     │   └── position/     PositionTable（可展开批次、平仓按钮）、ClosePositionModal（平仓对话框，FEAT-004）、positionLinks（持仓 → 交易列表 URL）（FEAT-003）
     ├── utils/format.ts   统一的显示格式化（时间、金额）
     └── test/             setup.ts（jest-dom、matchMedia / ResizeObserver polyfill、清理 mock）、render.tsx（renderWithProviders、jsonResponse、mockFetch）
@@ -129,6 +142,7 @@ frontend/
 | `/trades` | `TradeListPage` | FEAT-002 交易列表：筛选 + 只读表格 + 分页；筛选/页码/每页条数都在 URL 查询参数里（导航"交易"） |
 | `/positions` | `PositionsPage` | FEAT-003 期权持仓：截至日期/持仓数/冻结合计 + 持仓表（可展开 FIFO 批次，合约链接到 `/trades` 筛选；FEAT-004 可平仓行有"平仓"按钮，打开平仓对话框）（导航"持仓"） |
 | `/trades/new` | `TradeEntryPage` | 录入交易（FEAT-001 开仓 BTO/STO + FEAT-004 平仓 BTC/STC，按方向调用不同接口）：现金汇总 + 表单 + 成功确认（导航"录入交易"） |
+| `/audit` | `AuditLogPage` | FEAT-005 审计记录：只读，按对象筛选（URL 参数 `objectType`/`objectId`/`page`/`size`），可展开修改前后（导航"审计记录"） |
 | `/cash` | `CashPage` | FEAT-007 资金：现金汇总、入金/出金表单、现金流水（导航"资金"） |
 | `*` | `NotFoundPage` | 404 |
 
@@ -140,7 +154,7 @@ frontend/
   - 请求没到服务器 → `code: 'NETWORK_ERROR'`，`status: 0`
   - 响应不是 JSON 或错误体不符合契约（例如 Vite 代理在后端未启动时返回的 502）→ `code: 'INVALID_RESPONSE'`
 - 每个查询在页面上处理 loading / error（显示错误信息 + 重试按钮，可用 `components/QueryError`）/ 空数据三种状态
-- 写操作成功后 invalidate 该领域的根 key（如 `cashQueryKeys.all` = `["cash"]`），依赖它的组件（如 `CashSummaryCard`）自动刷新；以后任何改变现金的操作也要 invalidate `["cash"]`；任何新增/修改交易的操作还要 invalidate `optionTradeQueryKeys.lists` = `["option-trades","list"]` 和 `optionPositionQueryKeys.all` = `["option-positions"]`（FEAT-001 开仓已这样做）
+- 写操作成功后 invalidate 该领域的根 key（如 `cashQueryKeys.all` = `["cash"]`），依赖它的组件（如 `CashSummaryCard`）自动刷新；以后任何改变现金的操作也要 invalidate `["cash"]`；任何新增/修改交易的操作还要 invalidate `optionTradeQueryKeys.lists` = `["option-trades","list"]` 和 `optionPositionQueryKeys.all` = `["option-positions"]`；FEAT-005 起所有写操作（新增、修改、删除交易或入金出金）统一调用 `tradeFormSupport.refreshAfterChange`，invalidate `["cash"]`、`["option-trades"]`、`["option-positions"]`、`["audit-log"]`
 - 列表页的筛选/分页状态以 URL 查询参数为唯一来源（`useSearchParams`），改变时 push 历史，后退可恢复；URL 中不合法的筛选值回填并在字段下报错、不发请求，不合法的 page/size 回退到默认值
 - 表单提交失败：`VALIDATION_ERROR` / `BAD_REQUEST` 的 `details[].field` 用 `form.setFields` 显示到同名字段；无法对应字段的错误和业务错误（如 `CASH_INSUFFICIENT`，message 是中文可直接显示）显示在提交按钮上方；保留用户输入
 
@@ -155,5 +169,6 @@ frontend/
 - 表单只做格式校验，文案尽量与后端 `details[].message` 一致；业务校验（担保、现金、持仓方向、multiplier）只在后端，422 的 `message` 原文显示
 - 交易方向显示 `代码（中文）`：BTO 买入开仓、STO 卖出开仓、BTC 买入平仓、STC 卖出平仓，未知值原样显示
 - 平仓：张数只能从后端 `allowedCloseContracts` 中选，按钮按 `closable` 显示，方向取 `closeAction`；已实现盈亏、被平批次、冻结释放全部取后端值
+- 修改 / 删除（FEAT-005）：对话框里不可改字段只显示；`PUT` 整体替换可改字段（每次发送全部可改字段）；422 原文显示、输入保留；删除用通用确认框，被拒时对话框不关闭。审计记录的 `changes[].text`、`sideEffects[].text` 原样显示
 - 持仓 DTE、到期状态、平均净额、冻结等全部取后端字段显示（`expirationStatus` 决定"今天到期"/红色"已过期 N 天"），前端不做日期或金额计算
 - 现金流水：已知 `sourceType` 显示中文（`DEPOSIT` 入金、`WITHDRAWAL` 出金、`OPTION_OPEN` 期权开仓），未知值原样显示；`frozenChange` 单独一列，0 显示 `—`

@@ -77,6 +77,17 @@ public class CashLedgerEntryEntity {
         this.frozenChange = frozenChange;
     }
 
+    /** FEAT-005: an edited record keeps its entry (id = entry order) and gets its new values. */
+    public void update(Instant occurredAt, CashSourceType sourceType, BigDecimal amount, BigDecimal frozenChange,
+                       String description, String remark) {
+        this.occurredAt = occurredAt;
+        this.sourceType = sourceType;
+        this.amount = amount;
+        this.frozenChange = frozenChange;
+        this.description = description;
+        this.remark = remark;
+    }
+
     public CashMovement toMovement() {
         return new CashMovement(occurredAt, id, amount, frozenChange);
     }

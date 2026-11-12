@@ -28,6 +28,8 @@ public enum ErrorCode {
     CLOSE_EXCEEDS_POSITION(HttpStatus.UNPROCESSABLE_ENTITY),
     /** FEAT-004 Q21: close contracts are not the earliest whole lots. */
     CLOSE_NOT_WHOLE_LOTS(HttpStatus.UNPROCESSABLE_ENTITY),
+    /** FEAT-005: an edit that changes nothing ("没有修改"); nothing saved, nothing audited. */
+    NO_CHANGES(HttpStatus.UNPROCESSABLE_ENTITY),
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR);
 
     private final HttpStatus status;

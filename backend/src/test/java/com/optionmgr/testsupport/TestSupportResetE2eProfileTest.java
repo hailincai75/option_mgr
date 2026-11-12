@@ -65,7 +65,7 @@ class TestSupportResetE2eProfileTest {
     @Test
     void coversEveryTableFromTheSchemaExceptFlywayHistory() {
         assertThat(resetService.tables())
-                .contains("cash_account", "cash_transfer", "cash_ledger_entry", "option_trade")
+                .contains("cash_account", "cash_transfer", "cash_ledger_entry", "option_trade", "audit_record")
                 .doesNotContain("flyway_schema_history");
     }
 

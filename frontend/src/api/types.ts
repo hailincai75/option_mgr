@@ -94,7 +94,8 @@ export interface CashTransfer {
  * Ledger source type. Later features add values (e.g. option open); unknown values must be
  * displayed as-is, so the type stays open.
  */
-export type CashSourceType = 'DEPOSIT' | 'WITHDRAWAL' | 'OPTION_OPEN' | 'OPTION_CLOSE' | (string & {})
+export type CashSourceType =
+  'DEPOSIT' | 'WITHDRAWAL' | 'OPTION_OPEN' | 'OPTION_CLOSE' | (string & {})
 
 /** Contract: `GET /api/cash/ledger` → `items[]`. */
 export interface CashLedgerEntry {
@@ -326,4 +327,80 @@ export interface CreateCloseTradeRequest {
   netAmount: MoneyString
   tradedAtLocal: LocalDateTimeString
   note: string | null
+}
+
+// ---------------------------------------------------------------------------
+// FEAT-005 修改 / 删除与审计
+// ---------------------------------------------------------------------------
+
+/**
+ * Contract: `PUT /api/option-trades/{id}` request body — full replacement of the editable fields
+ * (omitting / null `note` clears it). `multiplier` only for opens (null = unchanged); omit for closes.
+ */
+export interface UpdateOptionTradeRequest {
+  contracts: number
+  netAmount: MoneyString
+  tradedAtLocal: LocalDateTimeString
+  multiplier?: number | null
+  note: string | null
+}
+
+/** Contract: `PUT /api/cash/transfers/{id}` request body (same as create). */
+export type UpdateCashTransferRequest = CreateCashTransferRequest
+
+export type AuditObjectType = 'OPTION_TRADE' | 'CASH_TRANSFER'
+export type AuditOperation = 'UPDATE' | 'DELETE' | (string & {})
+
+/** A full snapshot of the object (trade or transfer fields, see contract); display only. */
+export type AuditSnapshot = Record<string, string | number | null>
+
+export interface AuditFieldChange {
+  field: string
+  label: string
+  before: string
+  after: string
+  /** e.g. "净额：360.00 → 365.00" — displayed as-is. */
+  text: string
+}
+
+export interface AuditSideEffect {
+  tradeId: number
+  action: string
+  contractLabel: string
+  field: string
+  before: string
+  after: string
+  /** e.g. "交易 #3 BTC 冻结变动 −24.70 → −24.69" — displayed as-is. */
+  text: string
+}
+
+/** Contract: `GET /api/audit-log` → `items[]`. */
+export interface AuditRecord {
+  id: number
+  operatedAt: InstantString
+  operation: AuditOperation
+  objectType: AuditObjectType | (string & {})
+  objectId: number
+  summary: string
+  before: AuditSnapshot
+  /** null for DELETE. */
+  after: AuditSnapshot | null
+  changes: AuditFieldChange[]
+  sideEffects: AuditSideEffect[]
+}
+
+/** Contract: `GET /api/audit-log?objectType=&objectId=&page=&size=` → 200. */
+export interface AuditLogPage {
+  items: AuditRecord[]
+  page: number
+  size: number
+  totalItems: number
+  totalPages: number
+}
+
+export interface AuditLogParams {
+  objectType?: AuditObjectType
+  objectId?: number
+  page: number
+  size: number
 }

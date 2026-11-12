@@ -1,5 +1,6 @@
 import { Layout, Menu, Typography } from 'antd'
 import { Link, Outlet, Route, Routes, useLocation } from 'react-router-dom'
+import { AuditLogPage } from './pages/AuditLogPage'
 import { CashPage } from './pages/CashPage'
 import { HomePage } from './pages/HomePage'
 import { NotFoundPage } from './pages/NotFoundPage'
@@ -37,6 +38,14 @@ const NAV_ITEMS = [
     label: (
       <Link to="/cash" data-testid="nav-cash">
         资金
+      </Link>
+    ),
+  },
+  {
+    key: '/audit',
+    label: (
+      <Link to="/audit" data-testid="nav-audit">
+        审计记录
       </Link>
     ),
   },
@@ -82,6 +91,7 @@ export function App() {
         <Route path="positions" element={<PositionsPage />} />
         <Route path="trades/new" element={<TradeEntryPage />} />
         <Route path="cash" element={<CashPage />} />
+        <Route path="audit" element={<AuditLogPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>

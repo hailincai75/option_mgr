@@ -1,8 +1,17 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { Card, Pagination, Table, Typography } from 'antd'
+import { Button, Card, Pagination, Space, Table, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import type { HTMLAttributes } from 'react'
-import { CASH_LEDGER_PAGE_SIZE, cashQueryKeys, getCashLedger } from '../../api/cash'
+import { type HTMLAttributes, useState } from 'react'
+import { Link } from 'react-router-dom'
+import {
+  CASH_LEDGER_PAGE_SIZE,
+  cashQueryKeys,
+  deleteCashTransfer,
+  getCashLedger,
+} from '../../api/cash'
+import { auditUrl } from '../audit/auditLinks'
+import { DeleteConfirmModal } from '../DeleteConfirmModal'
+import { EditTransferModal } from './EditTransferModal'
 import type { CashLedgerEntry, CashSourceType } from '../../api/types'
 import { decimalSign, EMPTY_VALUE, formatDateTimeNY, formatMoney } from '../../utils/format'
 import { QueryError } from '../QueryError'
@@ -91,6 +100,60 @@ const columns: ColumnsType<CashLedgerEntry> = [
   },
 ]
 
+/** Only deposits / withdrawals are edited here; option rows are edited in the trade list. */
+function isTransfer(entry: CashLedgerEntry): boolean {
+  return entry.sourceType === 'DEPOSIT' || entry.sourceType === 'WITHDRAWAL'
+}
+
+/** e.g. "入金 +80,000.00，2026-10-26 10:00". */
+function transferSummary(entry: CashLedgerEntry): string {
+  const amount = formatMoney(entry.amount, { signed: true })
+  return `${sourceTypeLabel(entry.sourceType)} ${amount}，${formatDateTimeNY(entry.occurredAt)}`
+}
+
+function actionsColumn(
+  onEdit: (entry: CashLedgerEntry) => void,
+  onDelete: (entry: CashLedgerEntry) => void,
+): ColumnsType<CashLedgerEntry>[number] {
+  return {
+    title: '操作',
+    key: 'actions',
+    render: (_value: unknown, entry: CashLedgerEntry) =>
+      isTransfer(entry) ? (
+        <Space size={4} style={{ whiteSpace: 'nowrap' }}>
+          <Button
+            size="small"
+            type="link"
+            onClick={() => {
+              onEdit(entry)
+            }}
+            data-testid="cash-ledger-edit"
+          >
+            修改
+          </Button>
+          <Button
+            size="small"
+            type="link"
+            danger
+            onClick={() => {
+              onDelete(entry)
+            }}
+            data-testid="cash-ledger-delete"
+          >
+            删除
+          </Button>
+          <Link to={auditUrl('CASH_TRANSFER', entry.sourceId)} data-testid="cash-ledger-history">
+            历史
+          </Link>
+        </Space>
+      ) : (
+        <Link to="/trades" data-testid="cash-ledger-trades-link">
+          在交易列表中修改
+        </Link>
+      ),
+  }
+}
+
 interface CashLedgerTableProps {
   /** 1-based page number (controlled by the parent so a new entry can jump back to page 1). */
   page: number
@@ -98,7 +161,10 @@ interface CashLedgerTableProps {
   pageSize?: number
 }
 
-/** Paginated cash ledger (`GET /api/cash/ledger`), newest first. */
+/**
+ * Paginated cash ledger (`GET /api/cash/ledger`), newest first. Deposit / withdrawal rows have
+ * 修改 / 删除 / 历史 (FEAT-005).
+ */
 export function CashLedgerTable({
   page,
   onPageChange,
@@ -109,6 +175,8 @@ export function CashLedgerTable({
     queryFn: ({ signal }) => getCashLedger(page, pageSize, signal),
     placeholderData: keepPreviousData,
   })
+  const [editing, setEditing] = useState<CashLedgerEntry | null>(null)
+  const [deleting, setDeleting] = useState<CashLedgerEntry | null>(null)
 
   return (
     <Card title="现金流水" data-testid="cash-ledger">
@@ -125,7 +193,7 @@ export function CashLedgerTable({
           <Table<CashLedgerEntry>
             rowKey="id"
             size="small"
-            columns={columns}
+            columns={[...columns, actionsColumn(setEditing, setDeleting)]}
             dataSource={data?.items ?? []}
             loading={isPending || isFetching}
             pagination={false}
@@ -159,6 +227,27 @@ export function CashLedgerTable({
             </div>
           )}
         </>
+      )}
+      {editing !== null && (
+        <EditTransferModal
+          key={editing.id}
+          entry={editing}
+          onDone={() => {
+            setEditing(null)
+          }}
+        />
+      )}
+      {deleting !== null && (
+        <DeleteConfirmModal
+          key={deleting.id}
+          title={`删除${sourceTypeLabel(deleting.sourceType)} #${String(deleting.sourceId)}`}
+          summary={transferSummary(deleting)}
+          onConfirm={() => deleteCashTransfer(deleting.sourceId)}
+          onDone={() => {
+            setDeleting(null)
+          }}
+          testIdPrefix="transfer-delete"
+        />
       )}
     </Card>
   )

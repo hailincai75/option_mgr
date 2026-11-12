@@ -85,6 +85,15 @@ public class OptionTradeEntity {
         this.createdAt = createdAt;
     }
 
+    /** FEAT-005 edit (Q43): only these fields change; contract and action never do. The id (entry order) stays. */
+    public void update(int contracts, int multiplier, BigDecimal netAmount, Instant tradedAt, String note) {
+        this.contracts = contracts;
+        this.multiplier = multiplier;
+        this.netAmount = netAmount;
+        this.tradedAt = tradedAt;
+        this.note = note;
+    }
+
     public ContractKey contract() {
         return new ContractKey(symbol, expirationDate, strike, optionType);
     }

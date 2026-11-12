@@ -82,6 +82,7 @@ abstract class CashSystemTestBase {
         jdbc.update("DELETE FROM cash_ledger_entry");
         jdbc.update("DELETE FROM cash_transfer");
         jdbc.update("DELETE FROM option_trade");
+        jdbc.update("DELETE FROM audit_record");
     }
 
     // ------------------------------------------------------------------ HTTP

@@ -52,6 +52,14 @@ public class CashTransferEntity {
         this.createdAt = createdAt;
     }
 
+    /** FEAT-005 edit (Q24): type, amount, time and remark; the id (entry order) stays. */
+    public void update(TransferType type, BigDecimal amount, Instant occurredAt, String remark) {
+        this.type = type;
+        this.amount = amount;
+        this.occurredAt = occurredAt;
+        this.remark = remark;
+    }
+
     public Long getId() {
         return id;
     }

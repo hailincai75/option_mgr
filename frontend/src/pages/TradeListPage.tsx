@@ -1,9 +1,9 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Alert, Button, Card, Pagination, Radio, Space, Typography } from 'antd'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
-import { listOptionTrades, optionTradeQueryKeys } from '../api/optionTrades'
+import { deleteOptionTrade, listOptionTrades, optionTradeQueryKeys } from '../api/optionTrades'
 import type { OptionTrade } from '../api/types'
 import { QueryError } from '../components/QueryError'
 import { TradeFilterForm } from '../components/trade/TradeFilterForm'
@@ -20,7 +20,17 @@ import {
   type TradeFilterValues,
   type TradeListUrlState,
 } from '../components/trade/tradeListFilters'
+import { DeleteConfirmModal } from '../components/DeleteConfirmModal'
+import { EditTradeModal } from '../components/trade/EditTradeModal'
 import { TradeTable } from '../components/trade/TradeTable'
+import { formatDateTimeNY, formatMoney } from '../utils/format'
+
+/** e.g. "STO 1 张 AAPL 2026-12-18 200 P，2026-11-04 11:00，+360.00" (backend values, formatted). */
+function tradeSummary(trade: OptionTrade): string {
+  const time = formatDateTimeNY(trade.tradedAt)
+  const cash = formatMoney(trade.cashChange, { signed: true })
+  return `${trade.action} ${String(trade.contracts)} 张 ${trade.contractLabel}，${time}，${cash}`
+}
 
 /** Field errors the backend reported for the filter query parameters (400 with details). */
 function serverFilterErrors(error: Error | null): Partial<Record<TradeFilterField, string>> {
@@ -43,6 +53,8 @@ function serverFilterErrors(error: Error | null): Partial<Record<TradeFilterFiel
  */
 export function TradeListPage() {
   const [searchParams, setSearchParams] = useSearchParams()
+  const [editing, setEditing] = useState<OptionTrade | null>(null)
+  const [deleting, setDeleting] = useState<OptionTrade | null>(null)
   const state = parseTradeListSearch(searchParams)
   const clientErrors = validateTradeFilters(state.filters)
   const filtersValid = Object.keys(clientErrors).length === 0
@@ -142,6 +154,8 @@ export function TradeListPage() {
           loading={isPending || isFetching}
           empty={empty}
           onContractClick={filterByContract}
+          onEdit={setEditing}
+          onDelete={setDeleting}
         />
         {/* "共 N 条" also when filters match nothing (AC 2: 共 0 条); hidden for the fully empty 暂无交易 state. */}
         {data && (data.totalItems > 0 || activeFilters) && (
@@ -220,6 +234,27 @@ export function TradeListPage() {
       >
         {content}
       </Card>
+      {editing !== null && (
+        <EditTradeModal
+          key={editing.id}
+          trade={editing}
+          onDone={() => {
+            setEditing(null)
+          }}
+        />
+      )}
+      {deleting !== null && (
+        <DeleteConfirmModal
+          key={deleting.id}
+          title={`删除交易 #${String(deleting.id)}`}
+          summary={tradeSummary(deleting)}
+          onConfirm={() => deleteOptionTrade(deleting.id)}
+          onDone={() => {
+            setDeleting(null)
+          }}
+          testIdPrefix="trade-delete"
+        />
+      )}
     </Space>
   )
 }

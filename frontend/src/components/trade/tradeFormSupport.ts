@@ -1,5 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query'
 import type { RuleObject } from 'antd/es/form'
+import { auditLogQueryKeys } from '../../api/auditLog'
 import { cashQueryKeys } from '../../api/cash'
 import { ApiError } from '../../api/client'
 import { optionPositionQueryKeys } from '../../api/optionPositions'
@@ -53,17 +54,26 @@ export function applySubmitError<F extends string>(
   }
 }
 
-/** After any saved trade: cash summary/ledger, trade lists and positions refresh without reload. */
+/**
+ * After any saved, edited or deleted trade / transfer: cash summary and ledger, trades (lists
+ * and details), positions and the audit log refresh without reload.
+ */
+export async function refreshAfterChange(queryClient: QueryClient): Promise<void> {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: cashQueryKeys.all }),
+    queryClient.invalidateQueries({ queryKey: optionTradeQueryKeys.all }),
+    queryClient.invalidateQueries({ queryKey: optionPositionQueryKeys.all }),
+    queryClient.invalidateQueries({ queryKey: auditLogQueryKeys.all }),
+  ])
+}
+
+/** After a newly recorded trade (FEAT-001 / FEAT-004). */
 export async function refreshAfterTradeSaved(
   queryClient: QueryClient,
   trade: OptionTrade,
 ): Promise<void> {
+  await refreshAfterChange(queryClient)
   queryClient.setQueryData(optionTradeQueryKeys.detail(trade.id), trade)
-  await Promise.all([
-    queryClient.invalidateQueries({ queryKey: cashQueryKeys.all }),
-    queryClient.invalidateQueries({ queryKey: optionTradeQueryKeys.lists }),
-    queryClient.invalidateQueries({ queryKey: optionPositionQueryKeys.all }),
-  ])
 }
 
 /** Net-amount label by action: paid (BTO / BTC) or received (STO / STC). */

@@ -92,6 +92,39 @@ public class CashLedgerService {
                 .correctFrozenChange(Money.of(frozen)));
     }
 
+    /**
+     * FEAT-005: locks the account and replays the whole ledger with some entries replaced (by ledger id; the
+     * replacement keeps the id as its entry order) and some removed. Does not write anything.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public List<ReplayStep> replayWithChanges(Map<Long, CashMovement> replacements, Collection<Long> removals) {
+        lockAccount();
+        List<CashMovement> movements = new ArrayList<>();
+        for (CashMovement m : loadMovements()) {
+            if (removals.contains(m.sequence())) {
+                continue;
+            }
+            movements.add(replacements.getOrDefault(m.sequence(), m));
+        }
+        return CashReplay.replay(movements);
+    }
+
+    /** FEAT-005: updates an entry in place (keeps its id = entry order). */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void updateEntry(long id, Instant occurredAt, CashSourceType sourceType, BigDecimal amount,
+                            BigDecimal frozenChange, String description, String remark) {
+        lockAccount();
+        entries.findById(id).orElseThrow(() -> new IllegalStateException("ledger entry " + id + " missing"))
+                .update(occurredAt, sourceType, Money.of(amount), Money.of(frozenChange), description, remark);
+    }
+
+    /** FEAT-005: deletes the entry of a deleted record. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void deleteEntry(long id) {
+        lockAccount();
+        entries.deleteById(id);
+    }
+
     /** Appends a ledger entry; its id becomes its entry order. Caller must have checked and locked first. */
     @Transactional(propagation = Propagation.MANDATORY)
     public CashLedgerEntryEntity append(NewLedgerEntry entry) {

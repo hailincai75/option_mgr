@@ -4,6 +4,7 @@ import type {
   CashSummary,
   CashTransfer,
   CreateCashTransferRequest,
+  UpdateCashTransferRequest,
 } from './types'
 
 /** Query keys. Invalidate `cashQueryKeys.all` after anything that changes cash. */
@@ -35,4 +36,20 @@ export function getCashLedger(
 /** `POST /api/cash/transfers` → 201 */
 export function createCashTransfer(request: CreateCashTransferRequest): Promise<CashTransfer> {
   return apiRequest<CashTransfer>('/api/cash/transfers', { method: 'POST', body: request })
+}
+
+/** `PUT /api/cash/transfers/{id}` → 200 (FEAT-005: edit type, amount, time, remark). */
+export function updateCashTransfer(
+  id: number,
+  request: UpdateCashTransferRequest,
+): Promise<CashTransfer> {
+  return apiRequest<CashTransfer>(`/api/cash/transfers/${String(id)}`, {
+    method: 'PUT',
+    body: request,
+  })
+}
+
+/** `DELETE /api/cash/transfers/{id}` → 204 (FEAT-005, Q40). */
+export async function deleteCashTransfer(id: number): Promise<void> {
+  await apiRequest<null>(`/api/cash/transfers/${String(id)}`, { method: 'DELETE' })
 }

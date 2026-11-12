@@ -1,6 +1,8 @@
-import { Button, Table, Typography } from 'antd'
+import { Button, Space, Table, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { HTMLAttributes, ReactNode } from 'react'
+import { Link } from 'react-router-dom'
+import { auditUrl } from '../audit/auditLinks'
 import type { OptionTrade } from '../../api/types'
 import { decimalSign, EMPTY_VALUE, formatDateTimeNY, formatMoney } from '../../utils/format'
 import { SIGNED_MONEY_COLORS, tradeActionLabel } from './tradeLabels'
@@ -11,10 +13,23 @@ interface TradeTableProps {
   /** Shown instead of rows when `trades` is empty. */
   empty: ReactNode
   onContractClick: (trade: OptionTrade) => void
+  /** FEAT-005 row actions. */
+  onEdit: (trade: OptionTrade) => void
+  onDelete: (trade: OptionTrade) => void
 }
 
-/** Read-only trade rows in the order returned by the backend; values are only formatted. */
-export function TradeTable({ trades, loading, empty, onContractClick }: TradeTableProps) {
+/**
+ * Trade rows in the order returned by the backend; values are only formatted. Each row has
+ * 修改 / 删除 / 历史 (FEAT-005).
+ */
+export function TradeTable({
+  trades,
+  loading,
+  empty,
+  onContractClick,
+  onEdit,
+  onDelete,
+}: TradeTableProps) {
   const columns: ColumnsType<OptionTrade> = [
     {
       title: '成交时间（美东时间）',
@@ -107,6 +122,38 @@ export function TradeTable({ trades, loading, empty, onContractClick }: TradeTab
           </Typography.Text>
         )
       },
+    },
+    {
+      title: '操作',
+      key: 'actions',
+      render: (_value: unknown, trade) => (
+        <Space size={4} style={{ whiteSpace: 'nowrap' }}>
+          <Button
+            size="small"
+            type="link"
+            onClick={() => {
+              onEdit(trade)
+            }}
+            data-testid="trade-edit"
+          >
+            修改
+          </Button>
+          <Button
+            size="small"
+            type="link"
+            danger
+            onClick={() => {
+              onDelete(trade)
+            }}
+            data-testid="trade-delete"
+          >
+            删除
+          </Button>
+          <Link to={auditUrl('OPTION_TRADE', trade.id)} data-testid="trade-history">
+            历史
+          </Link>
+        </Space>
+      ),
     },
   ]
 

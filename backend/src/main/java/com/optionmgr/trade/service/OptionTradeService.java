@@ -122,7 +122,7 @@ public class OptionTradeService {
     }
 
     /** All stored trades of one contract with their ledger entries, as replay input. */
-    private record ContractTrades(List<LotTrade> trades, Map<Long, CashLedgerEntryEntity> ledgerByTrade) {
+    record ContractTrades(List<LotTrade> trades, Map<Long, CashLedgerEntryEntity> ledgerByTrade) {
     }
 
     // ------------------------------------------------------------------ open (FEAT-001)
@@ -282,7 +282,7 @@ public class OptionTradeService {
 
     // ------------------------------------------------------------------ helpers
 
-    private ContractTrades load(ContractKey c) {
+    ContractTrades load(ContractKey c) {
         List<OptionTradeEntity> entities = trades
                 .findBySymbolAndExpirationDateAndStrikeAndOptionTypeOrderByTradedAtAscIdAsc(
                         c.symbol(), c.expirationDate(), c.strike(), c.optionType());
@@ -322,7 +322,7 @@ public class OptionTradeService {
         });
     }
 
-    private static ErrorCode errorCode(ViolationKind kind) {
+    static ErrorCode errorCode(ViolationKind kind) {
         return switch (kind) {
             case OPEN_AGAINST_POSITION, CLOSE_WRONG_DIRECTION -> ErrorCode.POSITION_DIRECTION_CONFLICT;
             case MULTIPLIER_MISMATCH -> ErrorCode.MULTIPLIER_MISMATCH;
@@ -336,11 +336,18 @@ public class OptionTradeService {
      * Q39: existing closes whose released frozen cash differs under the new FIFO matching
      * (ledger entry id -&gt; new frozen change). Their cash amount never changes.
      */
-    private static Map<Long, BigDecimal> frozenCorrections(ContractTrades existing, ContractHistory history) {
+    static Map<Long, BigDecimal> frozenCorrections(ContractTrades existing, ContractHistory history) {
+        return frozenCorrections(existing, history, LotTrade.NOT_YET_ENTERED);
+    }
+
+    /** As above, ignoring the trade {@code excludedTradeId} (an edited close gets its new frozen change separately). */
+    static Map<Long, BigDecimal> frozenCorrections(ContractTrades existing, ContractHistory history,
+                                                   long excludedTradeId) {
         Map<Long, BigDecimal> corrections = new HashMap<>();
         for (ReplayedTrade s : history.steps()) {
             long id = s.trade().tradeId();
-            if (id == LotTrade.NOT_YET_ENTERED || s.trade().action().isOpening() || s.match().isEmpty()) {
+            if (id == LotTrade.NOT_YET_ENTERED || id == excludedTradeId || s.trade().action().isOpening()
+                    || s.match().isEmpty()) {
                 continue;
             }
             CashLedgerEntryEntity e = existing.ledgerByTrade().get(id);

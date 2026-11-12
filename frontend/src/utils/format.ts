@@ -126,3 +126,37 @@ export function nowLocalDateTimeNY(now: Date = new Date()): string {
   if (!parts) throw new Error('Invalid date')
   return `${parts.date}T${parts.time}`
 }
+
+function nySecondParts(instant: string | null | undefined) {
+  if (instant == null || instant.trim() === '') return null
+  const date = new Date(instant)
+  if (Number.isNaN(date.getTime())) return null
+  const parts: Partial<Record<Intl.DateTimeFormatPartTypes, string>> = {}
+  for (const part of dateTimeFormatter.formatToParts(date)) {
+    parts[part.type] = part.value
+  }
+  const { year, month, day, hour, minute, second } = parts
+  if (!year || !month || !day || !hour || !minute || !second) return null
+  return { date: `${year}-${month}-${day}`, time: `${hour}:${minute}`, second }
+}
+
+/**
+ * Formats an ISO-8601 UTC instant in America/New_York with seconds and without zone name:
+ * "2026-11-11T15:00:05Z" → "2026-11-11 10:00:05". Returns EMPTY_VALUE for null / invalid input.
+ */
+export function formatDateTimeSecondsNY(instant: string | null | undefined): string {
+  const parts = nySecondParts(instant)
+  return parts ? `${parts.date} ${parts.time}:${parts.second}` : EMPTY_VALUE
+}
+
+/**
+ * An instant as the value of `<input type="datetime-local">` in New York time, for prefilling
+ * edit forms: "YYYY-MM-DDTHH:mm", or "YYYY-MM-DDTHH:mm:ss" when the seconds are not zero (so an
+ * unchanged value is submitted unchanged). Returns '' for null / invalid input.
+ */
+export function toLocalDateTimeInputNY(instant: string | null | undefined): string {
+  const parts = nySecondParts(instant)
+  if (!parts) return ''
+  const base = `${parts.date}T${parts.time}`
+  return parts.second === '00' ? base : `${base}:${parts.second}`
+}

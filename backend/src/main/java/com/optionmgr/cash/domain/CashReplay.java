@@ -38,6 +38,11 @@ public final class CashReplay {
         return balance;
     }
 
+    /** First step after which total or available cash is negative (Q13/Q19), if any. */
+    public static Optional<ReplayStep> firstViolation(List<ReplayStep> steps) {
+        return steps.stream().filter(s -> !s.after().isValid()).findFirst();
+    }
+
     /**
      * Inserts {@code candidate} into {@code existing} and replays. Existing movements at the same instant come
      * before the candidate when its sequence is {@link CashMovement#NOT_YET_ENTERED}.

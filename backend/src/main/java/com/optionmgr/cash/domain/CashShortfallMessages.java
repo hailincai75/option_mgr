@@ -41,6 +41,12 @@ public final class CashShortfallMessages {
                 + " + 释放冻结 " + Money.display(released) + " = " + Money.display(available.add(released));
     }
 
+    /** FEAT-005: "可用现金不足：修改后 T 时可用现金将变为 Z" ({@code verb} = 修改 / 删除). */
+    public static String afterChange(String verb, ReplayStep violation) {
+        return INSUFFICIENT + "：" + verb + "后 " + MarketTime.displayMinute(violation.movement().occurredAt())
+                + " 时可用现金将变为 " + Money.display(violation.after().available());
+    }
+
     /** "<prefix>：需要 X，可用 Y". */
     public static String notEnoughNow(String prefix, BigDecimal required, BigDecimal available) {
         return prefix + "：需要 " + Money.display(required) + "，可用 " + Money.display(available);

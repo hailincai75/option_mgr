@@ -6,6 +6,10 @@ import com.optionmgr.trade.domain.ContractKey;
 import com.optionmgr.trade.domain.OpenTradeTerms;
 import com.optionmgr.trade.repository.OptionTradeEntity;
 import com.optionmgr.trade.service.OptionTradeService;
+import com.optionmgr.trade.service.OptionTradeEditService;
+import com.optionmgr.trade.web.OptionTradeDtos.EditTradeRequest;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import com.optionmgr.trade.web.OptionTradeDtos.OpenTradeRequest;
 import com.optionmgr.trade.web.OptionTradeDtos.CloseTradeRequest;
 import com.optionmgr.trade.web.OptionTradeDtos.CoveredLotResponse;
@@ -35,9 +39,11 @@ public class OptionTradeController {
     private static final DateTimeFormatter LOCAL_SECONDS = DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss");
 
     private final OptionTradeService service;
+    private final OptionTradeEditService edits;
 
-    public OptionTradeController(OptionTradeService service) {
+    public OptionTradeController(OptionTradeService service, OptionTradeEditService edits) {
         this.service = service;
+        this.edits = edits;
     }
 
     @PostMapping
@@ -77,6 +83,21 @@ public class OptionTradeController {
         OptionTradeService.TradePage p = service.list(filter, page, size);
         return new TradePageResponse(p.items().stream().map(OptionTradeController::toResponse).toList(),
                 p.page(), p.size(), p.totalItems(), p.totalPages());
+    }
+
+    /** FEAT-005: edit the editable fields of a trade. */
+    @PutMapping("/{id}")
+    public TradeResponse update(@PathVariable long id, @Valid @RequestBody EditTradeRequest req) {
+        return toResponse(edits.update(id, new OptionTradeEditService.EditCommand(req.contracts().intValueExact(),
+                req.netAmount(), req.tradedAtLocal(),
+                req.multiplier() == null ? null : req.multiplier().intValueExact(), req.note())));
+    }
+
+    /** FEAT-005: delete a trade and its ledger entry. */
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(@PathVariable long id) {
+        edits.delete(id);
     }
 
     @GetMapping("/{id}")
