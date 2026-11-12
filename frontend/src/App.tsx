@@ -2,6 +2,7 @@ import { Layout, Menu, Typography } from 'antd'
 import { Link, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { AuditLogPage } from './pages/AuditLogPage'
 import { CashPage } from './pages/CashPage'
+import { ClosedTradesPage } from './pages/ClosedTradesPage'
 import { HomePage } from './pages/HomePage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { TradeEntryPage } from './pages/TradeEntryPage'
@@ -22,6 +23,14 @@ const NAV_ITEMS = [
     label: (
       <Link to="/positions" data-testid="nav-positions">
         持仓
+      </Link>
+    ),
+  },
+  {
+    key: '/closed',
+    label: (
+      <Link to="/closed" data-testid="nav-closed">
+        已平仓
       </Link>
     ),
   },
@@ -89,6 +98,7 @@ export function App() {
         <Route index element={<HomePage />} />
         <Route path="trades" element={<TradeListPage />} />
         <Route path="positions" element={<PositionsPage />} />
+        <Route path="closed" element={<ClosedTradesPage />} />
         <Route path="trades/new" element={<TradeEntryPage />} />
         <Route path="cash" element={<CashPage />} />
         <Route path="audit" element={<AuditLogPage />} />

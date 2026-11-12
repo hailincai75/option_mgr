@@ -32,13 +32,31 @@ final class TradeListQuery {
     private final List<FieldError> unparsable = new ArrayList<>();
     private final List<FieldError> invalid = new ArrayList<>();
 
-    private TradeListQuery() {
+    private static final String ALL_ACTIONS_MESSAGE = "方向只能是 BTO、STO、BTC、STC";
+
+    private final Set<TradeAction> allowedActions;
+    private final String actionMessage;
+
+    private TradeListQuery(Set<TradeAction> allowedActions, String actionMessage) {
+        this.allowedActions = allowedActions;
+        this.actionMessage = actionMessage;
     }
 
     /** @throws ApiException BAD_REQUEST or VALIDATION_ERROR */
     static TradeFilter parse(String symbol, String expirationDate, String strike, String optionType,
                              List<String> actions, String startDate, String endDate, int page, int size) {
-        TradeListQuery q = new TradeListQuery();
+        return parse(symbol, expirationDate, strike, optionType, actions, startDate, endDate, page, size,
+                EnumSet.allOf(TradeAction.class), ALL_ACTIONS_MESSAGE);
+    }
+
+    /**
+     * As above, accepting only {@code allowedActions} in {@code action} (others: BAD_REQUEST with
+     * {@code actionMessage}); FEAT-006 uses BTC / STC.
+     */
+    static TradeFilter parse(String symbol, String expirationDate, String strike, String optionType,
+                             List<String> actions, String startDate, String endDate, int page, int size,
+                             Set<TradeAction> allowedActions, String actionMessage) {
+        TradeListQuery q = new TradeListQuery(allowedActions, actionMessage);
         String sym = q.symbol(symbol);
         LocalDate exp = q.date("expirationDate", expirationDate);
         BigDecimal k = q.strike(strike);
@@ -153,10 +171,16 @@ final class TradeListQuery {
                 if (part.isBlank()) {
                     continue;
                 }
+                TradeAction a = null;
                 try {
-                    result.add(TradeAction.valueOf(part.strip()));
+                    a = TradeAction.valueOf(part.strip());
                 } catch (IllegalArgumentException e) {
-                    unparsable.add(new FieldError("action", "方向只能是 BTO、STO、BTC、STC"));
+                    // reported below
+                }
+                if (a == null || !allowedActions.contains(a)) {
+                    unparsable.add(new FieldError("action", actionMessage));
+                } else {
+                    result.add(a);
                 }
             }
         }

@@ -99,7 +99,14 @@ export function parseTradeListSearch(search: URLSearchParams): TradeListUrlState
 export function toTradeListSearch(state: TradeListUrlState): URLSearchParams {
   const search = new URLSearchParams()
   const { filters } = state
-  const single = ['symbol', 'expirationDate', 'strike', 'optionType', 'startDate', 'endDate'] as const
+  const single = [
+    'symbol',
+    'expirationDate',
+    'strike',
+    'optionType',
+    'startDate',
+    'endDate',
+  ] as const
   for (const key of single) {
     const value = filters[key].trim()
     if (value !== '') search.set(key, value)
@@ -135,6 +142,8 @@ function validateStrikeFilter(text: string): string | null {
  */
 export function validateTradeFilters(
   filters: TradeFilterValues,
+  /** Directions this list accepts (FEAT-006 closed trades: BTC / STC only). */
+  allowedActions: readonly TradeAction[] = TRADE_ACTIONS,
 ): Partial<Record<TradeFilterField, string>> {
   const errors: Partial<Record<TradeFilterField, string>> = {}
   const symbol = filters.symbol.trim()
@@ -153,7 +162,9 @@ export function validateTradeFilters(
   }
   const optionType = filters.optionType.trim()
   if (optionType !== '' && !isOptionType(optionType)) errors.optionType = '类型只能是 CALL 或 PUT'
-  if (!filters.action.every(isTradeAction)) errors.action = '方向只能是 BTO、STO、BTC、STC'
+  if (!filters.action.every((action) => (allowedActions as readonly string[]).includes(action))) {
+    errors.action = `方向只能是 ${allowedActions.join('、')}`
+  }
   const { startDate, endDate } = filters
   if (
     errors.startDate === undefined &&

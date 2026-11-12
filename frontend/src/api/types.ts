@@ -404,3 +404,45 @@ export interface AuditLogParams {
   page: number
   size: number
 }
+
+// ---------------------------------------------------------------------------
+// FEAT-006 已平仓记录 / 已实现盈亏
+// ---------------------------------------------------------------------------
+
+/** Contract: `GET /api/closed-trades` → `items[]`. Every amount is signed by cash direction. */
+export interface ClosedTrade {
+  /** Closing trade id (audit filter: OPTION_TRADE + id). */
+  id: number
+  tradedAt: InstantString
+  tradedAtLocal: LocalDateTimeString
+  symbol: string
+  expirationDate: LocalDateString
+  strike: string
+  optionType: OptionType
+  contractLabel: string
+  action: ClosingAction | (string & {})
+  /** Direction of the closed position: BTC → SHORT, STC → LONG. */
+  closedDirection: PositionDirection
+  contracts: number
+  multiplier: number
+  openingNetTotal: MoneyString
+  /** HALF_UP to the cent, display only. */
+  openingNetPerContract: MoneyString
+  closeNetAmount: MoneyString
+  /** HALF_UP to the cent, display only. */
+  closeNetPerContract: MoneyString
+  realizedPnl: MoneyString
+  note: string | null
+  coveredLots: CoveredLot[]
+}
+
+/** Contract: `GET /api/closed-trades` → 200. Totals cover ALL filtered results (Q46). */
+export interface ClosedTradePage {
+  items: ClosedTrade[]
+  page: number
+  size: number
+  totalItems: number
+  totalPages: number
+  filteredCount: number
+  filteredRealizedPnlTotal: MoneyString
+}

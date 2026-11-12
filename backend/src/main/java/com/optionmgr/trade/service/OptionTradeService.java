@@ -258,7 +258,7 @@ public class OptionTradeService {
         return load(contract).trades();
     }
 
-    private List<TradeView> views(List<OptionTradeEntity> page) {
+    List<TradeView> views(List<OptionTradeEntity> page) {
         Map<Long, CashLedgerEntryEntity> entries = ledger.findBySources(TRADE_SOURCE_TYPES,
                 page.stream().map(OptionTradeEntity::getId).toList());
         // closes: their current FIFO match, one replay per contract
