@@ -71,6 +71,7 @@ com.optionmgr
 - `PositionLot` 有原值/剩余值（张数、净额、冻结）；整笔平仓规则（Q21）下剩余值总等于原值，批次被平即整体移除。`PositionBuilder.build` = `ContractReplay` 的 `openLots`；`OptionPosition` 另给出 `closeAction`、`allowedCloseContracts`、`closable(today)`（today ≤ 到期日，Q36）
 - 交易对应的流水来源类型集中在 `OptionTradeService.TRADE_SOURCE_TYPES`（`{OPTION_OPEN, OPTION_CLOSE}`）；以后新的交易来源（如 M2 到期作废/指派）加到这里。列表项和按 id 查询的平仓带 `coveredLots`、`realizedPnl`（同一页按合约各重放一次）
 - **已平仓记录（FEAT-006）**：`GET /api/closed-trades`（`web/ClosedTradeController` → `service/ClosedTradeService`）。筛选复用 FEAT-002 的 `TradeListQuery`（`action` 只允许 BTC/STC）和 `OptionTradeSpecifications`。因为合计要覆盖全部筛选结果（Q46），每次请求取出**全部**符合条件的平仓（按 `traded_at DESC, id DESC`），用 `OptionTradeService.views` 按合约重放得到被平批次和盈亏（每个合约一次），算合计后在内存中分页。`domain/ClosedTrade` 给出开仓净额合计、每张平均（HALF_UP，Q22）、平仓净额与每张平均、盈亏。个人系统数据量小，每次请求重放所有涉及的合约可以接受；数据量大时可改为缓存匹配结果
+- **盈亏汇总与首页概览（FEAT-008）**：`GET /api/pnl-summary`、`GET /api/dashboard`（`web/PnlSummaryController` → `service/PnlSummaryService`）。不另算盈亏：平仓与盈亏来自 `ClosedTradeService.all(filter)`（与 `/api/closed-trades` 同一份），`domain/PnlSummary` 按标的（字符序升序）和平仓的美东自然月（倒序，无平仓的月份不出现）分组；首页的持仓数字来自 `OptionPositionService.currentPositions()`，现金来自 `CashLedgerService.currentBalance()`，所以各接口的数字天然一致。"今天 / 本月" = 注入 `Clock` 的美东日期 / 月；本月 = `startDate = 本月 1 日` 的平仓（不会有晚于当前的交易）。日期参数复用 `TradeListQuery.parse`（同样的错误格式）。每次请求重放所有涉及的合约，个人数据量下可以接受
 
 ### 修改、删除与审计（FEAT-005）
 - 接口：`PUT` / `DELETE /api/option-trades/{id}`（`service/OptionTradeEditService`），`PUT` / `DELETE /api/cash/transfers/{id}`（`cash/service/CashTransferEditService`），`GET /api/audit-log`（`audit/`）
@@ -124,12 +125,13 @@ frontend/
     ├── api/
     │   ├── types.ts      按 API 契约手写的请求/响应类型（含统一错误格式 ApiErrorResponse）
     │   ├── client.ts     fetch 封装 apiRequest<T>() 与 ApiError
-    │   └── <feature>.ts  每个领域一个文件：请求函数 + queryKey（health.ts；cash.ts: getCashSummary/getCashLedger/createCashTransfer、cashQueryKeys；optionTrades.ts: createOptionTrade/createCloseTrade/getOptionTrade/listOptionTrades/updateOptionTrade/deleteOptionTrade；cash.ts 另有 updateCashTransfer/deleteCashTransfer；auditLog.ts: getAuditLog、auditLogQueryKeys；closedTrades.ts: listClosedTrades、closedTradeQueryKeys、optionTradeQueryKeys；optionPositions.ts: getOptionPositions、optionPositionQueryKeys）
-    ├── pages/            路由级页面组件（HomePage、CashPage、TradeEntryPage、TradeListPage、PositionsPage、ClosedTradesPage、AuditLogPage、NotFoundPage）
+    │   └── <feature>.ts  每个领域一个文件：请求函数 + queryKey（health.ts；cash.ts: getCashSummary/getCashLedger/createCashTransfer、cashQueryKeys；optionTrades.ts: createOptionTrade/createCloseTrade/getOptionTrade/listOptionTrades/updateOptionTrade/deleteOptionTrade；cash.ts 另有 updateCashTransfer/deleteCashTransfer；auditLog.ts: getAuditLog、auditLogQueryKeys；closedTrades.ts: listClosedTrades、closedTradeQueryKeys；dashboard.ts: getDashboard、getPnlSummary 及其 queryKey、optionTradeQueryKeys；optionPositions.ts: getOptionPositions、optionPositionQueryKeys）
+    ├── pages/            路由级页面组件（HomePage、CashPage、TradeEntryPage、TradeListPage、PositionsPage、ClosedTradesPage、PnlSummaryPage、AuditLogPage、NotFoundPage）
     ├── components/       跨页面复用组件：QueryError（查询错误 + 重试）、DeleteConfirmModal（删除确认，FEAT-005）
     │   ├── cash/         CashSummaryCard（可复用现金汇总）、CashTransferForm + cashTransferValidation、CashLedgerTable
     │   └── trade/        TradeEntryForm（录入交易，开仓 + 平仓）、EditTradeModal（修改交易，FEAT-005）+ openTradeValidation、TradeConfirmation（开/平仓确认，含被平批次与已实现盈亏）、tradeFormSupport（字段错误映射、保存后刷新、净额标签）；TradeFilterForm、TradeTable、tradeListFilters（FEAT-002 列表筛选与 URL 状态）；tradeLabels（方向文案、正负颜色，共用）
     │   ├── audit/        AuditTable（可展开修改前后）、auditSearch（审计页 URL 状态与校验）、auditLinks（各行"历史"链接）（FEAT-005）
+    │   ├── pnl/          pnlSummarySearch（盈亏汇总页 URL 状态、月份范围交集、到已平仓页的链接）（FEAT-008）
     │   ├── closed/       ClosedTradeTable（已平仓记录，可展开被平批次）（FEAT-006）
     │   └── position/     PositionTable（可展开批次、平仓按钮）、ClosePositionModal（平仓对话框，FEAT-004）、positionLinks（合约 → 交易列表 URL，`tradesUrlForContract`，持仓和已平仓共用）（FEAT-003）
     ├── utils/format.ts   统一的显示格式化（时间、金额）
@@ -140,7 +142,8 @@ frontend/
 ### 路由
 | 路径 | 页面 | 说明 |
 |------|------|------|
-| `/` | `HomePage` | 调 `GET /api/health` 显示后端状态、版本、服务器时间（纽约时区） |
+| `/` | `HomePage` | FEAT-008 首页概览（只读）：现金卡（`CashSummaryCard`）、已实现盈亏卡与持仓卡（`GET /api/dashboard`）、录入交易入口；底部一行后端状态（`GET /api/health`） |
+| `/pnl-summary` | `PnlSummaryPage` | FEAT-008 盈亏汇总：平仓日期范围（URL `startDate`/`endDate`）、按标的 / 按月两个表格（合计行用后端总计），标的/月份链接到 `/closed`（导航"盈亏汇总"） |
 | `/trades` | `TradeListPage` | FEAT-002 交易列表：筛选 + 只读表格 + 分页；筛选/页码/每页条数都在 URL 查询参数里（导航"交易"） |
 | `/positions` | `PositionsPage` | FEAT-003 期权持仓：截至日期/持仓数/冻结合计 + 持仓表（可展开 FIFO 批次，合约链接到 `/trades` 筛选；FEAT-004 可平仓行有"平仓"按钮，打开平仓对话框）（导航"持仓"） |
 | `/trades/new` | `TradeEntryPage` | 录入交易（FEAT-001 开仓 BTO/STO + FEAT-004 平仓 BTC/STC，按方向调用不同接口）：现金汇总 + 表单 + 成功确认（导航"录入交易"） |
@@ -157,7 +160,7 @@ frontend/
   - 请求没到服务器 → `code: 'NETWORK_ERROR'`，`status: 0`
   - 响应不是 JSON 或错误体不符合契约（例如 Vite 代理在后端未启动时返回的 502）→ `code: 'INVALID_RESPONSE'`
 - 每个查询在页面上处理 loading / error（显示错误信息 + 重试按钮，可用 `components/QueryError`）/ 空数据三种状态
-- 写操作成功后 invalidate 该领域的根 key（如 `cashQueryKeys.all` = `["cash"]`），依赖它的组件（如 `CashSummaryCard`）自动刷新；以后任何改变现金的操作也要 invalidate `["cash"]`；任何新增/修改交易的操作还要 invalidate `optionTradeQueryKeys.lists` = `["option-trades","list"]` 和 `optionPositionQueryKeys.all` = `["option-positions"]`；FEAT-005 起所有写操作（新增、修改、删除交易或入金出金）统一调用 `tradeFormSupport.refreshAfterChange`，invalidate `["cash"]`、`["option-trades"]`、`["option-positions"]`、`["audit-log"]`、`["closed-trades"]`（FEAT-006）
+- 写操作成功后 invalidate 该领域的根 key（如 `cashQueryKeys.all` = `["cash"]`），依赖它的组件（如 `CashSummaryCard`）自动刷新；以后任何改变现金的操作也要 invalidate `["cash"]`；任何新增/修改交易的操作还要 invalidate `optionTradeQueryKeys.lists` = `["option-trades","list"]` 和 `optionPositionQueryKeys.all` = `["option-positions"]`；FEAT-005 起所有写操作（新增、修改、删除交易或入金出金）统一调用 `tradeFormSupport.refreshAfterChange`，invalidate `["cash"]`、`["option-trades"]`、`["option-positions"]`、`["audit-log"]`、`["closed-trades"]`（FEAT-006）、`["dashboard"]`、`["pnl-summary"]`（FEAT-008）；新增入金/出金也调用它
 - 列表页的筛选/分页状态以 URL 查询参数为唯一来源（`useSearchParams`），改变时 push 历史，后退可恢复；URL 中不合法的筛选值回填并在字段下报错、不发请求，不合法的 page/size 回退到默认值
 - 表单提交失败：`VALIDATION_ERROR` / `BAD_REQUEST` 的 `details[].field` 用 `form.setFields` 显示到同名字段；无法对应字段的错误和业务错误（如 `CASH_INSUFFICIENT`，message 是中文可直接显示）显示在提交按钮上方；保留用户输入
 
@@ -174,5 +177,6 @@ frontend/
 - 平仓：张数只能从后端 `allowedCloseContracts` 中选，按钮按 `closable` 显示，方向取 `closeAction`；已实现盈亏、被平批次、冻结释放全部取后端值
 - 修改 / 删除（FEAT-005）：对话框里不可改字段只显示；`PUT` 整体替换可改字段（每次发送全部可改字段）；422 原文显示、输入保留；删除用通用确认框，被拒时对话框不关闭。审计记录的 `changes[].text`、`sideEffects[].text` 原样显示
 - 已平仓（FEAT-006）：筛选复用 `TradeFilterForm`（参数 `actions`、`dateLabelPrefix`、`testIdPrefix`）与 `tradeListFilters`（`validateTradeFilters` 可传允许的方向）；笔数、合计、每张平均、盈亏全部取后端值
+- 首页 / 盈亏汇总（FEAT-008）：所有金额和个数取后端值，汇总表的合计行用响应的总计，前端不相加；前端只做日期计算（月份首末日、与当前范围取交集）
 - 持仓 DTE、到期状态、平均净额、冻结等全部取后端字段显示（`expirationStatus` 决定"今天到期"/红色"已过期 N 天"），前端不做日期或金额计算
 - 现金流水：已知 `sourceType` 显示中文（`DEPOSIT` 入金、`WITHDRAWAL` 出金、`OPTION_OPEN` 期权开仓），未知值原样显示；`frozenChange` 单独一列，0 显示 `—`

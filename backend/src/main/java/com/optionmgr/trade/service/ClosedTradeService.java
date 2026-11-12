@@ -42,6 +42,21 @@ public class ClosedTradeService {
 
     @Transactional(readOnly = true)
     public ClosedTradePage page(TradeFilter filter, int page, int size) {
+        List<ClosedTradeView> views = all(filter);
+        BigDecimal total = views.stream().map(v -> v.figures().realizedPnl()).reduce(Money.ZERO, BigDecimal::add);
+
+        long totalItems = views.size();
+        int totalPages = (int) ((totalItems + size - 1) / size);
+        long from = (long) (page - 1) * size;
+        List<ClosedTradeView> items = from >= totalItems
+                ? List.of()
+                : views.subList((int) from, (int) Math.min(from + size, totalItems));
+        return new ClosedTradePage(List.copyOf(items), page, size, totalItems, totalPages, total);
+    }
+
+    /** Every close matching {@code filter} (an empty action set = BTC and STC), newest first, with its figures. */
+    @Transactional(readOnly = true)
+    public List<ClosedTradeView> all(TradeFilter filter) {
         TradeFilter closesOnly = new TradeFilter(filter.symbol(), filter.expirationDate(), filter.strike(),
                 filter.optionType(), filter.actions().isEmpty() ? CLOSING_ACTIONS : filter.actions(),
                 filter.startDate(), filter.endDate());
@@ -52,14 +67,6 @@ public class ClosedTradeService {
                         v.ledgerEntry().getAmount(), v.closeMatch().orElseThrow(
                                 () -> new IllegalStateException("close " + v.trade().getId() + " has no match")))))
                 .toList();
-        BigDecimal total = views.stream().map(v -> v.figures().realizedPnl()).reduce(Money.ZERO, BigDecimal::add);
-
-        long totalItems = views.size();
-        int totalPages = (int) ((totalItems + size - 1) / size);
-        long from = (long) (page - 1) * size;
-        List<ClosedTradeView> items = from >= totalItems
-                ? List.of()
-                : views.subList((int) from, (int) Math.min(from + size, totalItems));
-        return new ClosedTradePage(List.copyOf(items), page, size, totalItems, totalPages, total);
+        return views;
     }
 }

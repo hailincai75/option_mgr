@@ -12,6 +12,8 @@ describe('refreshAfterChange', () => {
       ['option-positions'],
       ['audit-log'],
       ['closed-trades'],
+      ['dashboard'],
+      ['pnl-summary'],
     ])
   })
 })

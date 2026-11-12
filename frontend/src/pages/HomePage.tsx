@@ -1,71 +1,324 @@
 import { useQuery } from '@tanstack/react-query'
-import { Alert, Button, Card, Descriptions, Spin, Tag } from 'antd'
+import { Alert, Button, Card, Col, Row, Space, Spin, Statistic, Tag, Typography } from 'antd'
+import type { ReactNode } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { ApiError } from '../api/client'
+import { dashboardQueryKeys, getDashboard } from '../api/dashboard'
 import { getHealth, healthQueryKey } from '../api/health'
-import { formatInstantNY } from '../utils/format'
+import type { Dashboard } from '../api/types'
+import { CashSummaryCard } from '../components/cash/CashSummaryCard'
+import { QueryError } from '../components/QueryError'
+import { EMPTY_TRADE_FILTERS, toTradeListSearch } from '../components/trade/tradeListFilters'
+import { SIGNED_MONEY_COLORS } from '../components/trade/tradeLabels'
+import { decimalSign, formatInstantNY, formatMoney } from '../utils/format'
 
 function describeError(error: Error): string {
   if (error instanceof ApiError) return `${error.message} (${error.code})`
   return error.message
 }
 
-function HealthCard() {
+/** Backend status as one small line at the bottom (FEAT-008; testids kept from the old home page). */
+function HealthFooter() {
   const { data, error, isPending, isFetching, refetch } = useQuery({
     queryKey: healthQueryKey,
     queryFn: ({ signal }) => getHealth(signal),
   })
 
+  let content
   if (isPending) {
-    return (
-      <div data-testid="health-loading" style={{ padding: 24, textAlign: 'center' }}>
-        <Spin />
-      </div>
+    content = (
+      <span data-testid="health-loading">
+        <Spin size="small" /> 正在检查后端…
+      </span>
     )
-  }
-
-  if (error) {
-    return (
+  } else if (error) {
+    content = (
       <Alert
         type="error"
         showIcon
-        title="Backend is unavailable"
+        title="后端不可用"
         description={<span data-testid="health-error">{describeError(error)}</span>}
         action={
           <Button
+            size="small"
             data-testid="health-retry"
             loading={isFetching}
             onClick={() => {
               void refetch()
             }}
           >
-            Retry
+            重试
           </Button>
         }
       />
     )
-  }
-
-  return (
-    <Descriptions column={1} bordered size="small">
-      <Descriptions.Item label="Status">
+  } else {
+    content = (
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        后端：
         <Tag color={data.status === 'UP' ? 'success' : 'error'} data-testid="health-status">
           {data.status}
         </Tag>
-      </Descriptions.Item>
-      <Descriptions.Item label="Version">
-        <span data-testid="health-version">{data.version}</span>
-      </Descriptions.Item>
-      <Descriptions.Item label="Server time (New York)">
+        · 版本 <span data-testid="health-version">{data.version}</span> · 服务器时间（美东）{' '}
         <span data-testid="health-time">{formatInstantNY(data.time)}</span>
-      </Descriptions.Item>
-    </Descriptions>
+      </Typography.Text>
+    )
+  }
+  return <div data-testid="health-card">{content}</div>
+}
+
+function SignedTotal({ value, testId }: { value: string; testId: string }) {
+  return (
+    <span
+      data-testid={testId}
+      style={{ color: SIGNED_MONEY_COLORS[decimalSign(value)], fontWeight: 600 }}
+    >
+      {formatMoney(value, { signed: true })}
+    </span>
   )
 }
 
-export function HomePage() {
+/** /closed filtered to the current month so far (1st of the month .. today, New York). */
+function currentMonthClosedUrl(dashboard: Dashboard): string {
+  const search = toTradeListSearch({
+    filters: {
+      ...EMPTY_TRADE_FILTERS,
+      startDate: `${dashboard.currentMonth}-01`,
+      endDate: dashboard.asOfDate,
+    },
+    page: 1,
+    size: 20,
+  })
+  return `/closed?${search.toString()}`
+}
+
+type DashboardQuery = ReturnType<typeof useDashboard>
+
+function useDashboard() {
+  return useQuery({
+    queryKey: dashboardQueryKeys.all,
+    queryFn: ({ signal }) => getDashboard(signal),
+  })
+}
+
+/** Loading / error handled per card, so one failing card does not hide the others. */
+function DashboardCardBody({
+  query,
+  testIdPrefix,
+  render,
+}: {
+  query: DashboardQuery
+  testIdPrefix: string
+  render: (dashboard: Dashboard) => ReactNode
+}) {
+  if (query.isPending) {
+    return (
+      <div data-testid={`${testIdPrefix}-loading`} style={{ textAlign: 'center', padding: 16 }}>
+        <Spin />
+      </div>
+    )
+  }
+  if (query.error) {
+    return (
+      <QueryError
+        title="无法加载"
+        error={query.error}
+        retrying={query.isFetching}
+        onRetry={() => void query.refetch()}
+        testIdPrefix={testIdPrefix}
+      />
+    )
+  }
+  return <>{render(query.data)}</>
+}
+
+function CountLine({
+  label,
+  count,
+  testId,
+  tone,
+}: {
+  label: string
+  count: number
+  testId: string
+  tone?: 'warning' | 'danger'
+}) {
+  const highlight = count > 0 ? tone : undefined
   return (
-    <Card title="Backend status" style={{ maxWidth: 560 }} data-testid="health-card">
-      <HealthCard />
-    </Card>
+    <div>
+      {label}{' '}
+      <Typography.Text
+        strong={highlight !== undefined}
+        type={highlight}
+        data-testid={testId}
+        data-highlight={highlight ?? 'none'}
+      >
+        {count}
+      </Typography.Text>{' '}
+      个
+    </div>
+  )
+}
+
+/**
+ * 首页概览 (FEAT-008, Q48): read-only figures from `GET /api/dashboard` plus the cash summary
+ * card; every number is the backend's. Backend status is a small line at the bottom.
+ */
+export function HomePage() {
+  const dashboard = useDashboard()
+  const navigate = useNavigate()
+
+  return (
+    <Space orientation="vertical" size={16} style={{ width: '100%' }} data-testid="dashboard">
+      <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
+        <Typography.Title level={4} style={{ margin: 0 }}>
+          概览
+          {dashboard.data && (
+            <Typography.Text type="secondary" style={{ fontSize: 14, marginLeft: 12 }}>
+              <span data-testid="dashboard-as-of">截至 {dashboard.data.asOfDate}（美东）</span>
+            </Typography.Text>
+          )}
+        </Typography.Title>
+        <Button
+          type="primary"
+          onClick={() => {
+            void navigate('/trades/new')
+          }}
+          data-testid="dashboard-new-trade"
+        >
+          录入交易
+        </Button>
+      </Space>
+
+      <CashSummaryCard
+        title="现金"
+        size="small"
+        extra={
+          <Link to="/cash" data-testid="dashboard-cash-link">
+            资金明细
+          </Link>
+        }
+      />
+
+      <Row gutter={[16, 16]}>
+        <Col xs={24} lg={12}>
+          <Card
+            title="已实现盈亏"
+            size="small"
+            extra={
+              <Link to="/pnl-summary" data-testid="dashboard-pnl-link">
+                盈亏汇总
+              </Link>
+            }
+            data-testid="dashboard-pnl-card"
+            style={{ height: '100%' }}
+          >
+            <DashboardCardBody
+              query={dashboard}
+              testIdPrefix="dashboard-pnl"
+              render={(d) => (
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Statistic
+                      title="总计"
+                      value={d.realizedPnl.total}
+                      formatter={() => (
+                        <span>
+                          <SignedTotal
+                            value={d.realizedPnl.total}
+                            testId="dashboard-realized-total"
+                          />
+                          <Typography.Text type="secondary" style={{ fontSize: 14 }}>
+                            （
+                            <span data-testid="dashboard-realized-count">
+                              {d.realizedPnl.closedCount}
+                            </span>{' '}
+                            笔）
+                          </Typography.Text>
+                        </span>
+                      )}
+                    />
+                  </Col>
+                  <Col span={12}>
+                    <Statistic
+                      title={
+                        <Link to={currentMonthClosedUrl(d)} data-testid="dashboard-month-link">
+                          本月（<span data-testid="dashboard-month">{d.currentMonth}</span>）
+                        </Link>
+                      }
+                      value={d.currentMonthRealizedPnl.total}
+                      formatter={() => (
+                        <span>
+                          <SignedTotal
+                            value={d.currentMonthRealizedPnl.total}
+                            testId="dashboard-month-total"
+                          />
+                          <Typography.Text type="secondary" style={{ fontSize: 14 }}>
+                            （
+                            <span data-testid="dashboard-month-count">
+                              {d.currentMonthRealizedPnl.closedCount}
+                            </span>{' '}
+                            笔）
+                          </Typography.Text>
+                        </span>
+                      )}
+                    />
+                  </Col>
+                </Row>
+              )}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} lg={12}>
+          <Card
+            title="持仓"
+            size="small"
+            extra={
+              <Link to="/positions" data-testid="dashboard-positions-link">
+                查看持仓
+              </Link>
+            }
+            data-testid="dashboard-positions-card"
+            style={{ height: '100%' }}
+          >
+            <DashboardCardBody
+              query={dashboard}
+              testIdPrefix="dashboard-positions"
+              render={(d) => (
+                <Space orientation="vertical" size={4}>
+                  <div>
+                    持仓{' '}
+                    <strong data-testid="dashboard-position-count">
+                      {d.positions.positionCount}
+                    </strong>{' '}
+                    个
+                  </div>
+                  <div>
+                    冻结现金合计{' '}
+                    <strong data-testid="dashboard-frozen-total">
+                      {formatMoney(d.positions.frozenTotal)}
+                    </strong>
+                  </div>
+                  <CountLine
+                    label="7 天内到期"
+                    count={d.positions.expiringWithin7DaysCount}
+                    testId="dashboard-expiring-count"
+                    tone="warning"
+                  />
+                  <CountLine
+                    label="已过期未处理"
+                    count={d.positions.expiredUnprocessedCount}
+                    testId="dashboard-expired-count"
+                    tone="danger"
+                  />
+                </Space>
+              )}
+            />
+          </Card>
+        </Col>
+      </Row>
+
+      <HealthFooter />
+    </Space>
   )
 }

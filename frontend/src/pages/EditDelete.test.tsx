@@ -1,5 +1,5 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import userEvent from '../test/userEvent'
 import type {
   ApiErrorResponse,
   AuditLogPage,
@@ -319,10 +319,11 @@ describe('trade list: 修改', () => {
     expect(screen.getByText('合约或方向录错请删除后重新录入。')).toBeInTheDocument()
     const form = byTestId('trade-edit-form')
     // No editable inputs for symbol / expiry / strike / type / action.
+    // Plain text inputs and textareas (role "textbox"); a DOM query is much faster than getAllByRole.
     expect(
-      within(form)
-        .getAllByRole('textbox')
-        .map((el) => el.getAttribute('data-testid')),
+      [...form.querySelectorAll('input[type="text"], input:not([type]), textarea')].map((el) =>
+        el.getAttribute('data-testid'),
+      ),
     ).toEqual([
       'trade-edit-contracts',
       'trade-edit-net-amount',

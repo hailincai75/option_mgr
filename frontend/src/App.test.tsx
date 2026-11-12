@@ -1,13 +1,12 @@
 import { screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import userEvent from './test/userEvent'
 import { App } from './App'
+import { homeResponse } from './test/homeFixtures'
 import { jsonResponse, mockFetch, renderWithProviders } from './test/render'
 
 describe('App routing', () => {
   it('renders the home page at /', async () => {
-    mockFetch().mockResolvedValue(
-      jsonResponse({ status: 'UP', version: 'dev', time: '2026-11-10T22:09:08Z' }),
-    )
+    mockFetch().mockImplementation((input) => homeResponse(typeof input === 'string' ? input : ''))
 
     renderWithProviders(<App />, { route: '/' })
 
@@ -36,7 +35,7 @@ describe('cash route', () => {
           jsonResponse({ items: [], page: 1, size: 20, totalItems: 0, totalPages: 0 }),
         )
       }
-      return Promise.resolve(jsonResponse({ status: 'UP', version: 'dev', time: '2026-11-10T22:09:08Z' }))
+      return homeResponse(url)
     })
 
     renderWithProviders(<App />, { route: '/' })
@@ -56,7 +55,7 @@ describe('open trade route', () => {
           jsonResponse({ totalCash: '0.00', frozenCash: '0.00', availableCash: '0.00' }),
         )
       }
-      return Promise.resolve(jsonResponse({ status: 'UP', version: 'dev', time: '2026-11-10T22:09:08Z' }))
+      return homeResponse(url)
     })
 
     renderWithProviders(<App />, { route: '/' })
@@ -77,7 +76,7 @@ describe('trades route', () => {
           jsonResponse({ items: [], page: 1, size: 20, totalItems: 0, totalPages: 0 }),
         )
       }
-      return Promise.resolve(jsonResponse({ status: 'UP', version: 'dev', time: '2026-11-10T22:09:08Z' }))
+      return homeResponse(url)
     })
 
     renderWithProviders(<App />, { route: '/' })
@@ -97,10 +96,15 @@ describe('positions route', () => {
       const url = typeof input === 'string' ? input : ''
       if (url === '/api/option-positions') {
         return Promise.resolve(
-          jsonResponse({ asOfDate: '2026-11-11', positionCount: 0, frozenTotal: '0.00', positions: [] }),
+          jsonResponse({
+            asOfDate: '2026-11-11',
+            positionCount: 0,
+            frozenTotal: '0.00',
+            positions: [],
+          }),
         )
       }
-      return Promise.resolve(jsonResponse({ status: 'UP', version: 'dev', time: '2026-11-10T22:09:08Z' }))
+      return homeResponse(url)
     })
 
     renderWithProviders(<App />, { route: '/' })

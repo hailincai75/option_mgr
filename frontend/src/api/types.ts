@@ -446,3 +446,62 @@ export interface ClosedTradePage {
   filteredCount: number
   filteredRealizedPnlTotal: MoneyString
 }
+
+// ---------------------------------------------------------------------------
+// FEAT-008 首页概览 / 盈亏汇总
+// ---------------------------------------------------------------------------
+
+export interface RealizedPnlFigure {
+  closedCount: number
+  /** Signed, scale 2. */
+  total: MoneyString
+}
+
+/** Contract: `GET /api/dashboard` → 200. Every number is the backend's. */
+export interface Dashboard {
+  /** Today in New York, "YYYY-MM-DD". */
+  asOfDate: LocalDateString
+  /** Current New York month, "YYYY-MM". */
+  currentMonth: string
+  cash: CashSummary
+  realizedPnl: RealizedPnlFigure
+  currentMonthRealizedPnl: RealizedPnlFigure
+  positions: {
+    positionCount: number
+    frozenTotal: MoneyString
+    /** 0 ≤ DTE ≤ 7. */
+    expiringWithin7DaysCount: number
+    /** DTE < 0. */
+    expiredUnprocessedCount: number
+  }
+}
+
+export interface PnlSymbolRow {
+  symbol: string
+  closedCount: number
+  realizedPnl: MoneyString
+}
+
+export interface PnlMonthRow {
+  /** "YYYY-MM" (New York month). */
+  month: string
+  closedCount: number
+  realizedPnl: MoneyString
+}
+
+/** Contract: `GET /api/pnl-summary?startDate=&endDate=` → 200. Totals row = the response totals. */
+export interface PnlSummary {
+  startDate: LocalDateString | null
+  endDate: LocalDateString | null
+  closedCount: number
+  realizedPnlTotal: MoneyString
+  /** Alphabetical. */
+  bySymbol: PnlSymbolRow[]
+  /** Newest month first; months without closes omitted. */
+  byMonth: PnlMonthRow[]
+}
+
+export interface PnlSummaryParams {
+  startDate?: LocalDateString
+  endDate?: LocalDateString
+}

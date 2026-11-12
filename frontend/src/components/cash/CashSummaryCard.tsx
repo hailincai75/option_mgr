@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import type { ReactNode } from 'react'
 import { Card, Col, Row, Spin, Statistic } from 'antd'
 import { cashQueryKeys, getCashSummary } from '../../api/cash'
 import { formatMoney } from '../../utils/format'
@@ -8,6 +9,8 @@ interface CashSummaryCardProps {
   /** Card title; defaults to "现金汇总". */
   title?: string
   size?: 'medium' | 'small'
+  /** Card header extra, e.g. a link to the 资金 page. */
+  extra?: ReactNode
 }
 
 const ITEMS = [
@@ -21,7 +24,11 @@ const ITEMS = [
  * Values are shown exactly as returned by the backend (formatted only). Refreshes whenever
  * `cashQueryKeys.all` is invalidated.
  */
-export function CashSummaryCard({ title = '现金汇总', size = 'medium' }: CashSummaryCardProps) {
+export function CashSummaryCard({
+  title = '现金汇总',
+  size = 'medium',
+  extra,
+}: CashSummaryCardProps) {
   const { data, error, isPending, isFetching, refetch } = useQuery({
     queryKey: cashQueryKeys.summary,
     queryFn: ({ signal }) => getCashSummary(signal),
@@ -61,7 +68,7 @@ export function CashSummaryCard({ title = '现金汇总', size = 'medium' }: Cas
   }
 
   return (
-    <Card title={title} size={size} data-testid="cash-summary">
+    <Card title={title} size={size} extra={extra} data-testid="cash-summary">
       {content}
     </Card>
   )

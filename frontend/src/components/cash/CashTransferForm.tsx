@@ -2,7 +2,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Alert, App, Button, Card, Form, Input, Radio } from 'antd'
 import type { Rule } from 'antd/es/form'
 import { useState } from 'react'
-import { cashQueryKeys, createCashTransfer } from '../../api/cash'
+import { createCashTransfer } from '../../api/cash'
+import { refreshAfterChange } from '../trade/tradeFormSupport'
 import { ApiError } from '../../api/client'
 import type { CashTransferType, CreateCashTransferRequest } from '../../api/types'
 import { nowLocalDateTimeNY } from '../../utils/format'
@@ -74,7 +75,8 @@ export function CashTransferForm({ onSaved }: CashTransferFormProps) {
       void message.success(transfer.type === 'DEPOSIT' ? '入金已保存' : '出金已保存')
       form.setFieldsValue(initialValues())
       onSaved?.()
-      await queryClient.invalidateQueries({ queryKey: cashQueryKeys.all })
+      // Cash changes also change the home dashboard (FEAT-008); refresh everything derived from it.
+      await refreshAfterChange(queryClient)
     },
     onError: (error) => {
       if (!(error instanceof ApiError)) {

@@ -3,6 +3,7 @@ import type { RuleObject } from 'antd/es/form'
 import { auditLogQueryKeys } from '../../api/auditLog'
 import { cashQueryKeys } from '../../api/cash'
 import { closedTradeQueryKeys } from '../../api/closedTrades'
+import { dashboardQueryKeys, pnlSummaryQueryKeys } from '../../api/dashboard'
 import { ApiError } from '../../api/client'
 import { optionPositionQueryKeys } from '../../api/optionPositions'
 import { optionTradeQueryKeys } from '../../api/optionTrades'
@@ -57,7 +58,8 @@ export function applySubmitError<F extends string>(
 
 /**
  * After any saved, edited or deleted trade / transfer: cash summary and ledger, trades (lists
- * and details), positions, closed trades (FEAT-006) and the audit log refresh without reload.
+ * and details), positions, closed trades (FEAT-006), the home dashboard and P&L summary (FEAT-008)
+ * and the audit log refresh without reload.
  */
 export async function refreshAfterChange(queryClient: QueryClient): Promise<void> {
   await Promise.all([
@@ -66,6 +68,8 @@ export async function refreshAfterChange(queryClient: QueryClient): Promise<void
     queryClient.invalidateQueries({ queryKey: optionPositionQueryKeys.all }),
     queryClient.invalidateQueries({ queryKey: auditLogQueryKeys.all }),
     queryClient.invalidateQueries({ queryKey: closedTradeQueryKeys.all }),
+    queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.all }),
+    queryClient.invalidateQueries({ queryKey: pnlSummaryQueryKeys.all }),
   ])
 }
 

@@ -6,6 +6,7 @@ import { ClosedTradesPage } from './pages/ClosedTradesPage'
 import { HomePage } from './pages/HomePage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { TradeEntryPage } from './pages/TradeEntryPage'
+import { PnlSummaryPage } from './pages/PnlSummaryPage'
 import { PositionsPage } from './pages/PositionsPage'
 import { TradeListPage } from './pages/TradeListPage'
 
@@ -31,6 +32,14 @@ const NAV_ITEMS = [
     label: (
       <Link to="/closed" data-testid="nav-closed">
         已平仓
+      </Link>
+    ),
+  },
+  {
+    key: '/pnl-summary',
+    label: (
+      <Link to="/pnl-summary" data-testid="nav-pnl-summary">
+        盈亏汇总
       </Link>
     ),
   },
@@ -99,6 +108,7 @@ export function App() {
         <Route path="trades" element={<TradeListPage />} />
         <Route path="positions" element={<PositionsPage />} />
         <Route path="closed" element={<ClosedTradesPage />} />
+        <Route path="pnl-summary" element={<PnlSummaryPage />} />
         <Route path="trades/new" element={<TradeEntryPage />} />
         <Route path="cash" element={<CashPage />} />
         <Route path="audit" element={<AuditLogPage />} />

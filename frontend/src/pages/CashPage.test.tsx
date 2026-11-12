@@ -1,5 +1,5 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import userEvent from '../test/userEvent'
 import type {
   ApiErrorResponse,
   CashLedgerEntry,
@@ -115,7 +115,13 @@ async function fillForm(values: {
   remark?: string
 }) {
   const user = userEvent.setup()
-  if (values.type) await user.click(screen.getByRole('radio', { name: values.type }))
+  if (values.type) {
+    await user.click(
+      screen.getByTestId(
+        values.type === '入金' ? 'cash-transfer-type-deposit' : 'cash-transfer-type-withdrawal',
+      ),
+    )
+  }
   if (values.amount !== undefined) {
     await user.clear(amountInput())
     await user.type(amountInput(), values.amount)
@@ -248,7 +254,7 @@ describe('CashPage', () => {
     await user.click(screen.getByTestId('cash-transfer-submit'))
 
     expect(await screen.findByTestId('cash-transfer-error')).toHaveTextContent(message)
-    expect(screen.getByRole('radio', { name: '出金' })).toBeChecked()
+    expect(screen.getByTestId('cash-transfer-type-withdrawal')).toBeChecked()
     expect(amountInput()).toHaveValue('27499.51')
     expect(timeInput()).toHaveValue('2026-11-04T10:00')
     expect(remarkInput()).toHaveValue('转回银行')
@@ -275,7 +281,9 @@ describe('CashPage', () => {
     const user = await fillForm({ type: '入金', amount: '100', time: '2026-11-02T10:00' })
     await user.click(screen.getByTestId('cash-transfer-submit'))
 
-    expect(await within(formItemOf(amountInput())).findByText('金额最多 2 位小数')).toBeInTheDocument()
+    expect(
+      await within(formItemOf(amountInput())).findByText('金额最多 2 位小数'),
+    ).toBeInTheDocument()
     expect(within(formItemOf(timeInput())).getByText('时间不能晚于当前时间')).toBeInTheDocument()
     expect(screen.queryByTestId('cash-transfer-error')).not.toBeInTheDocument()
     expect(amountInput()).toHaveValue('100')
@@ -471,9 +479,9 @@ describe('CashPage', () => {
     })
     await waitFor(() => {
       rows = screen.getAllByTestId('cash-ledger-row')
-      expect(
-        within(rows[19] as HTMLElement).getByTestId('cash-ledger-balance').textContent,
-      ).toBe('1.00')
+      expect(within(rows[19] as HTMLElement).getByTestId('cash-ledger-balance').textContent).toBe(
+        '1.00',
+      )
     })
     expect(rows).toHaveLength(20)
     expect(within(rows[0] as HTMLElement).getByTestId('cash-ledger-balance').textContent).toBe(

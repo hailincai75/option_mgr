@@ -1,5 +1,5 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import userEvent from '../test/userEvent'
 import { useLocation, useNavigate } from 'react-router-dom'
 import type { ApiErrorResponse, OptionTrade, OptionTradePage } from '../api/types'
 import { App } from '../App'
@@ -319,7 +319,9 @@ describe('TradeListPage', () => {
 
     expect(screen.getAllByText('成交时间（美东时间）').length).toBeGreaterThan(0)
     for (const forbidden of ['价格', '每张价格', '手续费']) {
-      expect(screen.queryByRole('columnheader', { name: forbidden })).not.toBeInTheDocument()
+      // Header texts via DOM (role queries over the whole antd tree are very slow in jsdom).
+      const headers = [...document.querySelectorAll('th')].map((th) => th.textContent)
+      expect(headers).not.toContain(forbidden)
     }
   })
 
@@ -347,7 +349,8 @@ describe('TradeListPage', () => {
     expect(screen.queryByTestId('trade-list-empty')).not.toBeInTheDocument()
     // BUG-002: AC 2 requires 共 0 条; pager and page-size buttons stay hidden.
     expect(byTestId('trade-list-total')).toHaveTextContent('共 0 条')
-    expect(screen.queryByRole('button', { name: 'Page 1' })).not.toBeInTheDocument()
+    // No pager at all (DOM query: role queries over the whole antd tree are very slow).
+    expect(document.querySelector('.ant-pagination')).toBeNull()
     expect(screen.queryByTestId('trade-list-size-20')).not.toBeInTheDocument()
 
     await userEvent.click(byTestId('trade-list-no-match-clear'))
@@ -525,7 +528,9 @@ describe('TradeListPage', () => {
     await waitFor(() => {
       expect(byTestId('trade-list-total')).toHaveTextContent('共 45 条')
     })
-    await userEvent.click(byTestId('trade-list-size-50').closest('label') ?? byTestId('trade-list-size-50'))
+    await userEvent.click(
+      byTestId('trade-list-size-50').closest('label') ?? byTestId('trade-list-size-50'),
+    )
     await waitFor(() => {
       expect(screen.getAllByTestId('trade-row')).toHaveLength(45)
     })
@@ -578,7 +583,7 @@ describe('TradeListPage', () => {
     await expectRowIds([2])
     expect(searchOf().get('action')).toBe('BTO')
 
-    await userEvent.click(screen.getByRole('button', { name: 'browser-back' }))
+    await userEvent.click(screen.getByText('browser-back'))
     await expectRowIds([4, 1])
     expect(byTestId('trade-filter-action-sto')).toBeChecked()
     expect(byTestId('trade-filter-action-bto')).not.toBeChecked()

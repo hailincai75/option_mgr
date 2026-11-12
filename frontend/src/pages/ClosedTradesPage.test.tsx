@@ -1,5 +1,5 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import userEvent from '../test/userEvent'
 import { useLocation, useNavigate } from 'react-router-dom'
 import type { ClosedTrade, ClosedTradePage, CoveredLot } from '../api/types'
 import { App } from '../App'
@@ -343,7 +343,9 @@ describe('ClosedTradesPage', () => {
     expect(within(rows[0] as HTMLElement).getByTestId('closed-cell-note')).toHaveTextContent('—')
     expect(screen.getAllByText('平仓时间（美东时间）').length).toBeGreaterThan(0)
     for (const forbidden of ['成交价', '手续费', '持有天数']) {
-      expect(screen.queryByRole('columnheader', { name: forbidden })).not.toBeInTheDocument()
+      // Header texts via DOM (role queries over the whole antd tree are very slow in jsdom).
+      const headers = [...document.querySelectorAll('th')].map((th) => th.textContent)
+      expect(headers).not.toContain(forbidden)
     }
   })
 
@@ -380,8 +382,9 @@ describe('ClosedTradesPage', () => {
     )
   })
 
-  it('filters by symbol, contract, type and direction with filtered totals (AC 3)', async () => {
-    const queries = startFakeServer({ closed: SCENARIO_P })
+  // AC 3 is split into three tests (same assertions) so no single test does four filter rounds.
+  it('filters by symbol with the filtered total (AC 3)', async () => {
+    startFakeServer({ closed: SCENARIO_P })
     renderPage()
     await expectRows([9, 8, 7, 6])
 
@@ -390,6 +393,12 @@ describe('ClosedTradesPage', () => {
     await expectRows([9, 6])
     await expectSummary('共 2 笔平仓', '+298.70')
     expect(byTestId('closed-filter-note')).toHaveTextContent('当前筛选')
+  })
+
+  it('filters by the full contract with the filtered total (AC 3)', async () => {
+    startFakeServer({ closed: SCENARIO_P })
+    renderPage()
+    await expectRows([9, 8, 7, 6])
 
     setText('closed-filter-symbol', 'AAPL')
     setText('closed-filter-expiration', '2026-12-18')
@@ -398,8 +407,13 @@ describe('ClosedTradesPage', () => {
     await submitFilters()
     await expectRows([6])
     await expectSummary('共 1 笔平仓', '+658.70')
+  })
 
-    await userEvent.click(byTestId('closed-filter-clear'))
+  it('filters by type, then clears and filters by direction (AC 3)', async () => {
+    const queries = startFakeServer({ closed: SCENARIO_P })
+    renderPage()
+    await expectRows([9, 8, 7, 6])
+
     await userEvent.click(byTestId('closed-filter-type-call'))
     await submitFilters()
     await expectRows([9, 8])
@@ -571,7 +585,7 @@ describe('ClosedTradesPage', () => {
     await expectRows([7, 6])
     expect(byTestId('location')).toHaveTextContent('/closed?action=BTC')
 
-    await userEvent.click(screen.getByRole('button', { name: 'browser-back' }))
+    await userEvent.click(screen.getByText('browser-back'))
     await expectRows([9, 8, 7, 6])
     expect(byTestId('closed-filter-action-btc')).not.toBeChecked()
   })
