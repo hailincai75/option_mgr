@@ -34,7 +34,6 @@ public class CashController {
     private final CashLedgerService ledger;
     private final CashTransferService transfers;
     private final CashTransferEditService edits;
-
     public CashController(CashLedgerService ledger, CashTransferService transfers, CashTransferEditService edits) {
         this.ledger = ledger;
         this.transfers = transfers;
@@ -84,7 +83,7 @@ public class CashController {
         return new LedgerPageResponse(
                 p.items().stream().map(l -> new LedgerEntryResponse(l.id(), l.occurredAt(), l.sourceType(),
                         l.sourceId(), l.amount(), l.balanceAfter(), l.frozenChange(), l.description(),
-                        l.remark())).toList(),
+                        l.remark(), l.hasAuditLog())).toList(),
                 p.page(), p.size(), p.totalItems(), p.totalPages());
     }
 }

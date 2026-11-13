@@ -1,12 +1,13 @@
 import type { Locator, Page } from '@playwright/test'
 import { apiTransfer, CashPage, expect, MINUS, test } from '../support/fixtures'
 import { apiTrade, TradeForm } from '../support/trade'
+import { BACKEND_URL } from '../support/backend'
 
 /**
  * FEAT-006 已平仓 E2E. DB reset per test, ids restart at 1: scenario P trades T1–T5 = #1–#5, C1–C4 = #6–#9.
  */
 
-const BACKEND = 'http://localhost:8080'
+const BACKEND = BACKEND_URL
 
 async function apiClose(body: Record<string, unknown>): Promise<number> {
   const r = await fetch(`${BACKEND}/api/option-trades/closes`, {
@@ -353,13 +354,43 @@ test.describe('FEAT-006 已平仓', () => {
     await expect(page.getByTestId('trade-filter-symbol')).toHaveValue('AAPL')
     await expect(page.getByTestId('trade-filter-type-put')).toBeChecked()
 
+    // "历史" only on rows whose closing trade has audit records (contract: 列表行的 hasAuditLog). Nothing edited yet.
     await c.open()
+    await expect(c.rows).toHaveCount(4)
+    await expect(page.getByTestId('closed-history')).toHaveCount(0)
+    await page.goto('/audit?objectType=OPTION_TRADE&objectId=6')
+    await expect(page.getByTestId('audit-empty')).toContainText('暂无审计记录')
+    await expect(page.getByTestId('audit-empty-hint')).toHaveText('期权交易 #6 录入后没有被修改或删除过（审计只记录修改和删除）')
+
+    // Editing an opening lot (T1 #1, closed by C1) does not count for the closed row: still no link.
+    const putT1 = await fetch(`${BACKEND}/api/option-trades/1`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contracts: 2, netAmount: '698.70', tradedAtLocal: '2026-11-02T10:30', note: '第一笔' }),
+    })
+    expect(putT1.status).toBe(200)
+    await c.open()
+    await expect(c.rows).toHaveCount(4)
+    await expect(page.getByTestId('closed-history')).toHaveCount(0)
+
+    // Editing the closing trade C1 #6 → its row (only) gets the link, which opens the audit page filtered to #6.
+    const putC1 = await fetch(`${BACKEND}/api/option-trades/6`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contracts: 3, netAmount: '400.00', tradedAtLocal: '2026-11-05T10:00', note: '全部平掉（改）' }),
+    })
+    expect(putC1.status).toBe(200)
+    await c.open()
+    await expect(c.row(6).getByTestId('closed-history')).toBeVisible()
+    await expect(page.getByTestId('closed-history')).toHaveCount(1)
     await c.row(6).getByTestId('closed-history').click()
     await expect(page).toHaveURL(/\/audit\?/)
     const p = new URL(page.url()).searchParams
     expect(p.get('objectType')).toBe('OPTION_TRADE')
     expect(p.get('objectId')).toBe('6')
     await expect(page.getByTestId('audit-filter-id')).toHaveValue('6')
+    await expect(page.getByTestId('audit-row')).toHaveCount(1)
+    await expect(page.getByTestId('audit-row')).toContainText('期权交易 #6')
   })
 
   test('AC8 只有开仓：暂无平仓记录、共 0 笔、合计 0.00', async ({ page }) => {

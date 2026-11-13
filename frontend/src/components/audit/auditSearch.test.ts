@@ -2,6 +2,7 @@ import { toLocalDateTimeInputNY, formatDateTimeSecondsNY } from '../../utils/for
 import { auditUrl } from './auditLinks'
 import {
   EMPTY_AUDIT_FILTERS,
+  auditEmptyObjectHint,
   parseAuditSearch,
   toAuditParams,
   toAuditSearch,
@@ -41,6 +42,16 @@ describe('auditSearch', () => {
     [{ objectType: 'OPTION_TRADE', objectId: 'abc' }, { objectId: '对象 ID 必须是正整数' }],
   ])('validates %j', (filters, errors) => {
     expect(validateAuditFilters(filters)).toEqual(errors)
+  })
+
+  it.each([
+    [{ objectType: 'OPTION_TRADE', objectId: '4' }, '期权交易 #4 录入后没有被修改或删除过（审计只记录修改和删除）'],
+    [{ objectType: 'CASH_TRANSFER', objectId: '01' }, '入金/出金 #1 录入后没有被修改或删除过（审计只记录修改和删除）'],
+    [{ objectType: 'OPTION_TRADE', objectId: '' }, null],
+    [{ objectType: '', objectId: '' }, null],
+    [{ objectType: 'ACCOUNT', objectId: '2' }, null],
+  ])('empty-state object hint for %j', (filters, hint) => {
+    expect(auditEmptyObjectHint(filters)).toBe(hint)
   })
 
   it('builds 历史 links', () => {

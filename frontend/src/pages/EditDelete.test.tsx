@@ -39,6 +39,7 @@ function trade(partial: Partial<OptionTrade> & Pick<OptionTrade, 'id'>): OptionT
     createdAt: '2026-11-11T15:00:00Z',
     coveredLots: null,
     realizedPnl: null,
+    hasAuditLog: false,
     ...partial,
   }
 }
@@ -79,6 +80,7 @@ const C1 = trade({
     },
   ],
   realizedPnl: '457.40',
+  hasAuditLog: true,
 })
 
 const SUMMARY_A: CashSummary = {
@@ -99,11 +101,12 @@ function ledgerEntry(
     frozenChange: '0.00',
     description: null,
     remark: null,
+    hasAuditLog: false,
     ...partial,
   }
 }
 
-const D1 = ledgerEntry({ id: 1, remark: '初始资金' })
+const D1 = ledgerEntry({ id: 1, remark: '初始资金', hasAuditLog: true })
 const L2_ENTRY = ledgerEntry({
   id: 3,
   occurredAt: L2.tradedAt,
@@ -335,13 +338,14 @@ describe('trade list: 修改', () => {
   it('saves an edited open with every editable field and refreshes the list (AC 1, 13)', async () => {
     const server = scenarioA()
     server.onPutTrade = () => {
-      const edited = { ...L2, netAmount: '365.00', cashChange: '365.00' }
+      const edited = { ...L2, netAmount: '365.00', cashChange: '365.00', hasAuditLog: true }
       server.trades = [C1, edited, L1]
       return jsonResponse(edited)
     }
     const requests = startFakeServer(server)
     renderWithProviders(<TradeListPage />)
 
+    expect(within(await tradeRow(2)).queryByTestId('trade-history')).not.toBeInTheDocument()
     await userEvent.click(within(await tradeRow(2)).getByTestId('trade-edit'))
     setText('trade-edit-net-amount', '365.00')
     await userEvent.click(byTestId('trade-edit-submit'))
@@ -367,6 +371,11 @@ describe('trade list: 修改', () => {
         '+365.00',
       )
     })
+    // The refetched row now has audit records, so 历史 appears.
+    expect(within(await tradeRow(2)).getByTestId('trade-history')).toHaveAttribute(
+      'href',
+      '/audit?objectType=OPTION_TRADE&objectId=2',
+    )
   })
 
   it('edits a close without multiplier and with the paid label (AC 2, 11)', async () => {
@@ -545,6 +554,18 @@ describe('trade list: 删除 and 历史', () => {
       '/audit?objectType=OPTION_TRADE&objectId=3',
     )
   })
+
+  it('hides 历史 on rows without audit records but keeps 修改 / 删除', async () => {
+    startFakeServer(scenarioA())
+    renderWithProviders(<TradeListPage />)
+    for (const id of [2, 1]) {
+      const row = within(await tradeRow(id))
+      expect(row.queryByTestId('trade-history')).not.toBeInTheDocument()
+      expect(row.getByTestId('trade-edit')).toBeInTheDocument()
+      expect(row.getByTestId('trade-delete')).toBeInTheDocument()
+    }
+    expect(within(await tradeRow(3)).getByTestId('trade-history')).toBeInTheDocument()
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -568,6 +589,17 @@ describe('cash ledger: transfer actions', () => {
       'href',
       '/audit?objectType=CASH_TRANSFER&objectId=1',
     )
+  })
+
+  it('hides 历史 on transfers without audit records but keeps 修改 / 删除', async () => {
+    const neverEdited = ledgerEntry({ id: 2, sourceId: 2, hasAuditLog: false })
+    startFakeServer(scenarioA({ ledger: [neverEdited] }))
+    renderWithProviders(<CashPage />)
+
+    const row = within((await screen.findAllByTestId('cash-ledger-row'))[0] as HTMLElement)
+    expect(row.queryByTestId('cash-ledger-history')).not.toBeInTheDocument()
+    expect(row.getByTestId('cash-ledger-edit')).toBeInTheDocument()
+    expect(row.getByTestId('cash-ledger-delete')).toBeInTheDocument()
   })
 
   it('prefills and saves an edited deposit (AC 8, 9)', async () => {

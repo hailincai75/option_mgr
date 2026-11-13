@@ -129,6 +129,7 @@ const CLOSE_AC1: OptionTrade = {
   createdAt: '2026-11-11T15:00:00Z',
   coveredLots: [{ ...L1, contracts: 2, netAmount: '698.70', frozen: '40000.00' }],
   realizedPnl: '457.40',
+  hasAuditLog: true,
 }
 
 // ---------------------------------------------------------------------------

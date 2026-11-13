@@ -26,6 +26,7 @@ const depositEntry: CashLedgerEntry = {
   frozenChange: '0.00',
   description: null,
   remark: '初始资金',
+  hasAuditLog: false,
 }
 
 const withdrawalEntry: CashLedgerEntry = {
@@ -38,6 +39,7 @@ const withdrawalEntry: CashLedgerEntry = {
   frozenChange: '0.00',
   description: null,
   remark: null,
+  hasAuditLog: false,
 }
 
 function errorBody(
@@ -454,6 +456,7 @@ describe('CashPage', () => {
       frozenChange: '0.00',
       description: null,
       remark: null,
+      hasAuditLog: false,
     })
     // 60 entries, newest first; only ids 1..30 have valid September dates, which is fine here.
     const all = Array.from({ length: 60 }, (_, i) => entryFor(60 - i))

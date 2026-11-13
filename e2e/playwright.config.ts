@@ -1,4 +1,14 @@
 import { defineConfig, devices } from '@playwright/test'
+import { BACKEND_URL } from './support/backend'
+
+/**
+ * Ports. Defaults 5173 (frontend) / 8080 (backend). To run next to the developer's own app on those ports, set
+ * E2E_FRONTEND_PORT and E2E_BACKEND_PORT (e.g. 15173 / 18080): the suite then starts its own Vite dev server on
+ * E2E_FRONTEND_PORT with its /api proxy pointed at the e2e backend (OPTION_MGR_API_TARGET) and never talks to
+ * 5173 / 8080.
+ */
+const FRONTEND_PORT = process.env.E2E_FRONTEND_PORT ?? '5173'
+const FRONTEND_URL = `http://localhost:${FRONTEND_PORT}`
 
 /**
  * E2E for Option Manager.
@@ -20,17 +30,19 @@ export default defineConfig({
   reporter: [['list'], ['html', { open: 'never' }]],
   globalSetup: './support/global-setup.ts',
   use: {
-    baseURL: 'http://localhost:5173',
+    baseURL: FRONTEND_URL,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     locale: 'zh-CN',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
-    command: 'npm run dev',
+    command: FRONTEND_PORT === '5173' ? 'npm run dev' : `npm run dev -- --port ${FRONTEND_PORT} --strictPort`,
     cwd: '../frontend',
-    url: 'http://localhost:5173',
-    reuseExistingServer: true,
+    url: FRONTEND_URL,
+    env: { OPTION_MGR_API_TARGET: BACKEND_URL },
+    // A custom port is always a fresh server of our own (never someone else's Vite pointed at another backend).
+    reuseExistingServer: FRONTEND_PORT === '5173',
     timeout: 120_000,
   },
 })

@@ -149,9 +149,11 @@ export function TradeTable({
           >
             删除
           </Button>
-          <Link to={auditUrl('OPTION_TRADE', trade.id)} data-testid="trade-history">
-            历史
-          </Link>
+          {trade.hasAuditLog && (
+            <Link to={auditUrl('OPTION_TRADE', trade.id)} data-testid="trade-history">
+              历史
+            </Link>
+          )}
         </Space>
       ),
     },

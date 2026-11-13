@@ -79,6 +79,7 @@ public class CashTransferEditService {
 
         Map<String, Object> before = snapshot(transfer);
         transfer.update(cmd.type(), amount, occurredAt, remark);
+        transfer.markAudited();
         ledger.updateEntry(accountId, entry.getId(), occurredAt, cmd.type().sourceType(), signed, Money.ZERO, null, remark);
         Map<String, Object> after = snapshot(transfer);
         audit.record(new AuditService.NewAuditRecord(accountId, AuditOperation.UPDATE, AuditObjectType.CASH_TRANSFER, id,

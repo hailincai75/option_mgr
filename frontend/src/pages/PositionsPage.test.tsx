@@ -554,6 +554,7 @@ describe('PositionsPage', () => {
       createdAt: '2026-11-11T15:00:00Z',
       coveredLots: null,
       realizedPnl: null,
+      hasAuditLog: false,
     }
     startFakeServer({
       positions: () => jsonResponse(current),

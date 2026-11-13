@@ -43,6 +43,10 @@ public class CashTransferEntity {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    /** True once the transfer has been edited (it has an audit record). */
+    @Column(name = "has_audit_log", nullable = false)
+    private boolean hasAuditLog;
+
     protected CashTransferEntity() {
     }
 
@@ -62,6 +66,15 @@ public class CashTransferEntity {
         this.amount = amount;
         this.occurredAt = occurredAt;
         this.remark = remark;
+    }
+
+    /** Called only by the edit path, in the transaction that writes this transfer's UPDATE audit record. */
+    public void markAudited() {
+        this.hasAuditLog = true;
+    }
+
+    public boolean hasAuditLog() {
+        return hasAuditLog;
     }
 
     public Long getId() {

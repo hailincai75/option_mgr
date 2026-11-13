@@ -118,7 +118,7 @@ public class OptionTradeController {
                 contract.label(), t.getNote(), e.getId(), t.getCreatedAt(),
                 view.closeMatch().map(m -> m.coveredLots().stream().map(OptionTradeController::toCovered).toList())
                         .orElse(null),
-                view.closeMatch().map(CloseMatch::realizedPnl).orElse(null));
+                view.closeMatch().map(CloseMatch::realizedPnl).orElse(null), t.hasAuditLog());
     }
 
     private static CoveredLotResponse toCovered(PositionLot l) {

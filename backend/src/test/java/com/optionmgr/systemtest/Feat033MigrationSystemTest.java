@@ -101,7 +101,7 @@ class Feat033MigrationSystemTest {
     private List<String> backups(String name) throws Exception {
         try (Stream<Path> files = Files.list(dir)) {
             return files.map(p -> p.getFileName().toString())
-                    .filter(f -> f.startsWith(name + "-backup-before-V5-")).toList();
+                    .filter(f -> f.matches(java.util.regex.Pattern.quote(name) + "-backup-before-V\\d+-.*")).toList();
         }
     }
 
@@ -210,6 +210,6 @@ class Feat033MigrationSystemTest {
             assertThat(call(m, get("/api/accounts"), null, 200)).hasSize(2);
         }
         assertThat(backups("cashdb")).hasSize(1);
-        assertThat(count(url, "SELECT MAX(version) FROM \"flyway_schema_history\" WHERE success")).isEqualTo(5);
+        assertThat(count(url, "SELECT MAX(version) FROM \"flyway_schema_history\" WHERE success")).isEqualTo(6); // latest migration (V6 has_audit_log)
     }
 }

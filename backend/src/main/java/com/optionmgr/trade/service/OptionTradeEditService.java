@@ -164,6 +164,7 @@ public class OptionTradeEditService {
         Map<String, Object> before = snapshot(trade, entry.getAmount(), entry.getFrozenChange());
         List<SideEffect> effects = sideEffects(existing, corrections);
         trade.update(cmd.contracts(), effectiveMultiplier, net, tradedAt, note);
+        trade.markAudited(); // only the edited trade; records corrected as side effects keep their flag
         ledger.updateEntry(accountId, entry.getId(), tradedAt, entry.getSourceType(), cashChange, frozenChange,
                 OpenTradeTerms.describe(trade.getAction(), cmd.contracts(), effectiveMultiplier, contract), note);
         ledger.correctFrozenChanges(accountId, corrections);

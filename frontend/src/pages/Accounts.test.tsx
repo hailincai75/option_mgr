@@ -57,6 +57,7 @@ function trade(id: number, symbol: string): OptionTrade {
     createdAt: '2026-11-12T15:00:00Z',
     coveredLots: null,
     realizedPnl: null,
+    hasAuditLog: false,
   }
 }
 

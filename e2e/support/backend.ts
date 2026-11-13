@@ -11,7 +11,12 @@ import { fileURLToPath } from 'node:url'
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url))
-export const BACKEND_URL = 'http://localhost:8080'
+/**
+ * Backend port. Default 8080; set E2E_BACKEND_PORT (e.g. 18080) to run the suite next to a dev backend on 8080
+ * without touching it. playwright.config.ts points the e2e Vite dev server's /api proxy at the same port.
+ */
+export const BACKEND_PORT = process.env.E2E_BACKEND_PORT ?? '8080'
+export const BACKEND_URL = `http://localhost:${BACKEND_PORT}`
 const BACKEND_DIR = path.resolve(here, '../../backend')
 const STATE_DIR = path.resolve(here, '../.backend-logs')
 /** PID of the backend process started by this suite (shared by global setup, workers and teardown). */
@@ -60,11 +65,11 @@ export async function resetBackend(): Promise<void> {
   try {
     r = await fetch(`${BACKEND_URL}/api/test-support/reset`, { method: 'POST', signal: AbortSignal.timeout(10_000) })
   } catch (e) {
-    throw new Error(`E2E backend not reachable on 8080 for reset: ${String(e)}`)
+    throw new Error(`E2E backend not reachable on ${BACKEND_PORT} for reset: ${String(e)}`)
   }
   if (r.status === 404) {
     throw new Error(
-      'POST /api/test-support/reset returned 404: the backend on 8080 is NOT running with the e2e profile ' +
+      `POST /api/test-support/reset returned 404: the backend on ${BACKEND_PORT} is NOT running with the e2e profile ` +
         '(maybe your dev backend on backend/data). Refusing to run E2E against it. Stop it and re-run.',
     )
   }
@@ -87,7 +92,7 @@ export async function startBackend(label = 'backend'): Promise<number | null> {
   delete env.SPRING_DATASOURCE_URL // application-e2e.yml decides (in-memory)
   // Detached, logging straight to a file: the process does not depend on whoever started it
   // (a worker may restart it), and global teardown stops it via the PID file.
-  const proc = spawn(javaExecutable(), ['-XX:TieredStopAtLevel=1', '-jar', bootJar(), '--server.port=8080'], {
+  const proc = spawn(javaExecutable(), ['-XX:TieredStopAtLevel=1', '-jar', bootJar(), `--server.port=${BACKEND_PORT}`], {
     cwd: STATE_DIR,
     env,
     stdio: ['ignore', logFd, logFd],

@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test'
 import { apiTransfer, CashPage, expect, MINUS, test } from '../support/fixtures'
-import { setApiAccount } from '../support/backend'
+import { BACKEND_URL, setApiAccount } from '../support/backend'
 import { apiTrade, TradeForm } from '../support/trade'
 
 /**
@@ -9,7 +9,7 @@ import { apiTrade, TradeForm } from '../support/trade'
  * the small account) → 100,120.00 / 19,000.00 / 81,120.00.
  */
 
-const BACKEND = 'http://localhost:8080'
+const BACKEND = BACKEND_URL
 
 async function apiCreateAccount(name: string, brokerNote: string | null = null): Promise<number> {
   const r = await fetch(`${BACKEND}/api/accounts`, {

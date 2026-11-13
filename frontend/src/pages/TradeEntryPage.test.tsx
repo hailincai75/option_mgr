@@ -75,6 +75,7 @@ const savedTrade: OptionTrade = {
   createdAt: '2026-11-10T15:45:00.123456Z',
   coveredLots: null,
   realizedPnl: null,
+  hasAuditLog: false,
 }
 
 const byTestId = (id: string) => screen.getByTestId(id)

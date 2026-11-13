@@ -62,8 +62,19 @@ export function toAuditSearch(state: AuditUrlState): URLSearchParams {
   return search
 }
 
-export function hasAuditFilters(filters: AuditFilterValues): boolean {
-  return filters.objectType.trim() !== '' || filters.objectId.trim() !== ''
+/**
+ * Extra empty-state line when the page is filtered to one trade / cash entry (the rows' "历史"
+ * link): audits only record edits and deletes, not creation (Q42), so an empty result just means
+ * the record was never changed. Null without a full object filter, and for accounts (whose
+ * creation is audited, so an empty result there is not this case). Expects valid filters.
+ */
+export function auditEmptyObjectHint(filters: AuditFilterValues): string | null {
+  const objectType = filters.objectType.trim()
+  const objectId = filters.objectId.trim()
+  if (objectId === '') return null
+  if (objectType !== 'OPTION_TRADE' && objectType !== 'CASH_TRANSFER') return null
+  const label = `${AUDIT_OBJECT_TYPE_LABELS[objectType]} #${String(Number(objectId))}`
+  return `${label} 录入后没有被修改或删除过（审计只记录修改和删除）`
 }
 
 /** Client checks matching the backend rules; errors keep the request from being sent. */

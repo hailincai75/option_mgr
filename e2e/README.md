@@ -17,6 +17,11 @@ npx playwright test
 - 不需要手动启动后端。8080 上**不能**有开发用的后端（见下面的"安全"）。
 - 前端：如果 5173 上已有 Vite dev server 就直接用，没有的话 Playwright 会自动 `npm run dev`（在 `frontend/` 下），跑完再停掉。
 - 如果 JDK 不在默认路径，用环境变量 `E2E_JAVA_HOME` 指定。
+- **自己的应用在 8080 / 5173 上运行时**：用环境变量换端口，测试就只用新端口，不碰 8080 / 5173：
+  ```powershell
+  $env:E2E_BACKEND_PORT='18080'; $env:E2E_FRONTEND_PORT='15173'; npx playwright test
+  ```
+  这时 Playwright 在 `E2E_FRONTEND_PORT` 上自己启动一个 Vite（不复用已有的），它的 `/api` 代理通过 `OPTION_MGR_API_TARGET` 指向 `E2E_BACKEND_PORT` 上的 e2e 后端；测试里直接调后端的请求也走这个端口（`support/backend.ts` 的 `BACKEND_URL`）。
 - 后端日志写在 `e2e/.backend-logs/`；失败用例的 trace 和截图在 `test-results/`，HTML 报告在 `playwright-report/`（这几个目录都被 git 忽略）。
 
 ## 每个测试从空库开始的做法

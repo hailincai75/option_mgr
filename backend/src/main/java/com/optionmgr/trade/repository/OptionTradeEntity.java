@@ -70,6 +70,10 @@ public class OptionTradeEntity {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    /** True once the trade itself has been edited (it has an audit record); never set by cascade corrections. */
+    @Column(name = "has_audit_log", nullable = false)
+    private boolean hasAuditLog;
+
     protected OptionTradeEntity() {
     }
 
@@ -96,6 +100,15 @@ public class OptionTradeEntity {
         this.netAmount = netAmount;
         this.tradedAt = tradedAt;
         this.note = note;
+    }
+
+    /** Called only by the edit path, in the transaction that writes this trade's UPDATE audit record. */
+    public void markAudited() {
+        this.hasAuditLog = true;
+    }
+
+    public boolean hasAuditLog() {
+        return hasAuditLog;
     }
 
     public ContractKey contract() {

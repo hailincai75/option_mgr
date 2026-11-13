@@ -1,13 +1,14 @@
 import type { Locator, Page } from '@playwright/test'
 import { apiLedger, apiTransfer, CashPage, expect, MINUS, nyLocal, test } from '../support/fixtures'
 import { apiTrade } from '../support/trade'
+import { BACKEND_URL } from '../support/backend'
 
 /**
  * FEAT-005 修改 / 删除 / 审计 E2E. The database is reset before each test, so ids restart at 1:
  * scenario A = deposit #1, L1 = trade #1, L2 = trade #2, C1 = trade #3.
  */
 
-const BACKEND = 'http://localhost:8080'
+const BACKEND = BACKEND_URL
 
 async function apiClose(body: Record<string, unknown>): Promise<number> {
   const r = await fetch(`${BACKEND}/api/option-trades/closes`, {
@@ -404,13 +405,15 @@ test.describe('FEAT-005 修改 / 删除 / 审计', () => {
     expect(await auditCount()).toBe(0)
   })
 
-  test('AC12 审计页：3 条倒序；C1 的"历史"筛选为空；清除后 3 条；没有修改/删除按钮；入金"历史"', async ({ page }) => {
+  test('AC12 审计页：3 条倒序；没有修改/删除按钮；"历史"只在有审计记录的行上显示；按对象筛选为空时的提示；清除后 3 条', async ({ page }) => {
     await scenarioA()
     const put = (body: Record<string, unknown>) =>
       fetch(`${BACKEND}/api/option-trades/2`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     expect((await put({ contracts: 1, netAmount: '365.00', tradedAtLocal: '2026-11-04T11:00', multiplier: 100 })).status).toBe(200)
     expect((await put({ contracts: 1, netAmount: '365.00', tradedAtLocal: '2026-11-04T11:00', multiplier: 100, note: '加仓' })).status).toBe(200)
     expect((await fetch(`${BACKEND}/api/option-trades/2`, { method: 'DELETE' })).status).toBe(204)
+    const put3 = (body: Record<string, unknown>) =>
+      fetch(`${BACKEND}/api/option-trades/3`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
 
     const ui = new Ui(page)
     await page.goto('/audit')
@@ -423,30 +426,74 @@ test.describe('FEAT-005 修改 / 删除 / 审计', () => {
     await expect(page.getByTestId('audit-total')).toHaveText('共 3 条')
     await expect(page.getByTestId('audit-page').getByRole('button', { name: /^(修改|删除|编辑)$/ })).toHaveCount(0)
 
+    // "历史" only on rows with audit records (contract: 列表行的 hasAuditLog). #2 (the only audited trade) is deleted,
+    // L1 #1 and C1 #3 were never edited, the deposit #1 was never edited → no link anywhere yet.
     await page.getByTestId('nav-trades').click()
-    await ui.tradeRow(3).getByTestId('trade-history').click()
-    await expect(page).toHaveURL(/\/audit\?.*objectType=OPTION_TRADE/)
-    expect(new URL(page.url()).searchParams.get('objectId')).toBe('3')
+    await expect(ui.tradeRow(3)).toBeVisible()
+    await expect(ui.tradeRow(1)).toBeVisible()
+    await expect(page.getByTestId('trade-history')).toHaveCount(0)
+    await page.getByTestId('nav-cash').click()
+    await expect(new CashPage(page).ledgerRows).toHaveCount(3) // deposit, L1 open, C1 close (L2 deleted)
+    await expect(page.getByTestId('cash-ledger-history')).toHaveCount(0)
+
+    // Never-edited object opened directly by URL: empty state with the "never changed" hint, no in-table clear button.
+    await page.goto('/audit?objectType=OPTION_TRADE&objectId=3')
     await expect(page.getByTestId('audit-empty')).toContainText('暂无审计记录')
+    await expect(page.getByTestId('audit-empty-hint')).toHaveText('期权交易 #3 录入后没有被修改或删除过（审计只记录修改和删除）')
+    await expect(page.getByTestId('audit-empty-clear')).toHaveCount(0)
     await expect(page.getByTestId('audit-filter-id')).toHaveValue('3')
     await expect(page.getByTestId('audit-filter-type-trade')).toBeChecked()
     await page.getByTestId('audit-filter-clear').click()
     await expect(page.getByTestId('audit-row')).toHaveCount(3)
+    await expect(page.getByTestId('audit-empty-hint')).toHaveCount(0)
 
     await page.goBack()
     await expect(page.getByTestId('audit-empty')).toBeVisible()
+    await expect(page.getByTestId('audit-empty-hint')).toHaveText('期权交易 #3 录入后没有被修改或删除过（审计只记录修改和删除）')
 
     await page.goto('/audit?objectType=OPTION_TRADE&objectId=2')
     await expect(page.getByTestId('audit-row')).toHaveCount(3)
+    await expect(page.getByTestId('audit-empty-hint')).toHaveCount(0)
     await page.goto('/audit?objectType=CASH_TRANSFER&objectId=1')
-    await expect(page.getByTestId('audit-empty')).toBeVisible()
+    await expect(page.getByTestId('audit-empty')).toContainText('暂无审计记录')
+    await expect(page.getByTestId('audit-empty-hint')).toHaveText('入金/出金 #1 录入后没有被修改或删除过（审计只记录修改和删除）')
+    await expect(page.getByTestId('audit-empty-clear')).toHaveCount(0)
     await page.goto('/audit?objectId=1')
     await expect(page.getByTestId('audit-page')).toContainText('请同时指定对象类型')
 
-    await page.getByTestId('nav-cash').click()
-    await new CashPage(page).ledgerRows.last().getByTestId('cash-ledger-history').click()
+    // Edit the deposit #1 and C1 #3 → their "历史" links appear and open the filtered audit page.
+    const putTransfer = await fetch(`${BACKEND}/api/cash/transfers/1`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'DEPOSIT', amount: '80000.00', occurredAtLocal: '2026-10-26T10:00', remark: '初始资金' }),
+    })
+    expect(putTransfer.status).toBe(200)
+    const putClose = await put3({ contracts: 2, netAmount: '241.30', tradedAtLocal: '2026-11-05T10:00', note: '提前平仓' })
+    expect(putClose.status).toBe(200)
+
+    await page.goto('/cash')
+    const ledger = new CashPage(page).ledgerRows
+    await expect(ledger).toHaveCount(3)
+    await expect(page.getByTestId('cash-ledger-history')).toHaveCount(1)
+    await ledger.last().getByTestId('cash-ledger-history').click()
     await expect(page).toHaveURL(/objectType=CASH_TRANSFER/)
     expect(new URL(page.url()).searchParams.get('objectId')).toBe('1')
+    await expect(page.getByTestId('audit-row')).toHaveCount(1)
+    await expect(page.getByTestId('audit-row')).toContainText('入金 #1')
+    await expect(page.getByTestId('audit-row')).toContainText('备注：— → 初始资金')
+    await expect(page.getByTestId('audit-empty')).toHaveCount(0)
+
+    await page.getByTestId('nav-trades').click()
+    await expect(ui.tradeRow(3).getByTestId('trade-history')).toBeVisible()
+    await expect(ui.tradeRow(1).getByTestId('trade-history')).toHaveCount(0)
+    await expect(page.getByTestId('trade-history')).toHaveCount(1)
+    await ui.tradeRow(3).getByTestId('trade-history').click()
+    await expect(page).toHaveURL(/\/audit\?.*objectType=OPTION_TRADE/)
+    expect(new URL(page.url()).searchParams.get('objectId')).toBe('3')
+    await expect(page.getByTestId('audit-filter-id')).toHaveValue('3')
+    await expect(page.getByTestId('audit-row')).toHaveCount(1)
+    await expect(page.getByTestId('audit-row')).toContainText('期权交易 #3')
+    await expect(page.getByTestId('audit-row')).toContainText('提前平仓')
   })
 
   test('审计页导航与空状态', async ({ page }) => {

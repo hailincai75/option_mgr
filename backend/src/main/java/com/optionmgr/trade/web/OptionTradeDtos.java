@@ -103,7 +103,9 @@ public final class OptionTradeDtos {
             long ledgerEntryId,
             Instant createdAt,
             List<CoveredLotResponse> coveredLots,
-            BigDecimal realizedPnl) {
+            BigDecimal realizedPnl,
+            /* stored flag of the trade: set when it is edited (it then has an audit record); create = false */
+            boolean hasAuditLog) {
     }
 
     /**

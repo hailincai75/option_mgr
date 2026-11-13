@@ -31,7 +31,6 @@ public class ClosedTradeController {
     private static final DateTimeFormatter LOCAL_SECONDS = DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss");
 
     private final ClosedTradeService service;
-
     public ClosedTradeController(ClosedTradeService service) {
         this.service = service;
     }
@@ -42,7 +41,9 @@ public class ClosedTradeController {
                                       int contracts, int multiplier, BigDecimal openingNetTotal,
                                       BigDecimal openingNetPerContract, BigDecimal closeNetAmount,
                                       BigDecimal closeNetPerContract, BigDecimal realizedPnl, String note,
-                                      List<CoveredLotResponse> coveredLots) {
+                                      List<CoveredLotResponse> coveredLots,
+                                      /* the closing trade's (id) stored flag: it has been edited */
+                                      boolean hasAuditLog) {
     }
 
     public record ClosedTradePageResponse(List<ClosedTradeResponse> items, int page, int size, long totalItems,
@@ -76,7 +77,8 @@ public class ClosedTradeController {
                 t.getSymbol(), t.getExpirationDate(), ContractKey.strikeText(t.getStrike()), t.getOptionType(),
                 c.label(), t.getAction(), f.closedDirection(), t.getContracts(), t.getMultiplier(),
                 f.openingNetTotal(), f.openingNetPerContract(), f.closeNetAmount(), f.closeNetPerContract(),
-                f.realizedPnl(), t.getNote(), f.coveredLots().stream().map(ClosedTradeController::toLot).toList());
+                f.realizedPnl(), t.getNote(), f.coveredLots().stream().map(ClosedTradeController::toLot).toList(),
+                t.hasAuditLog());
     }
 
     private static CoveredLotResponse toLot(PositionLot l) {

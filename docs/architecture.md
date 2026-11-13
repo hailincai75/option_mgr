@@ -83,6 +83,7 @@ com.optionmgr
   - 修改内容与原记录相同 → 422 `NO_CHANGES`，不写任何东西
 - 审计表 `audit_record`（`V4__audit_record.sql`）：只追加（实体 `@Immutable`，没有修改/删除接口）。`before_json` / `after_json`（完整内容）、`changes_json`（显示用的字段变化）、`side_effects_json`（连带变化）以 JSON 文本存 `VARCHAR(10000)`，读取时原样作为 JSON 对象返回。`AuditService.record` 要求在调用方事务里（`Propagation.MANDATORY`），与改动一起提交或回滚
 - 审计对象被删除后仍可在审计记录里按 `objectType` + `objectId` 查到（不设外键）
+- 列表行的 `hasAuditLog`（交易列表与单笔交易响应、已平仓、现金流水的入金/出金行）：存在记录上的标记列 `option_trade.has_audit_log` / `cash_transfer.has_audit_log`（`V6__has_audit_log.sql`，`BOOLEAN NOT NULL DEFAULT FALSE`，迁移时按"同一账户内有同 `objectType` + `objectId` 的审计记录"回填）。只在修改路径置为 true：`OptionTradeEditService.update` / `CashTransferEditService.update` 在写审计记录的同一事务里调实体的 `markAudited()`，只标被修改的那一条（连带改正的其它交易不标）；拒绝的修改回滚，新增为 false。读取时直接取实体字段（已平仓取平仓交易的标记；现金流水页由 `CashLedgerService.ledgerPage` 对本页的入金/出金一次 `findAllById` 取 `cash_transfer` 的标记，期权流水恒 false），不查审计表
 - e2e 重置按元数据自动包含 `audit_record`（`TestSupportResetE2eProfileTest` 已断言）
 
 ### 多账户（FEAT-033）
@@ -92,7 +93,7 @@ com.optionmgr
 - 账户审计：`AuditObjectType.ACCOUNT`、`AuditOperation.CREATE`（`before` 为 `null`），记在该账户自己的审计里
 - **迁移前备份（Q60）**：`config/DatabaseBackupBeforeMigration` 是一个 `FlywayMigrationStrategy`：有待执行迁移、已有迁移记录、且是 H2 文件库（`DATABASE_PATH()` 非空）时，先执行 H2 `BACKUP TO '<库所在目录>/<库名>-backup-before-V<最高待执行版本>-<UTC 时间>Z.zip'`（在线一致性备份），确认文件存在且非空后才 `migrate()`；任何失败都抛异常 → 应用不启动、不迁移。内存库、新库不备份。**H2 的 DDL 会各自提交，迁移中途失败无法自动回滚，所以备份是回退手段**：停应用 → 移走 `<库名>.mv.db` → 把 zip 里的 `<库名>.mv.db` 解压到原目录 → 用旧版本启动
 - e2e 重置：快照包含 `account`（只有 1 号）和 `cash_account`（只有 1 号），所以重置后只剩"默认账户"、下一个账户 id 为 2；重置时锁全部账户行（`lockAllAccounts`）
-- 测试：`account/MigrationFromM1Test` 用 Flyway `target=4` 建 M1 结构的文件库、写入场景 M（通过 API 在临时内存库生成后按 id 原样拷贝），再启动应用执行备份 + V5，逐个接口比较迁移前后的 JSON 完全相同；另有迁移失败、备份失败两个场景
+- 测试：`account/MigrationFromM1Test` 用 Flyway `target=4` 建 M1 结构的文件库、写入场景 M（通过 API 在临时内存库生成后按 id 原样拷贝），再启动应用执行备份 + V5（+ V6），逐个接口比较迁移前后的 JSON 完全相同（含 V6 回填的 `hasAuditLog`）；另有迁移失败（测试专用 `db/failing-migration/V7__simulated_failure.sql`）、备份失败两个场景。`account/MigrationV6HasAuditLogTest` 用 `target=5` 建库、直接写入交易/入金和各种审计记录，验证 V6 回填（同类型、同 id、同账户才算）与列表上的 `hasAuditLog`
 
 ### E2E 测试支持（`e2e` profile）
 - 用途：Playwright 套件只启动一个后端，每个测试前调用 `POST /api/test-support/reset` 得到干净的库，代替每个测试重启后端

@@ -10,6 +10,8 @@ import com.optionmgr.cash.repository.CashAccountEntity;
 import com.optionmgr.cash.repository.CashAccountRepository;
 import com.optionmgr.cash.repository.CashLedgerEntryEntity;
 import com.optionmgr.cash.repository.CashLedgerEntryRepository;
+import com.optionmgr.cash.repository.CashTransferEntity;
+import com.optionmgr.cash.repository.CashTransferRepository;
 import com.optionmgr.common.money.Money;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -20,6 +22,8 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,11 +42,14 @@ public class CashLedgerService {
 
     private final CashAccountRepository accounts;
     private final CashLedgerEntryRepository entries;
+    private final CashTransferRepository transfers;
     private final Clock clock;
 
-    public CashLedgerService(CashAccountRepository accounts, CashLedgerEntryRepository entries, Clock clock) {
+    public CashLedgerService(CashAccountRepository accounts, CashLedgerEntryRepository entries,
+                             CashTransferRepository transfers, Clock clock) {
         this.accounts = accounts;
         this.entries = entries;
+        this.transfers = transfers;
         this.clock = clock;
     }
 
@@ -182,7 +189,8 @@ public class CashLedgerService {
                 throw new IllegalStateException("ledger replay order mismatch");
             }
             lines.add(new LedgerLine(e.getId(), e.getOccurredAt(), e.getSourceType(), e.getSourceId(),
-                    e.getAmount(), step.after().total(), e.getFrozenChange(), e.getDescription(), e.getRemark()));
+                    e.getAmount(), step.after().total(), e.getFrozenChange(), e.getDescription(), e.getRemark(),
+                    false));
         }
         Collections.reverse(lines);
 
@@ -191,8 +199,31 @@ public class CashLedgerService {
         long from = (long) (page - 1) * size;
         List<LedgerLine> items = from >= total
                 ? List.of()
-                : List.copyOf(lines.subList((int) from, (int) Math.min(from + size, total)));
+                : withTransferFlags(accountId, lines.subList((int) from, (int) Math.min(from + size, total)));
         return new LedgerPage(items, page, size, total, totalPages);
+    }
+
+    /**
+     * hasAuditLog of one page: DEPOSIT / WITHDRAWAL lines take the stored flag of their cash transfer (one query
+     * for the page's transfers, none when the page has none); every other line stays false.
+     */
+    private List<LedgerLine> withTransferFlags(long accountId, List<LedgerLine> pageLines) {
+        Set<Long> transferIds = pageLines.stream().filter(CashLedgerService::isTransfer).map(LedgerLine::sourceId)
+                .collect(Collectors.toSet());
+        if (transferIds.isEmpty()) {
+            return List.copyOf(pageLines);
+        }
+        Set<Long> flagged = transfers.findAllById(transferIds).stream()
+                .filter(t -> t.getAccountId() == accountId && t.hasAuditLog())
+                .map(CashTransferEntity::getId).collect(Collectors.toSet());
+        return pageLines.stream().map(l -> isTransfer(l) && flagged.contains(l.sourceId())
+                ? new LedgerLine(l.id(), l.occurredAt(), l.sourceType(), l.sourceId(), l.amount(), l.balanceAfter(),
+                        l.frozenChange(), l.description(), l.remark(), true)
+                : l).toList();
+    }
+
+    private static boolean isTransfer(LedgerLine l) {
+        return l.sourceType() == CashSourceType.DEPOSIT || l.sourceType() == CashSourceType.WITHDRAWAL;
     }
 
     private CashLedgerEntryEntity entry(long accountId, long id) {

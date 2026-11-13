@@ -301,7 +301,8 @@ GET /api/cash/summary
       "balanceAfter": "27499.50",
       "frozenChange": "0.00",
       "description": null,
-      "remark": "转回银行"
+      "remark": "转回银行",
+      "hasAuditLog": true
     },
     {
       "id": 1,
@@ -312,7 +313,8 @@ GET /api/cash/summary
       "balanceAfter": "30000.00",
       "frozenChange": "0.00",
       "description": null,
-      "remark": "初始资金"
+      "remark": "初始资金",
+      "hasAuditLog": false
     }
   ],
   "page": 1,
@@ -333,6 +335,7 @@ GET /api/cash/summary
 | `items[].frozenChange` | string | 该条流水带来的冻结现金变动（带符号，scale 2）：入金/出金、BTO 为 `"0.00"`；STO put 为 `+担保金额`（如 `"20000.00"`）；以后的平仓/到期释放为负。**FEAT-001 新增字段（兼容变更）** |
 | `items[].description` | string \| null | 系统生成的说明（入金/出金为 `null`；期权交易流水写明交易，如 `STO 1 张 AAPL 2026-12-18 200 P`，格式见 FEAT-001） |
 | `items[].remark` | string \| null | 用户备注 |
+| `items[].hasAuditLog` | boolean | 入金/出金（`DEPOSIT` / `WITHDRAWAL`）行：该笔入金/出金（`sourceId`）被修改过时为 `true`（存在记录上的标记；即审计里有 `objectType=CASH_TRANSFER&objectId=<sourceId>`），前端据此决定是否显示"历史"链接。期权交易流水（`OPTION_OPEN` / `OPTION_CLOSE`）没有"历史"链接，恒为 `false`。**新增字段（兼容变更），见"列表行的 `hasAuditLog`"** |
 | `page` / `size` | number | 本次使用的分页参数 |
 | `totalItems` | number | 流水总条数 |
 | `totalPages` | number | 总页数；没有流水时为 `0` |
@@ -570,7 +573,10 @@ GET /api/option-trades?symbol=aapl&action=STO&startDate=2026-11-03&endDate=2026-
       "contractLabel": "AAPL 2026-12-18 200 P",
       "note": "加仓",
       "ledgerEntryId": 5,
-      "createdAt": "2026-11-05T15:00:00Z"
+      "createdAt": "2026-11-05T15:00:00Z",
+      "coveredLots": null,
+      "realizedPnl": null,
+      "hasAuditLog": false
     },
     {
       "id": 1,
@@ -589,7 +595,10 @@ GET /api/option-trades?symbol=aapl&action=STO&startDate=2026-11-03&endDate=2026-
       "contractLabel": "AAPL 2026-12-18 200 P",
       "note": "第一笔 CSP",
       "ledgerEntryId": 2,
-      "createdAt": "2026-11-05T15:00:00Z"
+      "createdAt": "2026-11-05T15:00:00Z",
+      "coveredLots": null,
+      "realizedPnl": null,
+      "hasAuditLog": true
     }
   ],
   "page": 1,
@@ -872,7 +881,8 @@ GET /api/option-trades?symbol=aapl&action=STO&startDate=2026-11-03&endDate=2026-
       "frozen": "40000.00"
     }
   ],
-  "realizedPnl": "457.40"
+  "realizedPnl": "457.40",
+  "hasAuditLog": false
 }
 ```
 
@@ -888,6 +898,7 @@ GET /api/option-trades?symbol=aapl&action=STO&startDate=2026-11-03&endDate=2026-
 | `coveredLots[].netAmount` | string | 该批次开仓净额，带现金方向符号（STO +，BTO −），如 `"698.70"`、`"-512.65"` |
 | `coveredLots[].frozen` | string | 该批次的冻结（BTC 平空头 put 时被释放），`"0.00"` 表示没有 |
 | `realizedPnl` | string \| null | 平仓：本笔已实现盈亏（scale 2，盈利正、亏损负），= 被平批次 `netAmount` 之和 + 本笔 `cashChange`。开仓：`null` |
+| `hasAuditLog` | boolean | 该笔交易被修改过时为 `true`（存在交易上的标记；即审计里有 `objectType=OPTION_TRADE&objectId=<id>`；新增不审计，所以 `POST` 的响应恒为 `false`；`PUT` 成功的响应恒为 `true`）。**后加字段（兼容变更），见"列表行的 `hasAuditLog`"** |
 
 平仓交易的其它字段：`multiplier` = 持仓的 multiplier；`cashChange` = BTC `−净额` / STC `+净额`；`frozenChange` = BTC 平空头 put 时为 `−释放金额`，其它 `"0.00"`。`coveredLots`、`realizedPnl`、`frozenChange` 都按**当前**的 FIFO 匹配给出——之后若补录了更早的平仓（Q39），再查询时会变成新的匹配结果。
 
@@ -1127,7 +1138,8 @@ GET /api/closed-trades?symbol=aapl&page=1&size=20
           "netAmount": "-1000.00",
           "frozen": "0.00"
         }
-      ]
+      ],
+      "hasAuditLog": false
     }
   ],
   "page": 1,
@@ -1154,6 +1166,7 @@ GET /api/closed-trades?symbol=aapl&page=1&size=20
 | `items[].realizedPnl` | string | `openingNetTotal + closeNetAmount`（Q21，整笔计算，不分摊、不舍入） |
 | `items[].note` | string \| null | 平仓交易的备注 |
 | `items[].coveredLots` | array | 被平批次，FIFO 顺序（最早在前），字段同 FEAT-004 的 `coveredLots`（`tradeId`、`action`、`tradedAt`、`tradedAtLocal`、`contracts`、`netAmount` 带符号、`frozen`） |
+| `items[].hasAuditLog` | boolean | **平仓交易本身**（`id`）被修改过时为 `true`（取平仓交易上的标记）；只修改过被平的开仓批次、或只被连带改正不算。**新增字段（兼容变更），见"列表行的 `hasAuditLog`"** |
 | `page` / `size` / `totalItems` / `totalPages` | number | 同 FEAT-002；超过最后一页时 `items` 为 `[]` |
 | `filteredCount` | number | 符合筛选条件的**全部**平仓笔数（= `totalItems`） |
 | `filteredRealizedPnlTotal` | string | 符合筛选条件的**全部**平仓（不只是当前页）的 `realizedPnl` 之和，scale 2；没有记录时 `"0.00"`（Q46） |
@@ -1342,3 +1355,34 @@ X-Account-Id: 99
 - `PUT /api/option-trades/{id}`：修改 STO call 时不做 Q18（Q45 只适用于 STO put）；其余检查不变。
 - 持仓（`GET /api/option-positions`）：空头 call 就是 `direction = "SHORT"` 且 `optionType = "CALL"` 的持仓，`frozenCash` 为 `"0.00"`，批次 `originalFrozen` / `remainingFrozen` 为 `"0.00"`；`closeAction = "BTC"`、`allowedCloseContracts`、`closable` 与空头 put 相同。前端的"未冻结"标签（Q62）用 `direction == "SHORT" && optionType == "CALL"` 判断，不另加字段。冻结合计、现金汇总的冻结只来自空头 put。
 - 交易列表、已平仓、盈亏汇总、首页：空头 call 照常出现，没有任何字段变化。
+
+### 列表行的 `hasAuditLog`（"历史"链接只在有审计记录时显示）
+
+**新增字段，兼容变更**：没有新接口、没有删改字段；不认识该字段的客户端可以忽略它。数据库迁移 `V6__has_audit_log.sql` 只给 `option_trade`、`cash_transfer` 加了一列（见下），不影响任何已有字段的值。
+
+前端在交易、已平仓、现金流水的行上显示"历史"链接（打开 `/audit?objectType=…&objectId=…`）。新增交易、入金/出金不写审计（Q42），所以多数行点进去是空的。后端在这些行上返回布尔字段 **`hasAuditLog`**：该行"历史"链接所指的对象（交易或入金/出金）**被修改过**时为 `true`，否则 `false`。
+
+这是存在交易/入金出金记录上的标记（`has_audit_log` 列），不是读列表时去查审计表：
+- 新增 → `false`。
+- 修改（`PUT`）成功 → 被修改的那一条置为 `true`，与写审计记录在同一事务里。之后一直是 `true`（再改也不变）。
+- 因修改而**连带改正**的其它交易（审计 `sideEffects` 里列出的，例如平仓的冻结变动）**不**置为 `true`——它们自己没有审计记录。
+- 修改被拒绝（4xx，含 `NO_CHANGES`）→ 整个事务回滚，标记不变。
+- 删除 → 行已不存在，无需处理。账户的审计（`ACCOUNT`）不涉及此字段。
+- 升级到 V6 时回填：已有至少一条审计记录（`objectType` 相同：`OPTION_TRADE` / `CASH_TRANSFER`，`objectId` = 该行 id，且同一账户）的行置为 `true`，所以升级前就修改过的记录仍显示"历史"链接。
+
+因此该值与"当前账户的审计记录里有该对象的记录"一致（审计记录只能由修改/删除写入，且不可删改，Q12）。
+
+| 接口 | 行 | `hasAuditLog` 指向的对象 |
+|------|----|------------------------|
+| `GET /api/option-trades` | `items[]` | `OPTION_TRADE` + `items[].id` |
+| `GET /api/option-trades/{id}`、`POST /api/option-trades`、`POST /api/option-trades/closes`、`PUT /api/option-trades/{id}` | 响应体（交易表示与列表项相同） | `OPTION_TRADE` + `id`（`POST` 恒为 `false`；`PUT` 成功恒为 `true`） |
+| `GET /api/closed-trades` | `items[]` | `OPTION_TRADE` + `items[].id`（**平仓交易**；被平的开仓批次的审计不算） |
+| `GET /api/cash/ledger` | `items[]` 中 `sourceType` 为 `DEPOSIT` / `WITHDRAWAL` 的 | `CASH_TRANSFER` + `items[].sourceId` |
+| `GET /api/cash/ledger` | `items[]` 中 `sourceType` 为 `OPTION_OPEN` / `OPTION_CLOSE` 的 | 没有"历史"链接，恒为 `false` |
+
+规则：
+- 已平仓的行取**平仓交易本身**的标记；只修改过被平的开仓批次不算。现金流水的入金/出金行取对应 `cash_transfer` 的标记。
+- 修改与标记在同一事务里写入，所以 `PUT` 成功的响应、以及之后的列表查询都返回 `true`。
+- 删除的交易/入金出金不会出现在列表里，所以不需要特殊处理。
+- 实现：直接读记录上的标记，构建列表/响应时不查审计表。
+- 不涉及：`POST`/`PUT /api/cash/transfers` 的响应、持仓、账户（这些地方没有"历史"链接）。

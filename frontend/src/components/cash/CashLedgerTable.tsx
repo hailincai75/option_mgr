@@ -142,9 +142,11 @@ function actionsColumn(
           >
             删除
           </Button>
-          <Link to={auditUrl('CASH_TRANSFER', entry.sourceId)} data-testid="cash-ledger-history">
-            历史
-          </Link>
+          {entry.hasAuditLog && (
+            <Link to={auditUrl('CASH_TRANSFER', entry.sourceId)} data-testid="cash-ledger-history">
+              历史
+            </Link>
+          )}
         </Space>
       ) : (
         <Link to="/trades" data-testid="cash-ledger-trades-link">

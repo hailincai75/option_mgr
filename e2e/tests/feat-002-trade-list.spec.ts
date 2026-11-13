@@ -1,6 +1,7 @@
 import type { Locator, Page } from '@playwright/test'
 import { apiLedger, apiTransfer, CashPage, expect, MINUS, test } from '../support/fixtures'
 import { apiTrade, TradeForm } from '../support/trade'
+import { BACKEND_URL } from '../support/backend'
 
 /**
  * FEAT-002 交易列表与筛选 E2E. Baseline T1–T6 (all ≤ 2026-11-04, real clock is later) is seeded through the API;
@@ -13,7 +14,7 @@ async function seedBaseline(): Promise<Record<number, Label>> {
   await apiTransfer('DEPOSIT', '100000.00', '2026-10-26T10:00')
   const ids: Record<number, Label> = {}
   const add = async (label: Label, t: Parameters<typeof apiTrade>[0], note?: string) => {
-    const r = await fetch('http://localhost:8080/api/option-trades', {
+    const r = await fetch(`${BACKEND_URL}/api/option-trades`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -485,7 +486,7 @@ test.describe('FEAT-002 交易列表与筛选', () => {
   test('长备注（500 字符）截断显示，悬停 title 为全文', async ({ page }) => {
     await apiTransfer('DEPOSIT', '1000.00', '2026-10-26T10:00')
     const note = '长'.repeat(500)
-    const r = await fetch('http://localhost:8080/api/option-trades', {
+    const r = await fetch(`${BACKEND_URL}/api/option-trades`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

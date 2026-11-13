@@ -7,7 +7,7 @@ import { ApiError } from '../api/client'
 import {
   AUDIT_PAGE_SIZES,
   EMPTY_AUDIT_FILTERS,
-  hasAuditFilters,
+  auditEmptyObjectHint,
   isAuditFilterField,
   parseAuditSearch,
   toAuditParams,
@@ -104,7 +104,7 @@ export function AuditLogPage() {
   const clientErrors = validateAuditFilters(state.filters)
   const filtersValid = Object.keys(clientErrors).length === 0
   const params = toAuditParams(state)
-  const filtered = hasAuditFilters(state.filters)
+  const neverChangedHint = filtersValid ? auditEmptyObjectHint(state.filters) : null
 
   const { data, error, isPending, isFetching, isPlaceholderData, refetch } = useAccountQuery({
     // FEAT-033: per-account key; runs only once the current account is known.
@@ -159,12 +159,12 @@ export function AuditLogPage() {
     const empty = isPending ? (
       <span data-testid="audit-loading"> </span>
     ) : (
-      <Space orientation="vertical" data-testid="audit-empty">
+      <Space orientation="vertical" size={4} data-testid="audit-empty">
         <span>暂无审计记录</span>
-        {filtered && (
-          <Button onClick={clearFilters} data-testid="audit-empty-clear">
-            清除筛选
-          </Button>
+        {neverChangedHint !== null && (
+          <Typography.Text type="secondary" data-testid="audit-empty-hint">
+            {neverChangedHint}
+          </Typography.Text>
         )}
       </Space>
     )

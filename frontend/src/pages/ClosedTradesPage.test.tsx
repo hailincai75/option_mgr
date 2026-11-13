@@ -42,6 +42,7 @@ function closed(partial: Partial<ClosedTrade> & Pick<ClosedTrade, 'id'>): Closed
     realizedPnl: '0.00',
     note: null,
     coveredLots: [],
+    hasAuditLog: false,
     ...partial,
   }
   const cp = merged.optionType === 'CALL' ? 'C' : 'P'
@@ -60,6 +61,7 @@ const C1 = closed({
   closeNetPerContract: '-133.33',
   realizedPnl: '658.70',
   note: '全部平掉',
+  hasAuditLog: true,
   coveredLots: [
     lot({ tradeId: 1, contracts: 2, netAmount: '698.70', frozen: '40000.00' }),
     lot({
@@ -608,6 +610,10 @@ describe('ClosedTradesPage', () => {
       'href',
       '/audit?objectType=OPTION_TRADE&objectId=6',
     )
+    // Rows without audit records have no 历史 (the actions cell is empty).
+    for (const row of screen.getAllByTestId('closed-row').slice(0, 3)) {
+      expect(within(row).queryByTestId('closed-history')).not.toBeInTheDocument()
+    }
     const contract = within(c1).getByTestId('closed-cell-contract')
     expect(contract).toHaveAttribute(
       'href',

@@ -115,6 +115,11 @@ export interface CashLedgerEntry {
   /** System description, e.g. "STO 1 张 AAPL 2026-12-18 200 P"; null for deposits/withdrawals. */
   description: string | null
   remark: string | null
+  /**
+   * Deposit / withdrawal rows: true when CASH_TRANSFER + sourceId has audit records (shows 历史).
+   * Option rows: always false.
+   */
+  hasAuditLog: boolean
 }
 
 /** Contract: `GET /api/cash/ledger?page=&size=` → 200. `page` starts at 1. */
@@ -192,6 +197,8 @@ export interface OptionTrade {
   coveredLots: CoveredLot[] | null
   /** FEAT-004: realized P&L of this close (profit +, loss −); null for opening trades. */
   realizedPnl: MoneyString | null
+  /** True when OPTION_TRADE + id has audit records (shows 历史). */
+  hasAuditLog: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -435,6 +442,8 @@ export interface ClosedTrade {
   realizedPnl: MoneyString
   note: string | null
   coveredLots: CoveredLot[]
+  /** True when the closing trade itself (OPTION_TRADE + id) has audit records (shows 历史). */
+  hasAuditLog: boolean
 }
 
 /** Contract: `GET /api/closed-trades` → 200. Totals cover ALL filtered results (Q46). */

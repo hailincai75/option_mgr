@@ -1,13 +1,14 @@
 import type { Locator, Page } from '@playwright/test'
 import { apiLedger, apiTransfer, CashPage, expect, MINUS, nyLocal, test } from '../support/fixtures'
 import { apiTrade, TradeForm } from '../support/trade'
+import { BACKEND_URL } from '../support/backend'
 
 /**
  * FEAT-004 平仓 E2E: both entries (positions-page 平仓 button → modal, and the 录入交易 page with BTC / STC).
  * Real clock (2026-11-11 at the time of writing); all acceptance times are in the past.
  */
 
-const BACKEND = 'http://localhost:8080'
+const BACKEND = BACKEND_URL
 const today = () => nyLocal(new Date()).slice(0, 10)
 
 async function scenarioA(): Promise<{ l1: number; l2: number }> {

@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test'
 import { apiTransfer, CashPage, expect, MINUS, nyLocal, test } from '../support/fixtures'
 import { apiTrade } from '../support/trade'
+import { BACKEND_URL } from '../support/backend'
 
 /**
  * FEAT-008 首页概览 + 盈亏汇总 E2E (real clock). "Today" / "this month" come from the run day's NY date;
@@ -8,7 +9,7 @@ import { apiTrade } from '../support/trade'
  * DB reset per test: scenario Q ids O1–O4 = #1–#4, T1–T5 = #5–#9, C1–C4 = #10–#13.
  */
 
-const BACKEND = 'http://localhost:8080'
+const BACKEND = BACKEND_URL
 const today = () => nyLocal(new Date()).slice(0, 10)
 const addDays = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10)
 

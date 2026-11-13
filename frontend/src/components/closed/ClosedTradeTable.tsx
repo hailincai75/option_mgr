@@ -193,11 +193,13 @@ const columns: ColumnsType<ClosedTrade> = [
   {
     title: '操作',
     key: 'actions',
-    render: (_value: unknown, trade) => (
-      <Link to={auditUrl('OPTION_TRADE', trade.id)} data-testid="closed-history">
-        历史
-      </Link>
-    ),
+    // 历史 only when the closing trade itself has audit records; otherwise the cell is empty.
+    render: (_value: unknown, trade) =>
+      trade.hasAuditLog ? (
+        <Link to={auditUrl('OPTION_TRADE', trade.id)} data-testid="closed-history">
+          历史
+        </Link>
+      ) : null,
   },
 ]
 

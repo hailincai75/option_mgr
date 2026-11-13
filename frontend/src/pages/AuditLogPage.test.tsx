@@ -270,16 +270,23 @@ describe('AuditLogPage', () => {
     )
   })
 
-  it('filters by object from the URL, shows 暂无审计记录 and clears (AC 12)', async () => {
+  it('filters by object from the URL, explains the empty result and clears (AC 12)', async () => {
     const queries = startFakeServer([DELETE_L2, NOTE_L2, NET_L2])
     renderPage('/audit?objectType=OPTION_TRADE&objectId=3')
 
     expect(await screen.findByTestId('audit-empty')).toHaveTextContent('暂无审计记录')
+    expect(byTestId('audit-empty-hint')).toHaveTextContent(
+      '期权交易 #3 录入后没有被修改或删除过（审计只记录修改和删除）',
+    )
+    expect(screen.queryByTestId('audit-empty-clear')).not.toBeInTheDocument()
+    expect(
+      within(byTestId('audit-empty')).queryByRole('button', { name: /清除筛选/ }),
+    ).not.toBeInTheDocument()
     expect(byTestId('audit-filter-type-trade')).toBeChecked()
     expect(byTestId('audit-filter-id')).toHaveValue('3')
     expect(queries.at(-1)?.toString()).toBe('objectType=OPTION_TRADE&objectId=3&page=1&size=20')
 
-    await userEvent.click(byTestId('audit-empty-clear'))
+    await userEvent.click(byTestId('audit-filter-clear'))
     expect(await screen.findAllByTestId('audit-row')).toHaveLength(3)
     expect(byTestId('location')).toHaveTextContent(/^\/audit$/)
     expect(byTestId('audit-filter-type-all')).toBeChecked()
@@ -315,8 +322,26 @@ describe('AuditLogPage', () => {
     startFakeServer([])
     renderPage()
     expect(await screen.findByTestId('audit-empty')).toHaveTextContent('暂无审计记录')
+    expect(screen.queryByTestId('audit-empty-hint')).not.toBeInTheDocument()
     expect(screen.queryByTestId('audit-empty-clear')).not.toBeInTheDocument()
     expect(screen.queryByTestId('audit-pagination')).not.toBeInTheDocument()
+  })
+
+  it('keeps the plain empty text when only a type filter is set', async () => {
+    startFakeServer([NET_L2])
+    renderPage('/audit?objectType=CASH_TRANSFER')
+    expect(await screen.findByTestId('audit-empty')).toHaveTextContent('暂无审计记录')
+    expect(screen.queryByTestId('audit-empty-hint')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('audit-empty-clear')).not.toBeInTheDocument()
+    expect(byTestId('audit-filter-clear')).toBeInTheDocument()
+  })
+
+  it('explains an empty result for a cash entry', async () => {
+    startFakeServer([NET_L2])
+    renderPage('/audit?objectType=CASH_TRANSFER&objectId=1')
+    expect(await screen.findByTestId('audit-empty-hint')).toHaveTextContent(
+      '入金/出金 #1 录入后没有被修改或删除过',
+    )
   })
 
   it('pages through records and changes the page size', async () => {
