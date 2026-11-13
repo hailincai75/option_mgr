@@ -67,6 +67,9 @@ function AuditFilterForm({ initialValues, errors, onApply, onClear }: FilterForm
           <Radio value="CASH_TRANSFER" data-testid="audit-filter-type-transfer">
             入金/出金
           </Radio>
+          <Radio value="STOCK_TRADE" data-testid="audit-filter-type-stock">
+            股票交易
+          </Radio>
           <Radio value="ACCOUNT" data-testid="audit-filter-type-account">
             账户
           </Radio>

@@ -1,0 +1,163 @@
+import type { StockTradeListParams } from '../../api/types'
+import { validateSymbol } from '../trade/openTradeValidation'
+import { isStockTradeType, STOCK_TRADE_TYPES } from './stockLabels'
+
+/**
+ * 股票 page (FEAT-011) filter state ↔ URL, same approach as the option trade list (FEAT-002).
+ * URL parameter names are the API's: symbol, type (comma-separated, e.g. `type=BUY,TRANSFER_IN`),
+ * startDate, endDate, page, size. Values stay raw strings so invalid ones from a hand-edited URL
+ * are shown back in the form with an error instead of being dropped.
+ */
+
+export interface StockFilterValues {
+  symbol: string
+  type: string[]
+  startDate: string
+  endDate: string
+}
+
+export type StockFilterField = keyof StockFilterValues
+
+export const STOCK_FILTER_FIELDS: readonly StockFilterField[] = [
+  'symbol',
+  'type',
+  'startDate',
+  'endDate',
+]
+
+export const EMPTY_STOCK_FILTERS: StockFilterValues = {
+  symbol: '',
+  type: [],
+  startDate: '',
+  endDate: '',
+}
+
+export const STOCK_PAGE_SIZES = [20, 50, 100] as const
+export const DEFAULT_STOCK_PAGE_SIZE = 20
+
+export interface StockListUrlState {
+  filters: StockFilterValues
+  page: number
+  size: number
+}
+
+export function isStockFilterField(field: string): field is StockFilterField {
+  return (STOCK_FILTER_FIELDS as readonly string[]).includes(field)
+}
+
+const MAX_PAGE = 1_000_000
+
+/** Invalid / missing page or size fall back to the defaults (never sent to the API). */
+export function parseStockListSearch(search: URLSearchParams): StockListUrlState {
+  const text = (key: string) => (search.get(key) ?? '').trim()
+  const types = search
+    .getAll('type')
+    .flatMap((value) => value.split(','))
+    .map((value) => value.trim())
+    .filter((value) => value !== '')
+  const pageText = text('page')
+  const page = /^\d{1,7}$/.test(pageText) ? Number(pageText) : 1
+  const size = STOCK_PAGE_SIZES.find((option) => String(option) === text('size'))
+  return {
+    filters: {
+      symbol: text('symbol'),
+      type: [...new Set(types)],
+      startDate: text('startDate'),
+      endDate: text('endDate'),
+    },
+    page: page >= 1 && page <= MAX_PAGE ? page : 1,
+    size: size ?? DEFAULT_STOCK_PAGE_SIZE,
+  }
+}
+
+/** URL query for a state; empty filters, page 1 and the default size are left out. */
+export function toStockListSearch(state: StockListUrlState): URLSearchParams {
+  const search = new URLSearchParams()
+  const { filters } = state
+  const symbol = filters.symbol.trim()
+  if (symbol !== '') search.set('symbol', symbol)
+  if (filters.type.length > 0) search.set('type', filters.type.join(','))
+  for (const key of ['startDate', 'endDate'] as const) {
+    const value = filters[key].trim()
+    if (value !== '') search.set(key, value)
+  }
+  if (state.page !== 1) search.set('page', String(state.page))
+  if (state.size !== DEFAULT_STOCK_PAGE_SIZE) search.set('size', String(state.size))
+  return search
+}
+
+/** 股票 page URL filtered to one symbol (positions page link). */
+export function stocksUrlForSymbol(symbol: string): string {
+  const search = toStockListSearch({
+    filters: { ...EMPTY_STOCK_FILTERS, symbol },
+    page: 1,
+    size: DEFAULT_STOCK_PAGE_SIZE,
+  })
+  return `/stocks?${search.toString()}`
+}
+
+export function hasActiveStockFilters(filters: StockFilterValues): boolean {
+  return (
+    filters.symbol.trim() !== '' ||
+    filters.type.length > 0 ||
+    filters.startDate.trim() !== '' ||
+    filters.endDate.trim() !== ''
+  )
+}
+
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+
+/**
+ * Client checks with the contract's messages; only non-empty filters are checked. Non-existent
+ * dates like 2026-02-30 are left to the backend.
+ */
+export function validateStockFilters(
+  filters: StockFilterValues,
+): Partial<Record<StockFilterField, string>> {
+  const errors: Partial<Record<StockFilterField, string>> = {}
+  const symbol = filters.symbol.trim()
+  if (symbol !== '') {
+    const error = validateSymbol(symbol)
+    if (error !== null) errors.symbol = error
+  }
+  if (!filters.type.every(isStockTradeType)) {
+    errors.type = `类型只能是 ${STOCK_TRADE_TYPES.join('、')}`
+  }
+  for (const field of ['startDate', 'endDate'] as const) {
+    const value = filters[field].trim()
+    if (value !== '' && !DATE_PATTERN.test(value)) errors[field] = '日期格式不正确（YYYY-MM-DD）'
+  }
+  const startDate = filters.startDate.trim()
+  const endDate = filters.endDate.trim()
+  if (
+    errors.startDate === undefined &&
+    errors.endDate === undefined &&
+    startDate !== '' &&
+    endDate !== '' &&
+    startDate > endDate
+  ) {
+    // Same field as the backend uses for this error.
+    errors.endDate = '开始日期不能晚于结束日期'
+  }
+  return errors
+}
+
+/** API params for a state whose filters passed `validateStockFilters`. */
+export function toStockListParams(state: StockListUrlState): StockTradeListParams {
+  const { filters } = state
+  const types = filters.type.filter(isStockTradeType)
+  return {
+    symbol: filters.symbol.trim() || undefined,
+    type: types.length > 0 ? types : undefined,
+    startDate: filters.startDate.trim() || undefined,
+    endDate: filters.endDate.trim() || undefined,
+    page: state.page,
+    size: state.size,
+  }
+}
+
+/** Stock entry form prefilled for selling one symbol (positions page "卖出"). */
+export function stockSellUrl(symbol: string): string {
+  const search = new URLSearchParams({ type: 'SELL', symbol })
+  return `/stocks/new?${search.toString()}`
+}

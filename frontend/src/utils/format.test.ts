@@ -3,6 +3,7 @@ import {
   EMPTY_VALUE,
   formatDateTimeNY,
   formatInstantNY,
+  formatInteger,
   formatLocalDateTime,
   formatMoney,
   nowLocalDateTimeNY,
@@ -116,5 +117,21 @@ describe('formatLocalDateTime', () => {
 
   it.each([null, undefined, '', '2026-11-20', 'nope'])('returns the placeholder for %s', (input) => {
     expect(formatLocalDateTime(input)).toBe(EMPTY_VALUE)
+  })
+})
+
+describe('formatInteger', () => {
+  it.each([
+    [0, '0'],
+    [150, '150'],
+    [1000, '1,000'],
+    [10000000, '10,000,000'],
+    [-1500, '−1,500'],
+  ])('formats %s as %s', (input, expected) => {
+    expect(formatInteger(input)).toBe(expected)
+  })
+
+  it.each([null, undefined, 1.5, Number.NaN])('returns the placeholder for %s', (input) => {
+    expect(formatInteger(input)).toBe(EMPTY_VALUE)
   })
 })

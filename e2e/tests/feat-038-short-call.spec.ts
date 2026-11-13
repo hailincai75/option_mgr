@@ -36,7 +36,7 @@ test.describe('FEAT-038 卖出 call 不冻结', () => {
     await trade.typePut.check()
     await expect(hint).toHaveCount(0)
     await trade.typeCall.check()
-    await expect(hint).toHaveText('卖出 call 不冻结现金，请自行确保账户有足够股票覆盖（每张 = multiplier 股）；股票持仓功能（FEAT-011）上线后将自动检查。')
+    await expect(hint).toHaveText('卖出 call 不冻结现金，请自行确保账户有足够股票覆盖（每张 = multiplier 股）；covered call 覆盖检查（FEAT-039）上线后将自动检查。')
     await trade.actionBto.check()
     await expect(hint).toHaveCount(0)
     await page.getByTestId('open-trade-action-stc').check()

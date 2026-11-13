@@ -87,6 +87,8 @@ abstract class CashSystemTestBase {
         jdbc.update("DELETE FROM cash_ledger_entry");
         jdbc.update("DELETE FROM cash_transfer");
         jdbc.update("DELETE FROM option_trade");
+        // FEAT-011: stock_trade has an FK to account, so it must be emptied before non-default accounts are removed.
+        jdbc.update("DELETE FROM stock_trade");
         jdbc.update("DELETE FROM audit_record");
         jdbc.update("DELETE FROM cash_account WHERE id <> 1");
         jdbc.update("DELETE FROM account WHERE id <> 1");

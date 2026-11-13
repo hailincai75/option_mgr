@@ -6,7 +6,7 @@ import type { AuditLogParams, AuditObjectType } from '../../api/types'
  */
 
 export interface AuditFilterValues {
-  /** '' = all, otherwise expected OPTION_TRADE / CASH_TRANSFER / ACCOUNT (FEAT-033). */
+  /** '' = all, otherwise OPTION_TRADE / CASH_TRANSFER / ACCOUNT (FEAT-033) / STOCK_TRADE (FEAT-011). */
   objectType: string
   objectId: string
 }
@@ -27,10 +27,16 @@ export const AUDIT_OBJECT_TYPE_LABELS: Record<AuditObjectType, string> = {
   OPTION_TRADE: '期权交易',
   CASH_TRANSFER: '入金/出金',
   ACCOUNT: '账户',
+  STOCK_TRADE: '股票交易',
 }
 
 function isObjectType(value: string): value is AuditObjectType {
-  return value === 'OPTION_TRADE' || value === 'CASH_TRANSFER' || value === 'ACCOUNT'
+  return (
+    value === 'OPTION_TRADE' ||
+    value === 'CASH_TRANSFER' ||
+    value === 'ACCOUNT' ||
+    value === 'STOCK_TRADE'
+  )
 }
 
 export function isAuditFilterField(field: string): field is AuditFilterField {
@@ -72,7 +78,13 @@ export function auditEmptyObjectHint(filters: AuditFilterValues): string | null 
   const objectType = filters.objectType.trim()
   const objectId = filters.objectId.trim()
   if (objectId === '') return null
-  if (objectType !== 'OPTION_TRADE' && objectType !== 'CASH_TRANSFER') return null
+  if (
+    objectType !== 'OPTION_TRADE' &&
+    objectType !== 'CASH_TRANSFER' &&
+    objectType !== 'STOCK_TRADE'
+  ) {
+    return null
+  }
   const label = `${AUDIT_OBJECT_TYPE_LABELS[objectType]} #${String(Number(objectId))}`
   return `${label} 录入后没有被修改或删除过（审计只记录修改和删除）`
 }
@@ -85,7 +97,7 @@ export function validateAuditFilters(
   const objectType = filters.objectType.trim()
   const objectId = filters.objectId.trim()
   if (objectType !== '' && !isObjectType(objectType)) {
-    errors.objectType = '对象类型只能是期权交易、入金/出金或账户'
+    errors.objectType = '对象类型只能是期权交易、入金/出金、股票交易或账户'
   }
   if (objectId !== '') {
     if (!/^\d{1,15}$/.test(objectId) || !/[1-9]/.test(objectId)) {

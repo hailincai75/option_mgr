@@ -7,13 +7,15 @@ import { ClosePositionModal } from '../components/position/ClosePositionModal'
 import { ExpirePositionModal } from '../components/position/ExpirePositionModal'
 import { PositionTable } from '../components/position/PositionTable'
 import { QueryError } from '../components/QueryError'
+import { StockPositionsCard } from '../components/stock/StockPositionsCard'
 import type { OptionPosition } from '../api/types'
 import { formatMoney } from '../utils/format'
 
 /**
  * 持仓 page (FEAT-003): every current option position from `GET /api/option-positions`,
  * in backend order, with expandable FIFO lots, a 平仓 button (FEAT-004) on closable rows and a
- * 作废 button (FEAT-012) on expirable rows. Every number comes from the backend.
+ * 作废 button (FEAT-012) on expirable rows; below it the 股票持仓 section (FEAT-011). Every
+ * number comes from the backend.
  */
 export function PositionsPage() {
   const [closing, setClosing] = useState<OptionPosition | null>(null)
@@ -77,26 +79,30 @@ export function PositionsPage() {
   }
 
   return (
-    <Card title="期权持仓" data-testid="positions-page">
-      {content}
-      {closing !== null && (
-        <ClosePositionModal
-          key={closing.contractLabel}
-          position={closing}
-          onDone={() => {
-            setClosing(null)
-          }}
-        />
-      )}
-      {expiring !== null && (
-        <ExpirePositionModal
-          key={expiring.contractLabel}
-          position={expiring}
-          onDone={() => {
-            setExpiring(null)
-          }}
-        />
-      )}
-    </Card>
+    <Space orientation="vertical" size={16} style={{ width: '100%' }}>
+      <Card title="期权持仓" data-testid="positions-page">
+        {content}
+        {closing !== null && (
+          <ClosePositionModal
+            key={closing.contractLabel}
+            position={closing}
+            onDone={() => {
+              setClosing(null)
+            }}
+          />
+        )}
+        {expiring !== null && (
+          <ExpirePositionModal
+            key={expiring.contractLabel}
+            position={expiring}
+            onDone={() => {
+              setExpiring(null)
+            }}
+          />
+        )}
+      </Card>
+      {/* FEAT-011: stock positions below the option positions. */}
+      <StockPositionsCard />
+    </Space>
   )
 }

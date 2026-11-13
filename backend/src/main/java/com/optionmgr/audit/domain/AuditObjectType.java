@@ -7,5 +7,7 @@ public enum AuditObjectType {
     /** cash_transfer: deposit or withdrawal (FEAT-007). */
     CASH_TRANSFER,
     /** FEAT-033 account (create / rename, Q59). */
-    ACCOUNT
+    ACCOUNT,
+    /** FEAT-011 stock_trade (buy / sell / transfer-in). */
+    STOCK_TRADE
 }

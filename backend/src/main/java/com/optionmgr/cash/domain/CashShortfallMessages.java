@@ -35,6 +35,16 @@ public final class CashShortfallMessages {
                 + " 时可用现金将变为 " + Money.display(violation.after().available());
     }
 
+    /**
+     * FEAT-011 stock purchase: always names the first point that goes negative, even when it is the inserted point
+     * itself: "可用现金不足：需要 X；T 时可用现金将变为 Z".
+     */
+    public static String insufficientAt(BigDecimal required, ReplayStep violation) {
+        return INSUFFICIENT + "：需要 " + Money.display(required) + "；"
+                + MarketTime.displayMinute(violation.movement().occurredAt())
+                + " 时可用现金将变为 " + Money.display(violation.after().available());
+    }
+
     /** FEAT-004 Q20: "可用现金不足：需要 X，可用 A + 释放冻结 R = S" (frozen released before the check). */
     public static String notEnoughWithRelease(BigDecimal required, BigDecimal available, BigDecimal released) {
         return INSUFFICIENT + "：需要 " + Money.display(required) + "，可用 " + Money.display(available)

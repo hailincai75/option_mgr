@@ -3,9 +3,17 @@ import type { ColumnsType } from 'antd/es/table'
 import type { HTMLAttributes, ReactNode } from 'react'
 import type { AuditRecord, AuditSnapshot } from '../../api/types'
 import { EMPTY_VALUE, formatDateTimeSecondsNY, formatMoney } from '../../utils/format'
+import { stockTypeLabel } from '../stock/stockLabels'
 import { tradeActionLabel } from '../trade/tradeLabels'
 
-type FieldFormat = 'text' | 'money' | 'signedMoney' | 'localTime' | 'action' | 'transferType'
+type FieldFormat =
+  | 'text'
+  | 'money'
+  | 'signedMoney'
+  | 'localTime'
+  | 'action'
+  | 'transferType'
+  | 'stockType'
 
 /** Fields of the before / after snapshots shown when a row is expanded (contract field list). */
 const SNAPSHOT_FIELDS: Record<string, { key: string; label: string; format: FieldFormat }[]> = {
@@ -32,6 +40,31 @@ const SNAPSHOT_FIELDS: Record<string, { key: string; label: string; format: Fiel
   ],
 }
 
+interface SnapshotField {
+  key: string
+  label: string
+  format: FieldFormat
+}
+
+/**
+ * FEAT-011 stock trade snapshot: for transfers the amount is 总成本 and the time is a date,
+ * otherwise 金额 and the New York trade time.
+ */
+function stockTradeFields(snapshot: AuditSnapshot | null): SnapshotField[] {
+  const transfer = snapshot?.type === 'TRANSFER_IN'
+  return [
+    { key: 'type', label: '类型', format: 'stockType' },
+    { key: 'symbol', label: '标的', format: 'text' },
+    { key: 'shares', label: '股数', format: 'text' },
+    { key: 'amount', label: transfer ? '总成本' : '金额', format: 'money' },
+    transfer
+      ? { key: 'tradeDate', label: '日期', format: 'text' }
+      : { key: 'tradedAtLocal', label: '时间（美东）', format: 'localTime' },
+    { key: 'note', label: '备注', format: 'text' },
+    { key: 'cashChange', label: '现金变动', format: 'signedMoney' },
+  ]
+}
+
 function formatValue(value: string | number | null | undefined, format: FieldFormat): string {
   if (value === null || value === undefined || value === '') return EMPTY_VALUE
   const text = String(value)
@@ -45,6 +78,8 @@ function formatValue(value: string | number | null | undefined, format: FieldFor
       return text.replace('T', ' ').slice(0, 16)
     case 'action':
       return tradeActionLabel(text)
+    case 'stockType':
+      return stockTypeLabel(text)
     case 'transferType':
       return text === 'DEPOSIT' ? '入金' : text === 'WITHDRAWAL' ? '出金' : text
     case 'text':
@@ -54,11 +89,12 @@ function formatValue(value: string | number | null | undefined, format: FieldFor
 
 /**
  * "期权交易 #2" / "入金 #1" / "出金 #3" (transfer kind from the snapshot before the change) /
- * "账户 #1" (FEAT-033).
+ * "账户 #1" (FEAT-033) / "股票交易 #12" (FEAT-011).
  */
 function objectLabel(record: AuditRecord): string {
   if (record.objectType === 'ACCOUNT') return `账户 #${String(record.objectId)}`
   if (record.objectType === 'OPTION_TRADE') return `期权交易 #${String(record.objectId)}`
+  if (record.objectType === 'STOCK_TRADE') return `股票交易 #${String(record.objectId)}`
   if (record.objectType === 'CASH_TRANSFER') {
     const kind = (record.before ?? record.after)?.type === 'WITHDRAWAL' ? '出金' : '入金'
     return `${kind} #${String(record.objectId)}`
@@ -81,7 +117,7 @@ function Snapshot({
   emptyText: string
 }) {
   const fields =
-    SNAPSHOT_FIELDS[objectType] ??
+    (objectType === 'STOCK_TRADE' ? stockTradeFields(snapshot) : SNAPSHOT_FIELDS[objectType]) ??
     Object.keys(snapshot ?? {}).map((key) => ({ key, label: key, format: 'text' as const }))
   return (
     <Descriptions

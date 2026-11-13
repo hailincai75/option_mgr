@@ -190,6 +190,10 @@ function startFakeServer(server: FakeServer) {
         jsonResponse({ totalCash: '0.00', frozenCash: '0.00', availableCash: '0.00' }),
       )
     }
+    if (method === 'GET' && url === '/api/stock-positions') {
+      // FEAT-011 stock section (covered by StockPositions.test.tsx).
+      return Promise.resolve(jsonResponse({ positionCount: 0, positions: [] }))
+    }
     if (method === 'POST' && url === '/api/option-trades' && server.onPost) {
       return Promise.resolve(server.onPost())
     }
@@ -305,7 +309,7 @@ describe('PositionsPage', () => {
     expect(screen.getByText(/空头为实收、多头为实付，均已含手续费/)).toBeInTheDocument()
     // Only expand toggles and (FEAT-004) one 平仓 button per closable row; nothing else.
     // querySelectorAll instead of getAllByRole: role queries over the whole table are very slow.
-    const others = [...document.querySelectorAll('button')].filter(
+    const others = [...byTestId('positions-page').querySelectorAll('button')].filter(
       (b) => b.getAttribute('data-testid') !== 'position-expand',
     )
     expect(others.map((b) => b.getAttribute('data-testid'))).toEqual(

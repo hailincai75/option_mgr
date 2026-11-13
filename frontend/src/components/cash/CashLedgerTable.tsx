@@ -22,6 +22,8 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
   OPTION_OPEN: '期权开仓',
   OPTION_CLOSE: '期权平仓',
   OPTION_EXPIRE: '到期作废',
+  STOCK_BUY: '股票买入',
+  STOCK_SELL: '股票卖出',
 }
 
 /** Known source types get a Chinese label; unknown ones (added by later features) are shown as-is. */
@@ -101,9 +103,16 @@ const columns: ColumnsType<CashLedgerEntry> = [
   },
 ]
 
-/** Only deposits / withdrawals are edited here; option rows are edited in the trade list. */
+/**
+ * Only deposits / withdrawals are edited here; option rows are edited in the trade list and stock
+ * rows (FEAT-011) on the 股票 page.
+ */
 function isTransfer(entry: CashLedgerEntry): boolean {
   return entry.sourceType === 'DEPOSIT' || entry.sourceType === 'WITHDRAWAL'
+}
+
+function isStockEntry(entry: CashLedgerEntry): boolean {
+  return entry.sourceType === 'STOCK_BUY' || entry.sourceType === 'STOCK_SELL'
 }
 
 /** e.g. "入金 +80,000.00，2026-10-26 10:00". */
@@ -149,6 +158,10 @@ function actionsColumn(
             </Link>
           )}
         </Space>
+      ) : isStockEntry(entry) ? (
+        <Link to="/stocks" data-testid="cash-ledger-stocks-link">
+          在股票交易中修改
+        </Link>
       ) : (
         <Link to="/trades" data-testid="cash-ledger-trades-link">
           在交易列表中修改

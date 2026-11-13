@@ -13,6 +13,8 @@ import { NotFoundPage } from './pages/NotFoundPage'
 import { TradeEntryPage } from './pages/TradeEntryPage'
 import { PnlSummaryPage } from './pages/PnlSummaryPage'
 import { PositionsPage } from './pages/PositionsPage'
+import { StockTradeEntryPage } from './pages/StockTradeEntryPage'
+import { StockTradesPage } from './pages/StockTradesPage'
 import { TradeListPage } from './pages/TradeListPage'
 
 const NAV_ITEMS = [
@@ -29,6 +31,14 @@ const NAV_ITEMS = [
     label: (
       <Link to="/positions" data-testid="nav-positions">
         持仓
+      </Link>
+    ),
+  },
+  {
+    key: '/stocks',
+    label: (
+      <Link to="/stocks" data-testid="nav-stocks">
+        股票
       </Link>
     ),
   },
@@ -149,6 +159,8 @@ export function App() {
             <Route index element={<HomePage />} />
             <Route path="trades" element={<TradeListPage />} />
             <Route path="positions" element={<PositionsPage />} />
+            <Route path="stocks" element={<StockTradesPage />} />
+            <Route path="stocks/new" element={<StockTradeEntryPage />} />
             <Route path="closed" element={<ClosedTradesPage />} />
             <Route path="pnl-summary" element={<PnlSummaryPage />} />
             <Route path="trades/new" element={<TradeEntryPage />} />

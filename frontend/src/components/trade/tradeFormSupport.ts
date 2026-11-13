@@ -7,6 +7,7 @@ import { dashboardQueryKeys, pnlSummaryQueryKeys } from '../../api/dashboard'
 import { ApiError } from '../../api/client'
 import { optionPositionQueryKeys } from '../../api/optionPositions'
 import { optionTradeQueryKeys } from '../../api/optionTrades'
+import { stockPositionQueryKeys, stockTradeQueryKeys } from '../../api/stockTrades'
 import type { ClosingAction, OptionTrade } from '../../api/types'
 
 /** Shared pieces of the trade entry form (录入交易) and the close form (持仓页"平仓"). */
@@ -57,9 +58,10 @@ export function applySubmitError<F extends string>(
 }
 
 /**
- * After any saved, edited or deleted trade / transfer: cash summary and ledger, trades (lists
- * and details), positions, closed trades (FEAT-006), the home dashboard and P&L summary (FEAT-008)
- * and the audit log refresh without reload.
+ * After any saved, edited or deleted trade / transfer / stock trade: cash summary and ledger,
+ * trades (lists and details), positions, closed trades (FEAT-006), the home dashboard and P&L
+ * summary (FEAT-008), stock trades and stock positions (FEAT-011) and the audit log refresh
+ * without reload.
  */
 export async function refreshAfterChange(queryClient: QueryClient): Promise<void> {
   await Promise.all([
@@ -70,6 +72,10 @@ export async function refreshAfterChange(queryClient: QueryClient): Promise<void
     queryClient.invalidateQueries({ queryKey: closedTradeQueryKeys.all }),
     queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.all }),
     queryClient.invalidateQueries({ queryKey: pnlSummaryQueryKeys.all }),
+    // FEAT-011: stock trades and positions (cash changes from deposits / withdrawals do not
+    // change them, but refreshing every domain keeps one rule for every write).
+    queryClient.invalidateQueries({ queryKey: stockTradeQueryKeys.all }),
+    queryClient.invalidateQueries({ queryKey: stockPositionQueryKeys.all }),
   ])
 }
 

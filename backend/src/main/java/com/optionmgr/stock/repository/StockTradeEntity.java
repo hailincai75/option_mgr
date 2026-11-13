@@ -1,0 +1,132 @@
+package com.optionmgr.stock.repository;
+
+import com.optionmgr.stock.domain.StockRecord;
+import com.optionmgr.stock.domain.StockTradeType;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import java.math.BigDecimal;
+import java.time.Instant;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+/**
+ * FEAT-011 one stock record as entered by the user (BUY / SELL / TRANSFER_IN). {@code id} is the entry order; the
+ * FIFO replay order is (tradedAt, id). Symbol and type never change (delete and re-enter instead). The cash effect
+ * of BUY / SELL is the cash_ledger_entry with source STOCK_BUY / STOCK_SELL and this id.
+ */
+@Entity
+@Table(name = "stock_trade")
+public class StockTradeEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name = "account_id", nullable = false)
+    private Long accountId;
+
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
+    @Column(nullable = false, length = 12)
+    private StockTradeType type;
+
+    @Column(nullable = false, length = 10)
+    private String symbol;
+
+    @Column(nullable = false)
+    private int shares;
+
+    @Column(nullable = false, precision = 19, scale = 2)
+    private BigDecimal amount;
+
+    @Column(name = "traded_at", nullable = false)
+    private Instant tradedAt;
+
+    @Column(length = 500)
+    private String note;
+
+    @Column(name = "created_at", nullable = false)
+    private Instant createdAt;
+
+    /** True once the record itself has been edited (it then has an audit record). */
+    @Column(name = "has_audit_log", nullable = false)
+    private boolean hasAuditLog;
+
+    protected StockTradeEntity() {
+    }
+
+    public StockTradeEntity(long accountId, StockTradeType type, String symbol, int shares, BigDecimal amount,
+                            Instant tradedAt, String note, Instant createdAt) {
+        this.accountId = accountId;
+        this.type = type;
+        this.symbol = symbol;
+        this.shares = shares;
+        this.amount = amount;
+        this.tradedAt = tradedAt;
+        this.note = note;
+        this.createdAt = createdAt;
+    }
+
+    /** Edit: shares, amount, time and note; id (entry order), symbol and type stay. */
+    public void update(int shares, BigDecimal amount, Instant tradedAt, String note) {
+        this.shares = shares;
+        this.amount = amount;
+        this.tradedAt = tradedAt;
+        this.note = note;
+    }
+
+    /** Called only by the edit path, in the transaction that writes this record's UPDATE audit record. */
+    public void markAudited() {
+        this.hasAuditLog = true;
+    }
+
+    public StockRecord toRecord() {
+        return new StockRecord(id, type, tradedAt, shares, amount, note);
+    }
+
+    public Long getId() {
+        return id;
+    }
+
+    public long getAccountId() {
+        return accountId;
+    }
+
+    public StockTradeType getType() {
+        return type;
+    }
+
+    public String getSymbol() {
+        return symbol;
+    }
+
+    public int getShares() {
+        return shares;
+    }
+
+    public BigDecimal getAmount() {
+        return amount;
+    }
+
+    public Instant getTradedAt() {
+        return tradedAt;
+    }
+
+    public String getNote() {
+        return note;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
+    }
+
+    public boolean hasAuditLog() {
+        return hasAuditLog;
+    }
+}

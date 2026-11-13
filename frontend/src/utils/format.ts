@@ -175,3 +175,13 @@ export function formatLocalDateTime(local: string | null | undefined): string {
   const [, date = '', time = '', second] = match
   return second === undefined || second === '00' ? `${date} ${time}` : `${date} ${time}:${second}`
 }
+
+/**
+ * Formats a whole number from the backend (e.g. a share count) with thousands separators:
+ * 1000 → "1,000", 10000000 → "10,000,000". Returns EMPTY_VALUE for null / non-integer input.
+ */
+export function formatInteger(value: number | null | undefined): string {
+  if (value == null || !Number.isSafeInteger(value)) return EMPTY_VALUE
+  const sign = value < 0 ? MINUS_SIGN : ''
+  return sign + String(Math.abs(value)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+}

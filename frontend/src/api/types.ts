@@ -101,6 +101,9 @@ export type CashSourceType =
   | 'OPTION_CLOSE'
   /** FEAT-012: 到期作废 of a short put (amount "0.00", frozenChange negative). */
   | 'OPTION_EXPIRE'
+  /** FEAT-011: 股票买入 / 股票卖出 (sourceId = stock trade id; edited on the 股票 page). */
+  | 'STOCK_BUY'
+  | 'STOCK_SELL'
   | (string & {})
 
 /** Contract: `GET /api/cash/ledger` → `items[]`. */
@@ -391,7 +394,7 @@ export interface UpdateOptionTradeRequest {
 /** Contract: `PUT /api/cash/transfers/{id}` request body (same as create). */
 export type UpdateCashTransferRequest = CreateCashTransferRequest
 
-export type AuditObjectType = 'OPTION_TRADE' | 'CASH_TRANSFER' | 'ACCOUNT'
+export type AuditObjectType = 'OPTION_TRADE' | 'CASH_TRANSFER' | 'ACCOUNT' | 'STOCK_TRADE'
 export type AuditOperation = 'CREATE' | 'UPDATE' | 'DELETE' | (string & {})
 
 /** A full snapshot of the object (trade or transfer fields, see contract); display only. */
@@ -570,3 +573,145 @@ export interface SaveAccountRequest {
   name: string
   brokerNote: string | null
 }
+
+// ---------------------------------------------------------------------------
+// FEAT-011 股票交易与股票持仓
+// ---------------------------------------------------------------------------
+
+/** BUY 买入 / SELL 卖出 / TRANSFER_IN 转入（期初持仓）. */
+export type StockTradeType = 'BUY' | 'SELL' | 'TRANSFER_IN'
+
+/** Decimal with scale 4 as a string, display only (e.g. "7.5033"). */
+export type PriceString = string
+
+/** Contract: stock trade representation → `soldLots[]` (FIFO order). */
+export interface StockSoldLot {
+  /** Source record id (a BUY or TRANSFER_IN stock trade). */
+  tradeId: number
+  type: StockTradeType | (string & {})
+  tradedAt: InstantString
+  tradedAtLocal: LocalDateTimeString
+  /** Only for TRANSFER_IN lots. */
+  tradeDate: LocalDateString | null
+  /** Shares taken from this lot. */
+  shares: number
+  /** Cost of this part, scale 2. */
+  cost: MoneyString
+}
+
+/** Contract: stock trade representation (POST / GET / PUT responses, list items). */
+export interface StockTrade {
+  id: number
+  type: StockTradeType | (string & {})
+  symbol: string
+  shares: number
+  /** Positive: paid (BUY), received (SELL) or total cost (TRANSFER_IN). */
+  amount: MoneyString
+  /** Signed effect on total cash; "0.00" for TRANSFER_IN. */
+  cashChange: MoneyString
+  /** amount ÷ shares, HALF_UP to 4 decimals (display only). */
+  pricePerShare: PriceString
+  tradedAt: InstantString
+  /** New York local "YYYY-MM-DDTHH:mm:ss" (TRANSFER_IN: "…T00:00:00"). */
+  tradedAtLocal: LocalDateTimeString
+  /** Only TRANSFER_IN: New York date. */
+  tradeDate: LocalDateString | null
+  note: string | null
+  /** null for TRANSFER_IN. */
+  ledgerEntryId: number | null
+  createdAt: InstantString
+  /** True once the record has been edited (shows 历史). */
+  hasAuditLog: boolean
+  /** Only SELL. */
+  soldCost: MoneyString | null
+  /** Only SELL: amount − soldCost (profit +, loss −). */
+  realizedPnl: MoneyString | null
+  /** Only SELL. */
+  soldLots: StockSoldLot[] | null
+}
+
+/**
+ * Contract: `POST /api/stock-trades` request body. BUY / SELL send `tradedAtLocal`,
+ * TRANSFER_IN sends `tradeDate`.
+ */
+export interface CreateStockTradeRequest {
+  type: StockTradeType
+  /** Sent as typed; the backend trims and upper-cases it. */
+  symbol: string
+  /** Integer 1–10,000,000. */
+  shares: number
+  /** > 0, ≤ 2 decimals. */
+  amount: MoneyString
+  tradedAtLocal?: LocalDateTimeString
+  tradeDate?: LocalDateString
+  note: string | null
+}
+
+/**
+ * Contract: `PUT /api/stock-trades/{id}` request body. Symbol and type are not editable and are
+ * not sent. Time field by the record's type; null note clears it.
+ */
+export interface UpdateStockTradeRequest {
+  shares: number
+  amount: MoneyString
+  tradedAtLocal?: LocalDateTimeString
+  tradeDate?: LocalDateString
+  note: string | null
+}
+
+/** Contract: `GET /api/stock-trades` query parameters (all filters optional). */
+export interface StockTradeListParams {
+  symbol?: string
+  /** Multi-valued, sent as repeated `type=`. */
+  type?: StockTradeType[]
+  /** New York date, inclusive. */
+  startDate?: LocalDateString
+  /** New York date, inclusive. */
+  endDate?: LocalDateString
+  page: number
+  size: number
+}
+
+/** Contract: `GET /api/stock-trades` → 200. */
+export interface StockTradePage {
+  items: StockTrade[]
+  page: number
+  size: number
+  totalItems: number
+  totalPages: number
+}
+
+/** Contract: `GET /api/stock-positions` → `positions[].lots[]` (FIFO order). */
+export interface StockPositionLot {
+  tradeId: number
+  type: StockTradeType | (string & {})
+  tradedAt: InstantString
+  tradedAtLocal: LocalDateTimeString
+  tradeDate: LocalDateString | null
+  originalShares: number
+  remainingShares: number
+  originalCost: MoneyString
+  remainingCost: MoneyString
+  note: string | null
+}
+
+/** Contract: `GET /api/stock-positions` → `positions[]`. */
+export interface StockPosition {
+  symbol: string
+  shares: number
+  totalCost: MoneyString
+  /** totalCost ÷ shares, HALF_UP to 4 decimals (display only). */
+  averageCost: PriceString
+  lotCount: number
+  lots: StockPositionLot[]
+}
+
+/** Contract: `GET /api/stock-positions` → 200 (positions by symbol ascending). */
+export interface StockPositionsResponse {
+  positionCount: number
+  positions: StockPosition[]
+}
+
+/** FEAT-011 error codes (HTTP 422; `message` is user-facing Chinese). */
+export const SHARES_INSUFFICIENT = 'SHARES_INSUFFICIENT'
+export const STOCK_TRADE_IDENTITY_NOT_EDITABLE = 'STOCK_TRADE_IDENTITY_NOT_EDITABLE'

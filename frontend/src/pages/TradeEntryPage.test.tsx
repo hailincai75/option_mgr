@@ -447,7 +447,7 @@ describe('OpenTradePage', () => {
 
   describe('STO call (FEAT-038, Q61)', () => {
     const HINT =
-      '卖出 call 不冻结现金，请自行确保账户有足够股票覆盖（每张 = multiplier 股）；股票持仓功能（FEAT-011）上线后将自动检查。'
+      '卖出 call 不冻结现金，请自行确保账户有足够股票覆盖（每张 = multiplier 股）；covered call 覆盖检查（FEAT-039）上线后将自动检查。'
 
     it('shows the hint only for STO + Call', async () => {
       startFakeServer({ summary: SUMMARY_30000 })

@@ -14,5 +14,9 @@ public enum CashSourceType {
     OPTION_CLOSE,
     /** FEAT-012 expire worthless; source id = option_trade.id of the EXP record. Written only when it releases
      *  frozen cash (short put): amount 0, frozen change = -released; the frozen change may be corrected (Q39). */
-    OPTION_EXPIRE
+    OPTION_EXPIRE,
+    /** FEAT-011 stock purchase; source id = stock_trade.id; amount = -paid, frozen change 0. */
+    STOCK_BUY,
+    /** FEAT-011 stock sale; source id = stock_trade.id; amount = +received, frozen change 0. */
+    STOCK_SELL
 }

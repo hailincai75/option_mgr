@@ -20,6 +20,7 @@ com.optionmgr
 ├── health/            GET /api/health
 ├── cash/              FEAT-007 资金账户：入金/出金、现金汇总、统一现金流水（见下"现金流水模型"）
 ├── trade/             期权交易：开仓 FEAT-001、列表 FEAT-002、持仓 FEAT-003、平仓 FEAT-004、修改/删除 FEAT-005（见下"期权交易与持仓模型"）
+├── stock/             FEAT-011 股票交易与股票持仓（见下"股票交易与股票持仓"）
 ├── audit/             FEAT-005 审计记录：只追加，GET /api/audit-log（见下"修改、删除与审计"）
 ├── testsupport/       仅 `e2e` profile：POST /api/test-support/reset（见下"E2E 测试支持"）
 └── <feature>/         以后的功能，例如 position/
@@ -84,6 +85,19 @@ com.optionmgr
 - **持仓**：`OptionPositionService.PositionSummary` 带 `now` 和每个持仓的 `expiryContracts`（`ExpiryReplay.contractsAtCutoff`）；控制器输出 `closable` / `expiryPending` / `expirable` / `expiryContracts` / `expiryAt(Local)`
 - **已平仓、汇总**：`ClosedTradeService.CLOSING_ACTIONS` = BTC、STC、EXP，所以已平仓、盈亏汇总、首页自动计入（按 cutoff 时间归属）
 
+### 股票交易与股票持仓（FEAT-011）
+- **存储**：表 `stock_trade`（`V8__stock_trade.sql`）一行一条用户录入的股票记录：`type` ∈ `BUY` / `SELL` / `TRANSFER_IN`，`symbol`（规则同期权，`trade/domain/Symbols`）、`shares`（1–10,000,000）、`amount`（正数，含手续费：买入实付 / 卖出实收 / 转入总成本）、`traded_at`（UTC；转入 = 该日美东 00:00，Q86，`stock/domain/StockTimes`）、`note`、`has_audit_log`、`account_id`（外键）。`id` = 录入顺序（独立序列）。V8 同时把 `ck_audit_object_type` 放宽为含 `STOCK_TRADE`
+- **现金**：`BUY` / `SELL` 在同一事务里写一条流水（`CashSourceType.STOCK_BUY` / `STOCK_SELL`，`source_id` = 股票记录 id，`amount` = −实付 / +实收，`frozen_change` 0，说明如 `买入 200 股 IXQZ`）；`TRANSFER_IN` 没有流水。所以"按 `(时间, 录入顺序)` 的共同现金重放"不需要新机制：`CashReplay` 只认流水，股票流水自动进入现金汇总、流水余额和所有已有的 Q19 检查（入金/出金、期权开仓 Q18、平仓、作废、各种修改/删除）。股票记录与其流水同一事务写入，所以股票 id 顺序与流水 id 顺序一致
+- **包 `stock/`**：
+  - `domain/`（纯 Java）：`StockTradeType`（现金方向、流水来源、中文名、说明）、`StockRecord`（重放输入，`NOT_YET_ENTERED` 排在同一时间已有记录之后）、`StockReplay`（按账户 + 标的、`(tradedAt, id)` 重放：买入/转入成为 `StockLot`；卖出按 FIFO 扣股数，整批扣完取剩余成本，部分扣取 `剩余成本 × 股数 ÷ 剩余股数` HALF_UP 到分（Q69/Q87）；卖出超过当时持股记为违规、不应用，继续重放）、`SaleMatch` / `LotSale`（被卖出批次、`soldCost`、`realizedPnl`）、`StockPosition`（持股、总成本、每股平均 HALF_UP 4 位，Q88；`perShare` 也用于每股价格）、`StockMessages`（中文拒绝文案）、`StockTradeFilter`
+  - `service/StockTradeService`：新增（字段时间 → 加账户锁 → 卖出的持股重放（含之后的卖出，"补录后……"）→ 买入的现金插入检查 → 保存 + 流水）、按 id、列表（JPA Specification 分页，`traded_at DESC, id DESC`；一页内每个有卖出的标的重放一次）。`checkHoldings(accountId, symbol, change, subjectId, verb)` 供新增/修改/删除共用：把改动应用到该标的全部记录上重放，第一个违规是被改动的那笔 → "持股不足：……"，否则 → "<补录|修改|删除>后……"
+  - `service/StockTradeEditService`：修改（按原类型校验时间 → 标的/类型不同 422 → 没有修改 422 → 持股重放 → 现金 `replayWithChanges`（只对有流水的买入/卖出）→ 更新记录与流水（流水 id 不变）、`markAudited`、审计）与删除（持股 → 现金 → 删除流水与记录、审计）。审计对象 `AuditObjectType.STOCK_TRADE`，`sideEffects` 恒为空（股票不冻结）
+  - `service/StockPositionService`：读出账户全部股票记录，按标的分组各重放一次，剩余批次非空的为持仓，按标的字符序
+  - `web/`：`StockTradeController`（`/api/stock-trades`）、`StockPositionController`（`/api/stock-positions`）、`StockTradeDtos`、`StockTradeListQuery`（同 FEAT-002 的 BAD_REQUEST / VALIDATION_ERROR 规则）、`@StockTradeTimeRequired`（类级约束：按 `type` 要求 `tradedAtLocal` 或 `tradeDate`，错误落在该字段上，与其它字段错误一起返回）
+- 批次、被卖出成本、已实现盈亏都**不落库**（同 Q39 的做法），每次读取重放；补录/修改/删除后自动按新 FIFO 匹配，没有需要改正的存储值
+- 与期权没有联动：期权的列表、持仓、已平仓、汇总、首页都不读 `stock_trade`（FEAT-040 再并入）
+- 已知限制：每次写入加载该标的全部股票记录和账户全部流水重放；列表每页按标的重放（个人数据量小）
+
 ### 修改、删除与审计（FEAT-005）
 - 接口：`PUT` / `DELETE /api/option-trades/{id}`（`service/OptionTradeEditService`），`PUT` / `DELETE /api/cash/transfers/{id}`（`cash/service/CashTransferEditService`），`GET /api/audit-log`（`audit/`）
 - 原则：把改动应用到全部历史上重新检查，任何一笔交易或任何时点不成立就整笔拒绝，什么都不写。都在一个事务里，先拿 `cash_account` 行锁
@@ -103,7 +117,7 @@ com.optionmgr
 - 账户审计：`AuditObjectType.ACCOUNT`、`AuditOperation.CREATE`（`before` 为 `null`），记在该账户自己的审计里
 - **迁移前备份（Q60）**：`config/DatabaseBackupBeforeMigration` 是一个 `FlywayMigrationStrategy`：有待执行迁移、已有迁移记录、且是 H2 文件库（`DATABASE_PATH()` 非空）时，先执行 H2 `BACKUP TO '<库所在目录>/<库名>-backup-before-V<最高待执行版本>-<UTC 时间>Z.zip'`（在线一致性备份），确认文件存在且非空后才 `migrate()`；任何失败都抛异常 → 应用不启动、不迁移。内存库、新库不备份。**H2 的 DDL 会各自提交，迁移中途失败无法自动回滚，所以备份是回退手段**：停应用 → 移走 `<库名>.mv.db` → 把 zip 里的 `<库名>.mv.db` 解压到原目录 → 用旧版本启动
 - e2e 重置：快照包含 `account`（只有 1 号）和 `cash_account`（只有 1 号），所以重置后只剩"默认账户"、下一个账户 id 为 2；重置时锁全部账户行（`lockAllAccounts`）
-- 测试：`account/MigrationFromM1Test` 用 Flyway `target=4` 建 M1 结构的文件库、写入场景 M（通过 API 在临时内存库生成后按 id 原样拷贝），再启动应用执行备份 + V5（+ V6），逐个接口比较迁移前后的 JSON 完全相同（含 V6 回填的 `hasAuditLog`）；另有迁移失败（测试专用 `db/failing-migration/V8__simulated_failure.sql`，版本号始终比最新的真实迁移大 1，新增真实迁移时要一起改名）、备份失败两个场景。`account/MigrationV6HasAuditLogTest` 用 `target=5` 建库、直接写入交易/入金和各种审计记录，验证 V6 回填（同类型、同 id、同账户才算）与列表上的 `hasAuditLog`
+- 测试：`account/MigrationFromM1Test` 用 Flyway `target=4` 建 M1 结构的文件库、写入场景 M（通过 API 在临时内存库生成后按 id 原样拷贝），再启动应用执行备份 + V5（+ V6），逐个接口比较迁移前后的 JSON 完全相同（含 V6 回填的 `hasAuditLog`）；另有迁移失败（测试专用 `db/failing-migration/V9__simulated_failure.sql`，版本号始终比最新的真实迁移大 1，新增真实迁移时要一起改名，并更新这两个测试里写死的备份名 `before-V<最新真实版本>`）、备份失败两个场景。`account/MigrationV6HasAuditLogTest` 用 `target=5` 建库、直接写入交易/入金和各种审计记录，验证 V6 回填（同类型、同 id、同账户才算）与列表上的 `hasAuditLog`
 
 ### E2E 测试支持（`e2e` profile）
 - 用途：Playwright 套件只启动一个后端，每个测试前调用 `POST /api/test-support/reset` 得到干净的库，代替每个测试重启后端
@@ -147,8 +161,8 @@ frontend/
     ├── api/
     │   ├── types.ts      按 API 契约手写的请求/响应类型（含统一错误格式 ApiErrorResponse）
     │   ├── client.ts     fetch 封装 apiRequest<T>() 与 ApiError；`setApiAccountId()` 后给账户范围内的请求加 `X-Account-Id`（FEAT-033）
-    │   └── <feature>.ts  每个领域一个文件：请求函数 + queryKey（health.ts；cash.ts: getCashSummary/getCashLedger/createCashTransfer、cashQueryKeys；optionTrades.ts: createOptionTrade/createCloseTrade/createExpiration（FEAT-012）/getOptionTrade/listOptionTrades/updateOptionTrade/deleteOptionTrade；cash.ts 另有 updateCashTransfer/deleteCashTransfer；auditLog.ts: getAuditLog、auditLogQueryKeys；closedTrades.ts: listClosedTrades、closedTradeQueryKeys；dashboard.ts: getDashboard、getPnlSummary 及其 queryKey；accounts.ts: listAccounts/createAccount/updateAccount、accountQueryKeys、optionTradeQueryKeys；optionPositions.ts: getOptionPositions、optionPositionQueryKeys）
-    ├── pages/            路由级页面组件（HomePage、CashPage、TradeEntryPage、TradeListPage、PositionsPage、ClosedTradesPage、PnlSummaryPage、AuditLogPage、AccountsPage、NotFoundPage）
+    │   └── <feature>.ts  每个领域一个文件：请求函数 + queryKey（health.ts；cash.ts: getCashSummary/getCashLedger/createCashTransfer、cashQueryKeys；optionTrades.ts: createOptionTrade/createCloseTrade/createExpiration（FEAT-012）/getOptionTrade/listOptionTrades/updateOptionTrade/deleteOptionTrade；cash.ts 另有 updateCashTransfer/deleteCashTransfer；auditLog.ts: getAuditLog、auditLogQueryKeys；closedTrades.ts: listClosedTrades、closedTradeQueryKeys；dashboard.ts: getDashboard、getPnlSummary 及其 queryKey；accounts.ts: listAccounts/createAccount/updateAccount、accountQueryKeys、optionTradeQueryKeys；optionPositions.ts: getOptionPositions、optionPositionQueryKeys；stockTrades.ts（FEAT-011）: createStockTrade/getStockTrade/listStockTrades/updateStockTrade/deleteStockTrade/getStockPositions、stockTradeQueryKeys、stockPositionQueryKeys）
+    ├── pages/            路由级页面组件（HomePage、CashPage、TradeEntryPage、TradeListPage、PositionsPage、StockTradesPage、StockTradeEntryPage、ClosedTradesPage、PnlSummaryPage、AuditLogPage、AccountsPage、NotFoundPage）
     ├── components/       跨页面复用组件：QueryError（查询错误 + 重试）、DeleteConfirmModal（删除确认，FEAT-005）
     │   ├── account/      AccountSwitcher（顶部账户切换器，FEAT-033）
     │   ├── cash/         CashSummaryCard（可复用现金汇总）、CashTransferForm + cashTransferValidation、CashLedgerTable
@@ -156,8 +170,9 @@ frontend/
     │   ├── audit/        AuditTable（可展开修改前后）、auditSearch（审计页 URL 状态与校验）、auditLinks（各行"历史"链接）（FEAT-005）
     │   ├── pnl/          pnlSummarySearch（盈亏汇总页 URL 状态、月份范围交集、到已平仓页的链接）（FEAT-008）
     │   ├── closed/       ClosedTradeTable（已平仓记录，可展开被平批次）（FEAT-006）
-    │   └── position/     PositionTable（可展开批次、平仓 / 作废按钮、到期待确认标签）、ClosePositionModal（平仓对话框，FEAT-004）、ExpirePositionModal（到期作废对话框，FEAT-012）、positionLinks（合约 → 交易列表 URL，`tradesUrlForContract`，持仓和已平仓共用）（FEAT-003）
-    ├── utils/format.ts   统一的显示格式化（时间、金额；`formatLocalDateTime` 原样显示后端的美东本地时间）
+    │   ├── position/     PositionTable（可展开批次、平仓 / 作废按钮、到期待确认标签）、ClosePositionModal（平仓对话框，FEAT-004）、ExpirePositionModal（到期作废对话框，FEAT-012）、positionLinks（合约 → 交易列表 URL，`tradesUrlForContract`，持仓和已平仓共用）（FEAT-003）
+    │   └── stock/        FEAT-011 股票：StockTradeForm（录入买入/卖出/转入）+ StockTradeConfirmation、EditStockTradeModal、StockTradeTable（可展开被卖出批次）+ SoldLotTable、StockFilterForm、StockPositionsCard + StockPositionTable（持仓页股票部分，可展开批次）、stockLabels（类型文案/颜色、金额标签、时间文本、删除摘要）、stockListFilters（股票页 URL 状态与校验、`stocksUrlForSymbol`、`stockSellUrl`）、stockValidation（股数、金额、转入日期）
+    ├── utils/format.ts   统一的显示格式化（时间、金额；`formatLocalDateTime` 原样显示后端的美东本地时间；`formatInteger` 股数千分位）
     └── test/             setup.ts（jest-dom、matchMedia / ResizeObserver polyfill、清理 mock、清空当前账户和 localStorage）、render.tsx（renderWithProviders、jsonResponse、mockFetch——默认回答 `GET /api/accounts`）、userEvent.ts（无延迟、不做 pointer-events 检查的 user-event）、homeFixtures.ts
 ```
 测试文件与被测文件放在一起：`*.test.ts(x)`。
@@ -168,7 +183,9 @@ frontend/
 | `/` | `HomePage` | FEAT-008 首页概览（只读）：现金卡（`CashSummaryCard`）、已实现盈亏卡与持仓卡（`GET /api/dashboard`）、录入交易入口；底部一行后端状态（`GET /api/health`） |
 | `/pnl-summary` | `PnlSummaryPage` | FEAT-008 盈亏汇总：平仓日期范围（URL `startDate`/`endDate`）、按标的 / 按月两个表格（合计行用后端总计），标的/月份链接到 `/closed`（导航"盈亏汇总"） |
 | `/trades` | `TradeListPage` | FEAT-002 交易列表：筛选 + 只读表格 + 分页；筛选/页码/每页条数都在 URL 查询参数里（导航"交易"） |
-| `/positions` | `PositionsPage` | FEAT-003 期权持仓：截至日期/持仓数/冻结合计 + 持仓表（可展开 FIFO 批次，合约链接到 `/trades` 筛选；FEAT-004 可平仓行有"平仓"按钮，打开平仓对话框；FEAT-012 可作废行有"作废"按钮，打开作废对话框，16:00–17:30 显示"到期待确认"）（导航"持仓"） |
+| `/positions` | `PositionsPage` | FEAT-003 期权持仓：截至日期/持仓数/冻结合计 + 持仓表（可展开 FIFO 批次，合约链接到 `/trades` 筛选；FEAT-004 可平仓行有"平仓"按钮，打开平仓对话框；FEAT-012 可作废行有"作废"按钮，打开作废对话框，16:00–17:30 显示"到期待确认"）；下方 FEAT-011"股票持仓"卡片（`GET /api/stock-positions`，可展开批次，标的链接到 `/stocks?symbol=`，"卖出"到 `/stocks/new?type=SELL&symbol=`）（导航"持仓"） |
+| `/stocks` | `StockTradesPage` | FEAT-011 股票交易列表：筛选（标的、类型多选、美东日期范围）+ 表格（卖出行可展开被卖出批次，修改 / 删除 / 历史）+ 分页；筛选/页码/每页条数在 URL（`symbol`、`type`、`startDate`、`endDate`、`page`、`size`）（导航"股票"） |
+| `/stocks/new` | `StockTradeEntryPage` | FEAT-011 录入股票交易（买入 / 卖出 / 转入）：现金汇总 + 表单 + 成功结果；`?type=SELL&symbol=…` 预选卖出并预填标的（持仓页股票行"卖出"） |
 | `/trades/new` | `TradeEntryPage` | 录入交易（FEAT-001 开仓 BTO/STO + FEAT-004 平仓 BTC/STC，按方向调用不同接口）：现金汇总 + 表单 + 成功确认（导航"录入交易"） |
 | `/closed` | `ClosedTradesPage` | FEAT-006 已平仓记录：筛选结果笔数 + 已实现盈亏合计，平仓表格（可展开被平批次），筛选/分页/URL 同交易列表，方向只有 BTC/STC/EXP（导航"已平仓"） |
 | `/audit` | `AuditLogPage` | FEAT-005 审计记录：只读，按对象筛选（URL 参数 `objectType`/`objectId`/`page`/`size`），可展开修改前后（导航"审计记录"） |
@@ -185,7 +202,7 @@ frontend/
   - 请求没到服务器 → `code: 'NETWORK_ERROR'`，`status: 0`
   - 响应不是 JSON 或错误体不符合契约（例如 Vite 代理在后端未启动时返回的 502）→ `code: 'INVALID_RESPONSE'`
 - 每个查询在页面上处理 loading / error（显示错误信息 + 重试按钮，可用 `components/QueryError`）/ 空数据三种状态
-- 写操作成功后 invalidate 该领域的根 key（如 `cashQueryKeys.all` = `["cash"]`），依赖它的组件（如 `CashSummaryCard`）自动刷新；以后任何改变现金的操作也要 invalidate `["cash"]`；任何新增/修改交易的操作还要 invalidate `optionTradeQueryKeys.lists` = `["option-trades","list"]` 和 `optionPositionQueryKeys.all` = `["option-positions"]`；FEAT-005 起所有写操作（新增、修改、删除交易或入金出金）统一调用 `tradeFormSupport.refreshAfterChange`，invalidate `["cash"]`、`["option-trades"]`、`["option-positions"]`、`["audit-log"]`、`["closed-trades"]`（FEAT-006）、`["dashboard"]`、`["pnl-summary"]`（FEAT-008）；新增入金/出金也调用它
+- 写操作成功后 invalidate 该领域的根 key（如 `cashQueryKeys.all` = `["cash"]`），依赖它的组件（如 `CashSummaryCard`）自动刷新；以后任何改变现金的操作也要 invalidate `["cash"]`；任何新增/修改交易的操作还要 invalidate `optionTradeQueryKeys.lists` = `["option-trades","list"]` 和 `optionPositionQueryKeys.all` = `["option-positions"]`；FEAT-005 起所有写操作（新增、修改、删除交易或入金出金）统一调用 `tradeFormSupport.refreshAfterChange`，invalidate `["cash"]`、`["option-trades"]`、`["option-positions"]`、`["audit-log"]`、`["closed-trades"]`（FEAT-006）、`["dashboard"]`、`["pnl-summary"]`（FEAT-008）、`["stock-trades"]`、`["stock-positions"]`（FEAT-011）；新增入金/出金、新增/修改/删除股票记录也调用它
 - 列表页的筛选/分页状态以 URL 查询参数为唯一来源（`useSearchParams`），改变时 push 历史，后退可恢复；URL 中不合法的筛选值回填并在字段下报错、不发请求，不合法的 page/size 回退到默认值
 - 表单提交失败：`VALIDATION_ERROR` / `BAD_REQUEST` 的 `details[].field` 用 `form.setFields` 显示到同名字段；无法对应字段的错误和业务错误（如 `CASH_INSUFFICIENT`，message 是中文可直接显示）显示在提交按钮上方；保留用户输入
 
@@ -205,4 +222,5 @@ frontend/
 - 已平仓（FEAT-006）：筛选复用 `TradeFilterForm`（参数 `actions`、`dateLabelPrefix`、`testIdPrefix`）与 `tradeListFilters`（`validateTradeFilters` 可传允许的方向）；笔数、合计、每张平均、盈亏全部取后端值
 - 首页 / 盈亏汇总（FEAT-008）：所有金额和个数取后端值，汇总表的合计行用响应的总计，前端不相加；前端只做日期计算（月份首末日、与当前范围取交集）
 - 持仓 DTE、到期状态、平均净额、冻结等全部取后端字段显示（`expirationStatus` 决定"今天到期"/红色"已过期 N 天"），前端不做日期或金额计算
-- 现金流水：已知 `sourceType` 显示中文（`DEPOSIT` 入金、`WITHDRAWAL` 出金、`OPTION_OPEN` 期权开仓、`OPTION_CLOSE` 期权平仓、`OPTION_EXPIRE` 到期作废），未知值原样显示；`frozenChange` 单独一列，0 显示 `—`
+- 现金流水：已知 `sourceType` 显示中文（`DEPOSIT` 入金、`WITHDRAWAL` 出金、`OPTION_OPEN` 期权开仓、`OPTION_CLOSE` 期权平仓、`OPTION_EXPIRE` 到期作废、`STOCK_BUY` 股票买入、`STOCK_SELL` 股票卖出），未知值原样显示；`frozenChange` 单独一列，0 显示 `—`；只有入金/出金行可修改删除，期权行链接到 `/trades`、股票行链接到 `/stocks`
+- 股票（FEAT-011）：股数用 `formatInteger` 千分位；每股价格 / 平均成本原样显示后端的 4 位小数（经 `formatMoney`，不四舍五入）；金额列买入/卖出显示带符号的 `cashChange`（正绿负红），转入显示 `总成本 X`（不着色）；时间：转入显示 `tradeDate`，其它显示 `tradedAtLocal` 到分钟；被卖出成本、已实现盈亏、批次全部取后端值。录入/修改按类型只发送对应时间字段（买入/卖出 `tradedAtLocal`，转入 `tradeDate`）；修改不发送 `symbol` / `type`（只显示）。审计对象类型 `STOCK_TRADE` 显示"股票交易 #id"

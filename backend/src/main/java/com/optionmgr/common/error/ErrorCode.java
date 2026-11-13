@@ -38,6 +38,10 @@ public enum ErrorCode {
     EXPIRY_BLOCKED_BY_LATE_TRADE(HttpStatus.UNPROCESSABLE_ENTITY),
     /** FEAT-012 Q66: an expiry cannot be edited, only deleted. */
     EXPIRY_NOT_EDITABLE(HttpStatus.UNPROCESSABLE_ENTITY),
+    /** FEAT-011 Q15: a stock sale exceeds the shares held at its time (also after a back-fill / edit / delete). */
+    SHARES_INSUFFICIENT(HttpStatus.UNPROCESSABLE_ENTITY),
+    /** FEAT-011: an edit tries to change the symbol or type of a stock trade (delete and re-enter instead). */
+    STOCK_TRADE_IDENTITY_NOT_EDITABLE(HttpStatus.UNPROCESSABLE_ENTITY),
     /** FEAT-033: an account-scoped endpoint was called without the X-Account-Id header. */
     ACCOUNT_REQUIRED(HttpStatus.BAD_REQUEST),
     /** FEAT-033: the X-Account-Id / path account does not exist. */

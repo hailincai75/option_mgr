@@ -1,0 +1,43 @@
+package com.optionmgr.stock.web;
+
+import com.optionmgr.account.web.AccountRef;
+import com.optionmgr.stock.domain.StockLot;
+import com.optionmgr.stock.domain.StockPosition;
+import com.optionmgr.stock.service.StockPositionService;
+import com.optionmgr.stock.web.StockTradeDtos.StockLotResponse;
+import com.optionmgr.stock.web.StockTradeDtos.StockPositionResponse;
+import com.optionmgr.stock.web.StockTradeDtos.StockPositionsResponse;
+import java.util.List;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+/** FEAT-011 current stock positions (with FIFO lots) of the account. */
+@RestController
+@RequestMapping("/api/stock-positions")
+public class StockPositionController {
+
+    private final StockPositionService positions;
+
+    public StockPositionController(StockPositionService positions) {
+        this.positions = positions;
+    }
+
+    @GetMapping
+    public StockPositionsResponse list(AccountRef account) {
+        List<StockPositionResponse> items = positions.currentPositions(account.id()).stream()
+                .map(StockPositionController::toResponse).toList();
+        return new StockPositionsResponse(items.size(), items);
+    }
+
+    private static StockPositionResponse toResponse(StockPosition p) {
+        return new StockPositionResponse(p.symbol(), p.shares(), p.totalCost(), p.averageCost(), p.lots().size(),
+                p.lots().stream().map(StockPositionController::toLot).toList());
+    }
+
+    private static StockLotResponse toLot(StockLot l) {
+        return new StockLotResponse(l.sourceId(), l.type(), l.tradedAt(), StockTradeController.local(l.tradedAt()),
+                StockTradeController.transferDate(l.type(), l.tradedAt()), l.originalShares(), l.remainingShares(),
+                l.originalCost(), l.remainingCost(), l.note());
+    }
+}
