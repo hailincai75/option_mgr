@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { useAccountQuery } from '../account/useAccountQuery'
 import { Alert, Button, Card, Pagination, Radio, Space, Typography } from 'antd'
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
@@ -61,11 +61,12 @@ export function TradeListPage() {
   const params = toTradeListParams(state)
   const activeFilters = hasActiveFilters(state.filters)
 
-  const { data, error, isPending, isFetching, isPlaceholderData, refetch } = useQuery({
+  const { data, error, isPending, isFetching, isPlaceholderData, refetch } = useAccountQuery({
+    // FEAT-033: per-account key; runs only once the current account is known.
     queryKey: optionTradeQueryKeys.list(params),
     queryFn: ({ signal }) => listOptionTrades(params, signal),
     enabled: filtersValid,
-    placeholderData: keepPreviousData,
+    keepPrevious: true,
   })
 
   const serverErrors = serverFilterErrors(error)

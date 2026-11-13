@@ -348,8 +348,8 @@ export interface UpdateOptionTradeRequest {
 /** Contract: `PUT /api/cash/transfers/{id}` request body (same as create). */
 export type UpdateCashTransferRequest = CreateCashTransferRequest
 
-export type AuditObjectType = 'OPTION_TRADE' | 'CASH_TRANSFER'
-export type AuditOperation = 'UPDATE' | 'DELETE' | (string & {})
+export type AuditObjectType = 'OPTION_TRADE' | 'CASH_TRANSFER' | 'ACCOUNT'
+export type AuditOperation = 'CREATE' | 'UPDATE' | 'DELETE' | (string & {})
 
 /** A full snapshot of the object (trade or transfer fields, see contract); display only. */
 export type AuditSnapshot = Record<string, string | number | null>
@@ -382,7 +382,8 @@ export interface AuditRecord {
   objectType: AuditObjectType | (string & {})
   objectId: number
   summary: string
-  before: AuditSnapshot
+  /** null for CREATE (FEAT-033 account creation). */
+  before: AuditSnapshot | null
   /** null for DELETE. */
   after: AuditSnapshot | null
   changes: AuditFieldChange[]
@@ -504,4 +505,22 @@ export interface PnlSummary {
 export interface PnlSummaryParams {
   startDate?: LocalDateString
   endDate?: LocalDateString
+}
+
+// ---------------------------------------------------------------------------
+// FEAT-033 多账户
+// ---------------------------------------------------------------------------
+
+/** Contract: `GET /api/accounts` → items (ascending id). Not an account number (Q51). */
+export interface Account {
+  id: number
+  name: string
+  brokerNote: string | null
+  createdAt: InstantString
+}
+
+/** Contract: `POST /api/accounts` / `PUT /api/accounts/{id}` body (PUT replaces both fields). */
+export interface SaveAccountRequest {
+  name: string
+  brokerNote: string | null
 }

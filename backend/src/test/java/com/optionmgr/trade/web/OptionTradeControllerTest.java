@@ -35,6 +35,7 @@ import org.springframework.test.web.servlet.MvcResult;
  */
 @SpringBootTest
 @AutoConfigureMockMvc
+@org.springframework.context.annotation.Import(com.optionmgr.account.DefaultAccountMockMvc.class)
 class OptionTradeControllerTest {
 
     static final Instant DEFAULT_NOW = Instant.parse("2026-11-12T15:00:00Z");
@@ -367,7 +368,7 @@ class OptionTradeControllerTest {
         // a different strike is a different contract
         ok(with(bto, n -> n.put("strike", "205")));
 
-        // long call, then STO the same call: Q7 is checked before Q16, so the hint is Sell to Close
+        // long call, then STO the same call: still Q7 (hint Sell to Close)
         ok(with(trade("BTO", "210", "CALL", "512.65"), n -> n.put("tradedAtLocal", "2026-11-11T10:30")));
         ObjectNode sto = with(trade("STO", "210", "CALL", "500.00"), n -> n.put("tradedAtLocal", "2026-11-11T11:00"));
         assertThat(rejected(sto, "POSITION_DIRECTION_CONFLICT"))
@@ -375,14 +376,15 @@ class OptionTradeControllerTest {
                         + "如要平仓请使用 Sell to Close（STC）");
     }
 
+    /** FEAT-001 AC9 was "STO call rejected" (Q16); superseded by FEAT-038: allowed, nothing frozen. */
     @Test
-    void ac9_stoCallIsRejected() throws Exception {
+    void ac9_stoCallIsAllowedSinceFeat038() throws Exception {
         deposit("100000.00", "2026-11-02T10:00");
 
-        String msg = rejected(trade("STO", "250", "CALL", "120.00"), "SELL_CALL_NOT_SUPPORTED");
-        assertThat(msg).isEqualTo("需要股票持仓功能（FEAT-011）后才能卖出 call");
-        assertThat(tradeCount()).isZero();
-        assertThat(ledgerCount()).isEqualTo(1);
+        JsonNode t = ok(trade("STO", "250", "CALL", "120.00"));
+        assertThat(t.get("cashChange").asText()).isEqualTo("120.00");
+        assertThat(t.get("frozenChange").asText()).isEqualTo("0.00");
+        assertSummary("100120.00", "0.00", "100120.00");
     }
 
     @Test

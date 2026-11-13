@@ -43,7 +43,10 @@ public record OpenTradeTerms(ContractKey contract, TradeAction action, int contr
         return action.receivesCash() ? netAmount : netAmount.negate();
     }
 
-    /** True for a cash-secured put sale, the only opening trade that freezes cash in M1. */
+    /**
+     * True for a cash-secured put sale, the only opening trade that freezes cash. A short call (FEAT-038) freezes
+     * nothing and has no Q18 check; the user is responsible for share coverage until FEAT-011.
+     */
     public boolean freezesCollateral() {
         return action == TradeAction.STO && contract.optionType() == OptionType.PUT;
     }

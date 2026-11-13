@@ -1,5 +1,6 @@
 package com.optionmgr.trade.web;
 
+import com.optionmgr.account.web.AccountRef;
 import com.optionmgr.common.time.MarketTime;
 import com.optionmgr.trade.domain.ContractKey;
 import com.optionmgr.trade.domain.ExpirationStatus;
@@ -51,8 +52,8 @@ public class OptionPositionController {
     }
 
     @GetMapping
-    public PositionsResponse positions() {
-        OptionPositionService.PositionSummary s = service.currentPositions();
+    public PositionsResponse positions(AccountRef account) {
+        OptionPositionService.PositionSummary s = service.currentPositions(account.id());
         List<PositionResponse> positions = s.positions().stream().map(p -> toResponse(p, s.asOfDate())).toList();
         return new PositionsResponse(s.asOfDate(), positions.size(), s.frozenTotal(), positions);
     }

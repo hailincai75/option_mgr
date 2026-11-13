@@ -354,10 +354,19 @@ test.describe('FEAT-007 资金账户', () => {
     await expect(page.getByTestId('cash-summary-error')).toBeVisible({ timeout: 20_000 })
     await expect(page.getByTestId('cash-ledger-error')).toBeVisible({ timeout: 20_000 })
 
+    // FEAT-033: while the account list is failing the cards say so in Chinese, never the raw English code
+    await expect(page.getByTestId('cash-summary-error')).toContainText('账户未就绪')
+    await expect(page.getByText('Account required')).toHaveCount(0)
+
     await backend.start()
-    await page.getByTestId('cash-summary-retry').click()
-    await page.getByTestId('cash-ledger-retry').click()
+    // one click on one card's 重试 recovers the account list and then every card
+    // (the account list also auto-retries every 10 s; if that already recovered the page there is no button left)
+    const retry = page.getByTestId('cash-summary-retry')
+    if (await retry.isVisible()) await retry.click()
     await cash.expectSummary('0.00', '0.00', '0.00')
     await expect(cash.ledgerEmpty).toBeVisible()
+    await expect(page.getByTestId('cash-ledger-error')).toHaveCount(0)
+    await expect(page.getByTestId('account-error')).toHaveCount(0)
+    await expect(page.getByText('Account required')).toHaveCount(0)
   })
 })

@@ -41,8 +41,8 @@ public class ClosedTradeService {
     }
 
     @Transactional(readOnly = true)
-    public ClosedTradePage page(TradeFilter filter, int page, int size) {
-        List<ClosedTradeView> views = all(filter);
+    public ClosedTradePage page(long accountId, TradeFilter filter, int page, int size) {
+        List<ClosedTradeView> views = all(accountId, filter);
         BigDecimal total = views.stream().map(v -> v.figures().realizedPnl()).reduce(Money.ZERO, BigDecimal::add);
 
         long totalItems = views.size();
@@ -56,13 +56,13 @@ public class ClosedTradeService {
 
     /** Every close matching {@code filter} (an empty action set = BTC and STC), newest first, with its figures. */
     @Transactional(readOnly = true)
-    public List<ClosedTradeView> all(TradeFilter filter) {
+    public List<ClosedTradeView> all(long accountId, TradeFilter filter) {
         TradeFilter closesOnly = new TradeFilter(filter.symbol(), filter.expirationDate(), filter.strike(),
                 filter.optionType(), filter.actions().isEmpty() ? CLOSING_ACTIONS : filter.actions(),
                 filter.startDate(), filter.endDate());
-        List<OptionTradeEntity> all = trades.findAll(OptionTradeSpecifications.matching(closesOnly),
+        List<OptionTradeEntity> all = trades.findAll(OptionTradeSpecifications.matching(accountId, closesOnly),
                 OptionTradeService.LIST_ORDER);
-        List<ClosedTradeView> views = tradeService.views(all).stream()
+        List<ClosedTradeView> views = tradeService.views(accountId, all).stream()
                 .map(v -> new ClosedTradeView(v, new ClosedTrade(v.trade().getAction(), v.trade().getContracts(),
                         v.ledgerEntry().getAmount(), v.closeMatch().orElseThrow(
                                 () -> new IllegalStateException("close " + v.trade().getId() + " has no match")))))

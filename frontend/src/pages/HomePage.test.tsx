@@ -3,7 +3,7 @@ import userEvent from '../test/userEvent'
 import type { ApiErrorResponse, CashSummary, Dashboard, HealthResponse } from '../api/types'
 import { App } from '../App'
 import { EMPTY_DASHBOARD } from '../test/homeFixtures'
-import { jsonResponse, mockFetch, renderWithProviders } from '../test/render'
+import { DEFAULT_ACCOUNTS, jsonResponse, mockFetch, renderWithProviders } from '../test/render'
 import { HomePage } from './HomePage'
 
 const health: HealthResponse = {
@@ -37,6 +37,8 @@ const DASHBOARD_Q: Dashboard = {
 }
 
 interface FakeServer {
+  /** FEAT-033: the account list is part of the backend too. */
+  accounts: () => Promise<Response>
   health: () => Promise<Response>
   dashboard: () => Promise<Response>
   cash: () => Promise<Response>
@@ -44,22 +46,26 @@ interface FakeServer {
 
 function startFakeServer(overrides: Partial<FakeServer> = {}) {
   const server: FakeServer = {
+    accounts: () => Promise.resolve(jsonResponse(DEFAULT_ACCOUNTS)),
     health: () => Promise.resolve(jsonResponse(health)),
     dashboard: () => Promise.resolve(jsonResponse(DASHBOARD_Q)),
     cash: () => Promise.resolve(jsonResponse(DASHBOARD_Q.cash)),
     ...overrides,
   }
   const urls: string[] = []
-  const fetchMock = mockFetch()
-  fetchMock.mockImplementation((input) => {
+  const headers: (string | undefined)[] = []
+  const fetchMock = mockFetch({ accounts: false })
+  fetchMock.mockImplementation((input, init) => {
     const url = typeof input === 'string' ? input : ''
     urls.push(url)
+    headers.push((init?.headers as Record<string, string> | undefined)?.['X-Account-Id'])
+    if (url === '/api/accounts') return server.accounts()
     if (url === '/api/health') return server.health()
     if (url === '/api/dashboard') return server.dashboard()
     if (url === '/api/cash/summary') return server.cash()
     return Promise.reject(new Error(`Unexpected request ${url}`))
   })
-  return { fetchMock, urls }
+  return { fetchMock, urls, headers, server }
 }
 
 const byTestId = (id: string) => screen.getByTestId(id)
@@ -229,11 +235,8 @@ describe('HomePage: dashboard (FEAT-008)', () => {
   })
 
   it('shows errors on every card and the footer when the backend is down (AC 8)', async () => {
-    startFakeServer({
-      health: () => Promise.reject(new TypeError('Failed to fetch')),
-      dashboard: () => Promise.reject(new TypeError('Failed to fetch')),
-      cash: () => Promise.reject(new TypeError('Failed to fetch')),
-    })
+    const down = () => Promise.reject(new TypeError('Failed to fetch'))
+    const { urls } = startFakeServer({ accounts: down, health: down, dashboard: down, cash: down })
     renderWithProviders(<HomePage />)
 
     await waitFor(() => {
@@ -242,10 +245,49 @@ describe('HomePage: dashboard (FEAT-008)', () => {
       )
     })
     expect(byTestId('health-retry')).toBeEnabled()
-    expect(byTestId('cash-summary-error')).toHaveTextContent('NETWORK_ERROR')
-    expect(byTestId('dashboard-pnl-error')).toHaveTextContent('NETWORK_ERROR')
+    // FEAT-033 follow-up: cards report the missing account in Chinese, with the cause code.
+    await waitFor(() => {
+      expect(byTestId('cash-summary-error')).toHaveTextContent('账户未就绪，请重试 (NETWORK_ERROR)')
+    })
+    expect(byTestId('dashboard-pnl-error')).toHaveTextContent('账户未就绪，请重试 (NETWORK_ERROR)')
     expect(byTestId('dashboard-positions-error')).toHaveTextContent('NETWORK_ERROR')
     expect(byTestId('dashboard-pnl-retry')).toBeInTheDocument()
+    expect(screen.queryByText(/Account required/)).not.toBeInTheDocument()
+    // No account-scoped request was sent at all.
+    expect(urls.filter((url) => url === '/api/dashboard' || url === '/api/cash/summary')).toEqual(
+      [],
+    )
+  })
+
+  it('recovers with one click on any card 重试 after the backend comes back (FEAT-033)', async () => {
+    const down = () => Promise.reject(new TypeError('Failed to fetch'))
+    const { server, urls, headers } = startFakeServer({
+      accounts: down,
+      dashboard: down,
+      cash: down,
+    })
+    renderWithProviders(<HomePage />)
+    expect(await screen.findByTestId('dashboard-pnl-error')).toHaveTextContent('账户未就绪，请重试')
+
+    // Backend is back.
+    server.accounts = () => Promise.resolve(jsonResponse(DEFAULT_ACCOUNTS))
+    server.dashboard = () => Promise.resolve(jsonResponse(DASHBOARD_Q))
+    server.cash = () => Promise.resolve(jsonResponse(DASHBOARD_Q.cash))
+    await userEvent.click(byTestId('dashboard-pnl-retry'))
+
+    // Every account-scoped card loads by itself, without a second click.
+    expect(await screen.findByTestId('dashboard-realized-total')).toHaveTextContent('+703.05')
+    await waitFor(() => {
+      expect(byTestId('cash-summary-total')).toHaveTextContent('101,043.05')
+    })
+    expect(byTestId('dashboard-position-count')).toHaveTextContent('3')
+    expect(screen.queryByText(/Account required/)).not.toBeInTheDocument()
+    // Every account-scoped request carried the account header.
+    const scoped = urls
+      .map((url, index) => ({ url, header: headers[index] }))
+      .filter(({ url }) => url === '/api/dashboard' || url === '/api/cash/summary')
+    expect(scoped.length).toBeGreaterThan(0)
+    expect(scoped.every(({ header }) => header === '1')).toBe(true)
   })
 
   it('refreshes after a deposit without reload (AC 6)', async () => {

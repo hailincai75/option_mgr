@@ -7,7 +7,10 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface AuditRecordRepository extends JpaRepository<AuditRecordEntity, Long> {
 
-    Page<AuditRecordEntity> findByObjectType(AuditObjectType objectType, Pageable pageable);
+    Page<AuditRecordEntity> findByAccountId(Long accountId, Pageable pageable);
 
-    Page<AuditRecordEntity> findByObjectTypeAndObjectId(AuditObjectType objectType, Long objectId, Pageable pageable);
+    Page<AuditRecordEntity> findByAccountIdAndObjectType(Long accountId, AuditObjectType objectType, Pageable pageable);
+
+    Page<AuditRecordEntity> findByAccountIdAndObjectTypeAndObjectId(Long accountId, AuditObjectType objectType,
+                                                                    Long objectId, Pageable pageable);
 }

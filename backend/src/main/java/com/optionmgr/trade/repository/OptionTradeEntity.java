@@ -30,6 +30,9 @@ public class OptionTradeEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "account_id", nullable = false)
+    private Long accountId;
+
     @Column(nullable = false, length = 10)
     private String symbol;
 
@@ -70,8 +73,9 @@ public class OptionTradeEntity {
     protected OptionTradeEntity() {
     }
 
-    public OptionTradeEntity(ContractKey contract, TradeAction action, int contracts, int multiplier,
+    public OptionTradeEntity(long accountId, ContractKey contract, TradeAction action, int contracts, int multiplier,
                              BigDecimal netAmount, Instant tradedAt, String note, Instant createdAt) {
+        this.accountId = accountId;
         this.symbol = contract.symbol();
         this.expirationDate = contract.expirationDate();
         this.strike = contract.strike();
@@ -100,6 +104,10 @@ public class OptionTradeEntity {
 
     public Long getId() {
         return id;
+    }
+
+    public long getAccountId() {
+        return accountId;
     }
 
     public String getSymbol() {

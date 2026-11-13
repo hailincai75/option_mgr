@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { useAccountQuery } from '../account/useAccountQuery'
 import { Alert, Button, Card, Col, Row, Space, Spin, Statistic, Tag, Typography } from 'antd'
 import type { ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -95,7 +96,8 @@ function currentMonthClosedUrl(dashboard: Dashboard): string {
 type DashboardQuery = ReturnType<typeof useDashboard>
 
 function useDashboard() {
-  return useQuery({
+  return useAccountQuery({
+    // FEAT-033: per-account key; runs only once the current account is known.
     queryKey: dashboardQueryKeys.all,
     queryFn: ({ signal }) => getDashboard(signal),
   })

@@ -1,5 +1,5 @@
 import { test as base, expect, type Locator, type Page } from '@playwright/test'
-import { BACKEND_URL, backendIsUp, e2eBackend, startBackend, type E2EBackend } from './backend'
+import { BACKEND_URL, backendIsUp, e2eBackend, setApiAccount, startBackend, type E2EBackend } from './backend'
 import { TradeForm } from './trade'
 
 export { expect }
@@ -22,6 +22,7 @@ export const test = base.extend<Fixtures>({
     async ({}, use) => {
       // Self-heal if a previous test left the backend stopped (e.g. it failed during the outage test).
       if (!(await backendIsUp())) await startBackend('recovered')
+      setApiAccount(1)
       await e2eBackend.reset()
       const s = (await (await fetch(`${BACKEND_URL}/api/cash/summary`)).json()) as { totalCash?: string }
       if (s.totalCash !== '0.00') throw new Error(`database not empty after reset: ${JSON.stringify(s)}`)

@@ -140,3 +140,31 @@ export const e2eBackend = {
   },
 }
 export type E2EBackend = typeof e2eBackend
+
+// ---------------------------------------------------------------------------------------------------------------
+// FEAT-033: every business endpoint needs X-Account-Id. Direct API calls made by the tests themselves (seeding data,
+// reading results) go through Node's global fetch; add the header for backend URLs unless the call sets its own.
+// The browser is not affected (the app sends its own header for the current account).
+
+let apiAccount: number | null = 1
+
+/** Account used for the tests' own direct backend calls; null = send no X-Account-Id. Reset to 1 per test. */
+export function setApiAccount(id: number | null): void {
+  apiAccount = id
+}
+
+const FETCH_PATCHED = Symbol.for('option-mgr.e2e.fetch-patched')
+const g = globalThis as typeof globalThis & { [FETCH_PATCHED]?: boolean }
+if (!g[FETCH_PATCHED]) {
+  g[FETCH_PATCHED] = true
+  const original = globalThis.fetch.bind(globalThis)
+  globalThis.fetch = (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+    if (url.startsWith(BACKEND_URL) && apiAccount !== null) {
+      const headers = new Headers(init?.headers)
+      if (!headers.has('X-Account-Id')) headers.set('X-Account-Id', String(apiAccount))
+      return original(input, { ...init, headers })
+    }
+    return original(input, init)
+  }
+}

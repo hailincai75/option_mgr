@@ -69,6 +69,7 @@ abstract class CashSystemTestBase {
 
     @BeforeEach
     void cleanBefore() {
+        accountId = "1";
         clock.set(now());
         emptyLedger();
     }
@@ -78,12 +79,22 @@ abstract class CashSystemTestBase {
         emptyLedger();
     }
 
+    /**
+     * Empties all business data of every account and removes every account except the default one (id 1, restored to
+     * its migrated name), so each test starts from a fresh single-account database. Only the in-memory test DB.
+     */
     void emptyLedger() {
         jdbc.update("DELETE FROM cash_ledger_entry");
         jdbc.update("DELETE FROM cash_transfer");
         jdbc.update("DELETE FROM option_trade");
         jdbc.update("DELETE FROM audit_record");
+        jdbc.update("DELETE FROM cash_account WHERE id <> 1");
+        jdbc.update("DELETE FROM account WHERE id <> 1");
+        jdbc.update("UPDATE account SET name = '默认账户', name_key = '默认账户', broker_note = NULL WHERE id = 1");
     }
+
+    /** Account sent as X-Account-Id on every request (FEAT-033); reset to 1 before each test, null = omit. */
+    String accountId = "1";
 
     // ------------------------------------------------------------------ HTTP
 
@@ -98,6 +109,9 @@ abstract class CashSystemTestBase {
     Resp exchange(HttpMethod method, String path, String rawBody, MediaType contentType) {
         HttpHeaders h = new HttpHeaders();
         h.setAccept(List.of(MediaType.APPLICATION_JSON));
+        if (accountId != null) {
+            h.set("X-Account-Id", accountId);
+        }
         if (rawBody != null) {
             h.setContentType(contentType);
         }

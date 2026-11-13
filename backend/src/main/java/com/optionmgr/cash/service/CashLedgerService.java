@@ -16,18 +16,17 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * The unified cash ledger: current balance, paged history with running balance, and the building blocks
- * every cash-changing feature uses inside its own transaction:
+ * The unified cash ledger of one account (FEAT-033: everything is per account): current balance, paged history with
+ * running balance, and the building blocks every cash-changing feature uses inside its own transaction:
  * <ol>
  *   <li>{@link #checkInsertion} - lock the account and replay with the new movement (Q19);</li>
  *   <li>save the originating record (transfer, trade, ...);</li>
@@ -47,33 +46,44 @@ public class CashLedgerService {
         this.clock = clock;
     }
 
-    /** Serializes cash-changing transactions; the lock is held until the caller's transaction ends. */
+    /** FEAT-033: creates the cash-account (lock) row of a new account. */
     @Transactional(propagation = Propagation.MANDATORY)
-    public void lockAccount() {
-        accounts.lockById(CashAccountEntity.SINGLE_ACCOUNT_ID)
-                .orElseThrow(() -> new IllegalStateException("cash account row missing (migration V2)"));
+    public void openAccount(long accountId) {
+        accounts.save(new CashAccountEntity(accountId, "USD", clock.instant()));
+    }
+
+    /** Serializes the account's cash-changing transactions; held until the caller's transaction ends. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void lockAccount(long accountId) {
+        accounts.lockById(accountId)
+                .orElseThrow(() -> new IllegalStateException("cash account row missing for account " + accountId));
+    }
+
+    /** Locks every account (e2e reset). */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void lockAllAccounts() {
+        accounts.lockAll();
     }
 
     /**
-     * Locks the account and replays all entries with a not-yet-stored movement inserted at {@code occurredAt}
+     * Locks the account and replays its entries with a not-yet-stored movement inserted at {@code occurredAt}
      * (after existing entries at the same instant). Does not write anything.
      */
     @Transactional(propagation = Propagation.MANDATORY)
-    public InsertionCheck checkInsertion(Instant occurredAt, BigDecimal cashChange, BigDecimal frozenChange) {
-        lockAccount();
-        return CashReplay.checkInsertion(loadMovements(),
-                CashMovement.pending(occurredAt, Money.of(cashChange), Money.of(frozenChange)));
+    public InsertionCheck checkInsertion(long accountId, Instant occurredAt, BigDecimal cashChange,
+                                         BigDecimal frozenChange) {
+        return checkInsertion(accountId, occurredAt, cashChange, frozenChange, Map.of());
     }
 
     /**
-     * As {@link #checkInsertion(Instant, BigDecimal, BigDecimal)}, with the frozen change of some existing entries
-     * replaced (ledger id -&gt; new frozen change) - the state after {@link #correctFrozenChanges} would apply them.
+     * As above, with the frozen change of some existing entries replaced (ledger id -&gt; new frozen change) - the
+     * state after {@link #correctFrozenChanges} would apply them.
      */
     @Transactional(propagation = Propagation.MANDATORY)
-    public InsertionCheck checkInsertion(Instant occurredAt, BigDecimal cashChange, BigDecimal frozenChange,
-                                         Map<Long, BigDecimal> frozenOverrides) {
-        lockAccount();
-        List<CashMovement> movements = loadMovements().stream()
+    public InsertionCheck checkInsertion(long accountId, Instant occurredAt, BigDecimal cashChange,
+                                         BigDecimal frozenChange, Map<Long, BigDecimal> frozenOverrides) {
+        lockAccount(accountId);
+        List<CashMovement> movements = loadMovements(accountId).stream()
                 .map(m -> frozenOverrides.containsKey(m.sequence())
                         ? new CashMovement(m.occurredAt(), m.sequence(), m.cashChange(),
                                 Money.of(frozenOverrides.get(m.sequence())))
@@ -83,24 +93,23 @@ public class CashLedgerService {
                 CashMovement.pending(occurredAt, Money.of(cashChange), Money.of(frozenChange)));
     }
 
-    /** Applies frozen-change corrections (ledger id -&gt; new value), see {@link CashLedgerEntryEntity#correctFrozenChange}. */
+    /** Applies frozen-change corrections (ledger id -&gt; new value) to entries of the account. */
     @Transactional(propagation = Propagation.MANDATORY)
-    public void correctFrozenChanges(Map<Long, BigDecimal> frozenOverrides) {
-        lockAccount();
-        frozenOverrides.forEach((id, frozen) -> entries.findById(id)
-                .orElseThrow(() -> new IllegalStateException("ledger entry " + id + " missing"))
-                .correctFrozenChange(Money.of(frozen)));
+    public void correctFrozenChanges(long accountId, Map<Long, BigDecimal> frozenOverrides) {
+        lockAccount(accountId);
+        frozenOverrides.forEach((id, frozen) -> entry(accountId, id).correctFrozenChange(Money.of(frozen)));
     }
 
     /**
-     * FEAT-005: locks the account and replays the whole ledger with some entries replaced (by ledger id; the
+     * FEAT-005: locks the account and replays its whole ledger with some entries replaced (by ledger id; the
      * replacement keeps the id as its entry order) and some removed. Does not write anything.
      */
     @Transactional(propagation = Propagation.MANDATORY)
-    public List<ReplayStep> replayWithChanges(Map<Long, CashMovement> replacements, Collection<Long> removals) {
-        lockAccount();
+    public List<ReplayStep> replayWithChanges(long accountId, Map<Long, CashMovement> replacements,
+                                              Collection<Long> removals) {
+        lockAccount(accountId);
         List<CashMovement> movements = new ArrayList<>();
-        for (CashMovement m : loadMovements()) {
+        for (CashMovement m : loadMovements(accountId)) {
             if (removals.contains(m.sequence())) {
                 continue;
             }
@@ -109,64 +118,59 @@ public class CashLedgerService {
         return CashReplay.replay(movements);
     }
 
-    /** FEAT-005: updates an entry in place (keeps its id = entry order). */
+    /** FEAT-005: updates an entry of the account in place (keeps its id = entry order). */
     @Transactional(propagation = Propagation.MANDATORY)
-    public void updateEntry(long id, Instant occurredAt, CashSourceType sourceType, BigDecimal amount,
-                            BigDecimal frozenChange, String description, String remark) {
-        lockAccount();
-        entries.findById(id).orElseThrow(() -> new IllegalStateException("ledger entry " + id + " missing"))
-                .update(occurredAt, sourceType, Money.of(amount), Money.of(frozenChange), description, remark);
+    public void updateEntry(long accountId, long id, Instant occurredAt, CashSourceType sourceType,
+                            BigDecimal amount, BigDecimal frozenChange, String description, String remark) {
+        lockAccount(accountId);
+        entry(accountId, id).update(occurredAt, sourceType, Money.of(amount), Money.of(frozenChange), description,
+                remark);
     }
 
-    /** FEAT-005: deletes the entry of a deleted record. */
+    /** FEAT-005: deletes the entry of a deleted record of the account. */
     @Transactional(propagation = Propagation.MANDATORY)
-    public void deleteEntry(long id) {
-        lockAccount();
-        entries.deleteById(id);
+    public void deleteEntry(long accountId, long id) {
+        lockAccount(accountId);
+        entries.delete(entry(accountId, id));
     }
 
     /** Appends a ledger entry; its id becomes its entry order. Caller must have checked and locked first. */
     @Transactional(propagation = Propagation.MANDATORY)
     public CashLedgerEntryEntity append(NewLedgerEntry entry) {
-        lockAccount();
-        return entries.save(new CashLedgerEntryEntity(entry.occurredAt(), entry.sourceType(), entry.sourceId(),
-                Money.of(entry.amount()), Money.of(entry.frozenChange()), entry.description(), entry.remark(),
-                clock.instant()));
-    }
-
-    /** The ledger entry written for an originating record (e.g. a trade), if any. */
-    @Transactional(readOnly = true)
-    public Optional<CashLedgerEntryEntity> findBySource(CashSourceType sourceType, long sourceId) {
-        return entries.findFirstBySourceTypeAndSourceIdOrderByIdAsc(sourceType, sourceId);
+        lockAccount(entry.accountId());
+        return entries.save(new CashLedgerEntryEntity(entry.accountId(), entry.occurredAt(), entry.sourceType(),
+                entry.sourceId(), Money.of(entry.amount()), Money.of(entry.frozenChange()), entry.description(),
+                entry.remark(), clock.instant()));
     }
 
     /**
-     * First ledger entry per source id, for originating records of the given kinds that share one id space
-     * (e.g. all option trade kinds reference option_trade.id). Records without an entry are absent from the map.
+     * First ledger entry per source id within the account, for originating records of the given kinds that share
+     * one id space (e.g. all option trade kinds reference option_trade.id). Records without an entry are absent.
      */
     @Transactional(readOnly = true)
-    public Map<Long, CashLedgerEntryEntity> findBySources(Collection<CashSourceType> sourceTypes,
+    public Map<Long, CashLedgerEntryEntity> findBySources(long accountId, Collection<CashSourceType> sourceTypes,
                                                           Collection<Long> sourceIds) {
         Map<Long, CashLedgerEntryEntity> bySource = new HashMap<>();
         if (sourceIds.isEmpty()) {
             return bySource;
         }
-        for (CashLedgerEntryEntity e : entries.findBySourceTypeInAndSourceIdInOrderByIdAsc(sourceTypes, sourceIds)) {
+        for (CashLedgerEntryEntity e : entries.findByAccountIdAndSourceTypeInAndSourceIdInOrderByIdAsc(accountId,
+                sourceTypes, sourceIds)) {
             bySource.putIfAbsent(e.getSourceId(), e);
         }
         return bySource;
     }
 
-    /** Current total / frozen / available cash (every entry is not later than now). */
+    /** Current total / frozen / available cash of the account (every entry is not later than now). */
     @Transactional(readOnly = true)
-    public CashBalance currentBalance() {
-        return CashReplay.finalBalance(loadMovements());
+    public CashBalance currentBalance(long accountId) {
+        return CashReplay.finalBalance(loadMovements(accountId));
     }
 
     /** Ledger newest first (same instant: later entry first), 1-based page, running total recomputed by replay. */
     @Transactional(readOnly = true)
-    public LedgerPage ledgerPage(int page, int size) {
-        List<CashLedgerEntryEntity> ordered = entries.findAllByOrderByOccurredAtAscIdAsc();
+    public LedgerPage ledgerPage(long accountId, int page, int size) {
+        List<CashLedgerEntryEntity> ordered = entries.findAllByAccountIdOrderByOccurredAtAscIdAsc(accountId);
         List<CashMovement> movements = ordered.stream().map(CashLedgerEntryEntity::toMovement).toList();
         List<ReplayStep> steps = CashReplay.replay(movements);
 
@@ -191,7 +195,17 @@ public class CashLedgerService {
         return new LedgerPage(items, page, size, total, totalPages);
     }
 
-    private List<CashMovement> loadMovements() {
-        return entries.findAllByOrderByOccurredAtAscIdAsc().stream().map(CashLedgerEntryEntity::toMovement).toList();
+    private CashLedgerEntryEntity entry(long accountId, long id) {
+        CashLedgerEntryEntity e = entries.findById(id)
+                .orElseThrow(() -> new IllegalStateException("ledger entry " + id + " missing"));
+        if (e.getAccountId() != accountId) {
+            throw new IllegalStateException("ledger entry " + id + " is not in account " + accountId);
+        }
+        return e;
+    }
+
+    private List<CashMovement> loadMovements(long accountId) {
+        return entries.findAllByAccountIdOrderByOccurredAtAscIdAsc(accountId).stream()
+                .map(CashLedgerEntryEntity::toMovement).toList();
     }
 }

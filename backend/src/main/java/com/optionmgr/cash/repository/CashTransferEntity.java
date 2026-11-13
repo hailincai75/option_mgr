@@ -23,6 +23,9 @@ public class CashTransferEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "account_id", nullable = false)
+    private Long accountId;
+
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(nullable = false, length = 20)
@@ -43,8 +46,9 @@ public class CashTransferEntity {
     protected CashTransferEntity() {
     }
 
-    public CashTransferEntity(TransferType type, BigDecimal amount, Instant occurredAt, String remark,
+    public CashTransferEntity(long accountId, TransferType type, BigDecimal amount, Instant occurredAt, String remark,
                               Instant createdAt) {
+        this.accountId = accountId;
         this.type = type;
         this.amount = amount;
         this.occurredAt = occurredAt;
@@ -62,6 +66,10 @@ public class CashTransferEntity {
 
     public Long getId() {
         return id;
+    }
+
+    public long getAccountId() {
+        return accountId;
     }
 
     public TransferType getType() {

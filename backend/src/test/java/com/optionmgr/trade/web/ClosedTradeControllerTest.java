@@ -37,6 +37,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 /** FEAT-006 acceptance criteria (backend part). "Now" is 2026-11-11 10:00 New York (15:00Z). */
 @SpringBootTest
 @AutoConfigureMockMvc
+@org.springframework.context.annotation.Import(com.optionmgr.account.DefaultAccountMockMvc.class)
 class ClosedTradeControllerTest {
 
     static final Instant NOW = Instant.parse("2026-11-11T15:00:00Z");

@@ -14,9 +14,6 @@ import java.time.Instant;
 @Table(name = "cash_account")
 public class CashAccountEntity {
 
-    /** Id of the only account row, created by migration V2. */
-    public static final long SINGLE_ACCOUNT_ID = 1L;
-
     @Id
     private Long id;
 
@@ -27,6 +24,13 @@ public class CashAccountEntity {
     private Instant createdAt;
 
     protected CashAccountEntity() {
+    }
+
+    /** FEAT-033: the lock row of a new account (same id as the account). */
+    public CashAccountEntity(long id, String currency, Instant createdAt) {
+        this.id = id;
+        this.currency = currency;
+        this.createdAt = createdAt;
     }
 
     public Long getId() {

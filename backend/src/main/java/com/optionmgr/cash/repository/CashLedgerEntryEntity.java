@@ -28,6 +28,9 @@ public class CashLedgerEntryEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "account_id", nullable = false)
+    private Long accountId;
+
     @Column(name = "occurred_at", nullable = false)
     private Instant occurredAt;
 
@@ -57,8 +60,9 @@ public class CashLedgerEntryEntity {
     protected CashLedgerEntryEntity() {
     }
 
-    public CashLedgerEntryEntity(Instant occurredAt, CashSourceType sourceType, Long sourceId, BigDecimal amount,
+    public CashLedgerEntryEntity(long accountId, Instant occurredAt, CashSourceType sourceType, Long sourceId, BigDecimal amount,
                                  BigDecimal frozenChange, String description, String remark, Instant createdAt) {
+        this.accountId = accountId;
         this.occurredAt = occurredAt;
         this.sourceType = sourceType;
         this.sourceId = sourceId;
@@ -94,6 +98,10 @@ public class CashLedgerEntryEntity {
 
     public Long getId() {
         return id;
+    }
+
+    public long getAccountId() {
+        return accountId;
     }
 
     public Instant getOccurredAt() {

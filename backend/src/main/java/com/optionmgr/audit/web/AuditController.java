@@ -1,5 +1,6 @@
 package com.optionmgr.audit.web;
 
+import com.optionmgr.account.web.AccountRef;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.optionmgr.audit.domain.AuditObjectType;
 import com.optionmgr.audit.domain.AuditOperation;
@@ -36,7 +37,7 @@ public class AuditController {
     }
 
     @GetMapping
-    public AuditPageResponse list(@RequestParam(required = false) AuditObjectType objectType,
+    public AuditPageResponse list(AccountRef account, @RequestParam(required = false) AuditObjectType objectType,
                                   @RequestParam(required = false) Long objectId,
                                   @RequestParam(defaultValue = "1") int page,
                                   @RequestParam(defaultValue = "20") int size) {
@@ -53,7 +54,7 @@ public class AuditController {
         if (!errors.isEmpty()) {
             throw new ApiException(ErrorCode.VALIDATION_ERROR, "Request validation failed", errors);
         }
-        AuditService.AuditPage p = audit.page(objectType, objectId, page, size);
+        AuditService.AuditPage p = audit.page(account.id(), objectType, objectId, page, size);
         return new AuditPageResponse(p.items().stream().map(v -> new AuditRecordResponse(v.id(), v.operatedAt(),
                 v.operation(), v.objectType(), v.objectId(), v.summary(), v.before(), v.after(), v.changes(),
                 v.sideEffects())).toList(), p.page(), p.size(), p.totalItems(), p.totalPages());

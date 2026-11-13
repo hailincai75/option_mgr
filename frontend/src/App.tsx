@@ -1,5 +1,10 @@
-import { Layout, Menu, Typography } from 'antd'
+import { Alert, Button, Layout, Menu, Spin, Typography } from 'antd'
 import { Link, Outlet, Route, Routes, useLocation } from 'react-router-dom'
+import { useAccountId } from './account/AccountContext'
+import { AccountProvider, type AccountsStatus } from './account/AccountProvider'
+import { ApiError } from './api/client'
+import { AccountSwitcher } from './components/account/AccountSwitcher'
+import { AccountsPage } from './pages/AccountsPage'
 import { AuditLogPage } from './pages/AuditLogPage'
 import { CashPage } from './pages/CashPage'
 import { ClosedTradesPage } from './pages/ClosedTradesPage'
@@ -69,8 +74,13 @@ const NAV_ITEMS = [
   },
 ]
 
-function AppLayout() {
+function describeError(error: Error): string {
+  return error instanceof ApiError ? `${error.message} (${error.code})` : error.message
+}
+
+function AppLayout({ status }: { status: AccountsStatus }) {
   const { pathname } = useLocation()
+  const accountId = useAccountId()
   // Longest matching key wins, so /trades/new selects 录入交易 only, not 交易 as well.
   const selected = NAV_ITEMS.map((item) => item.key)
     .filter((key) => pathname === key || pathname.startsWith(`${key}/`))
@@ -92,9 +102,39 @@ function AppLayout() {
           selectedKeys={selected}
           style={{ flex: 1, minWidth: 0 }}
         />
+        <AccountSwitcher />
       </Layout.Header>
       <Layout.Content style={{ padding: 24 }}>
-        <Outlet />
+        {status.error && (
+          <Alert
+            type="error"
+            showIcon
+            style={{ marginBottom: 16 }}
+            title="无法加载账户列表"
+            description={<span data-testid="account-error">{describeError(status.error)}</span>}
+            action={
+              <Button
+                size="small"
+                loading={status.isFetching}
+                onClick={status.retry}
+                data-testid="account-retry"
+              >
+                重试
+              </Button>
+            }
+          />
+        )}
+        {status.isPending ? (
+          <div data-testid="account-loading" style={{ textAlign: 'center', padding: 48 }}>
+            <Spin />
+          </div>
+        ) : (
+          // Remount the page when the account changes (FEAT-033): open dialogs and half-filled
+          // forms belong to the previous account and are discarded; URL filters are kept.
+          <div key={accountId ?? 'no-account'}>
+            <Outlet />
+          </div>
+        )}
       </Layout.Content>
     </Layout>
   )
@@ -102,18 +142,23 @@ function AppLayout() {
 
 export function App() {
   return (
-    <Routes>
-      <Route element={<AppLayout />}>
-        <Route index element={<HomePage />} />
-        <Route path="trades" element={<TradeListPage />} />
-        <Route path="positions" element={<PositionsPage />} />
-        <Route path="closed" element={<ClosedTradesPage />} />
-        <Route path="pnl-summary" element={<PnlSummaryPage />} />
-        <Route path="trades/new" element={<TradeEntryPage />} />
-        <Route path="cash" element={<CashPage />} />
-        <Route path="audit" element={<AuditLogPage />} />
-        <Route path="*" element={<NotFoundPage />} />
-      </Route>
-    </Routes>
+    <AccountProvider>
+      {(status) => (
+        <Routes>
+          <Route element={<AppLayout status={status} />}>
+            <Route index element={<HomePage />} />
+            <Route path="trades" element={<TradeListPage />} />
+            <Route path="positions" element={<PositionsPage />} />
+            <Route path="closed" element={<ClosedTradesPage />} />
+            <Route path="pnl-summary" element={<PnlSummaryPage />} />
+            <Route path="trades/new" element={<TradeEntryPage />} />
+            <Route path="cash" element={<CashPage />} />
+            <Route path="audit" element={<AuditLogPage />} />
+            <Route path="accounts" element={<AccountsPage />} />
+            <Route path="*" element={<NotFoundPage />} />
+          </Route>
+        </Routes>
+      )}
+    </AccountProvider>
   )
 }

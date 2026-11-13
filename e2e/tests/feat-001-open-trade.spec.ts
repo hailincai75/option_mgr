@@ -197,15 +197,14 @@ test.describe('FEAT-001 录入开仓', () => {
     )
   })
 
-  test('AC9 STO call 被拒：需要股票持仓功能（FEAT-011）后才能卖出 call', async ({ trade }) => {
+  test('AC9（FEAT-038 取代 Q16）STO call 允许：保存成功，冻结变动 —，现金 +120.00', async ({ page, trade }) => {
     await apiTransfer('DEPOSIT', '100000.00', DEP)
     await trade.open()
-    await trade.submitAndExpectError(
-      TradeForm.base({ action: 'STO', strike: '250', type: 'CALL', netAmount: '120.00' }),
-      'SELL_CALL_NOT_SUPPORTED',
-      '需要股票持仓功能（FEAT-011）后才能卖出 call',
-    )
-    expect(await apiTradeCount()).toBe(0)
+    await trade.submitAndExpectSaved(TradeForm.base({ action: 'STO', strike: '250', type: 'CALL', netAmount: '120.00' }))
+    await expect(trade.confirm('cash-change')).toHaveText('+120.00')
+    await expect(trade.confirm('frozen-change')).toHaveText('—')
+    await new CashPage(page).expectSummary('100,120.00', '0.00', '100,120.00')
+    expect(await apiTradeCount()).toBe(1)
   })
 
   test('AC10 标的规范化：" aapl " 按 AAPL 冲突被拒；" msft " 保存显示 MSFT', async ({ trade }) => {

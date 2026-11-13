@@ -12,7 +12,8 @@
 ```
 com.optionmgr
 ├── OptionMgrApplication
-├── config/            全局配置：ClockConfig（唯一的 Clock bean）、JacksonConfig（BigDecimal→字符串）
+├── config/            全局配置：ClockConfig（唯一的 Clock bean）、JacksonConfig（BigDecimal→字符串）、DatabaseBackupBeforeMigration（迁移前备份，Q60）
+├── account/           FEAT-033 账户：/api/accounts、X-Account-Id 请求头 → AccountRef（见下"多账户"）
 ├── common/error/      统一错误：ErrorCode、ErrorResponse、ApiException、GlobalExceptionHandler
 ├── common/money/      Money：金额 scale 2、RoundingMode.UNNECESSARY、给用户看的金额格式（千分位、U+2212 负号）
 ├── common/time/       MarketTime：美东本地时间 ↔ UTC Instant（America/New_York，java.time 默认 DST 规则）
@@ -61,7 +62,7 @@ com.optionmgr
   - `service/OptionTradeService`：一个事务内按需求顺序检查 → 保存交易 → 追加流水（→ 改正之后平仓的释放冻结，见 Q39）
   - `web/`：`OptionTradeController`（`POST /api/option-trades` 开仓、`POST /api/option-trades/closes` 平仓、`GET /api/option-trades`、`GET /api/option-trades/{id}`）、`OptionTradeDtos`、`@OpeningAction` / `@ClosingAction` 校验
 - **合约重放（`ContractReplay`，FEAT-001/003/004 共用）**：持仓不落库。某合约的全部交易按 `(traded_at, id)` 重放：开仓（BTO/STO）成为一个批次（`PositionLot`）；平仓（BTC/STC）必须找到相反方向的持仓、不超过持仓、且**正好覆盖最早 1 笔或连续多笔整批次**（Q21），移除这些批次并得到 `CloseMatch`（被平批次、释放冻结 = 批次冻结之和、已实现盈亏 = 批次开仓净额之和 + 本笔现金变动）。每步记录之前的持仓、multiplier、可平张数（批次累计张数）和违规（`ViolationKind`：开仓多空冲突 Q7、multiplier 不一致 Q23、平仓无持仓 / 方向不对 / 超量 / 非整笔批次）。持仓回到 0 时 multiplier 清空，可以换方向和 multiplier 重新开仓
-- 写入时把新交易（id = `LotTrade.NOT_YET_ENTERED`，排在同一时间已有交易之后）加入重放，用 `ContractHistory.firstViolationFrom` 找**从新交易起**的第一个违规（Q27/Q39：之后的已有交易也必须仍然合法）。开仓的检查顺序：非 multiplier 违规 → Q16 → multiplier 违规 → 现金；平仓：任一违规（按时间先后）→ 现金
+- 写入时把新交易（id = `LotTrade.NOT_YET_ENTERED`，排在同一时间已有交易之后）加入重放，用 `ContractHistory.firstViolationFrom` 找**从新交易起**的第一个违规（Q27/Q39：之后的已有交易也必须仍然合法）。开仓的检查顺序：非 multiplier 违规 → multiplier 违规 → 现金（FEAT-038 起不再有 Q16：STO call 允许；只有 STO put 冻结担保并做 Q18，见 `OpenTradeTerms.freezesCollateral`）；平仓：任一违规（按时间先后）→ 现金
 - 并发：交易事务先调 `CashLedgerService.lockAccount()`（与入金/出金同一把 `cash_account` 行锁），所以重放检查、现金检查和写入都串行
 - **平仓（FEAT-004）**：平仓 multiplier 取成交时点持仓的 multiplier（请求不带）；流水来源 `OPTION_CLOSE`，`amount` = BTC −净额 / STC +净额，`frozen_change` = −释放冻结。现金检查把"释放冻结 + 扣现金"作为同一笔变动插入现金重放（Q20：先释放再检查）
 - **Q39 的存储选择**：被平批次和已实现盈亏**不落库**，每次读取（按 id、列表、持仓）时重放该合约得出，补录更早的交易后自动按新的 FIFO 匹配，不需要改写任何记录。释放的冻结**落在流水的 `frozen_change`**，因为现金重放（`CashReplay`）只认流水、不认识交易。写入新交易（开仓或平仓）时，比较重放后每笔已有平仓的释放冻结与其流水的 `frozen_change`，不同的在同一事务里改正（`CashLedgerService.correctFrozenChanges`），现金检查也用改正后的值（`checkInsertion(..., frozenOverrides)`）。同一合约所有批次单价相同，只有批次冻结的 Q28 取整差异（3 位小数行权价、multiplier 不是 10 的倍数）才会让释放额变化；流水的 `amount` 永远不变。这样现金汇总、流水与持仓冻结合计始终一致
@@ -83,6 +84,15 @@ com.optionmgr
 - 审计表 `audit_record`（`V4__audit_record.sql`）：只追加（实体 `@Immutable`，没有修改/删除接口）。`before_json` / `after_json`（完整内容）、`changes_json`（显示用的字段变化）、`side_effects_json`（连带变化）以 JSON 文本存 `VARCHAR(10000)`，读取时原样作为 JSON 对象返回。`AuditService.record` 要求在调用方事务里（`Propagation.MANDATORY`），与改动一起提交或回滚
 - 审计对象被删除后仍可在审计记录里按 `objectType` + `objectId` 查到（不设外键）
 - e2e 重置按元数据自动包含 `audit_record`（`TestSupportResetE2eProfileTest` 已断言）
+
+### 多账户（FEAT-033）
+- 表 `account`（`V5__accounts.sql`）：`name`、`name_key`（去空白 + 小写，唯一约束 = 不区分大小写唯一）、`broker_note`、`created_at`。账户 1"默认账户"由迁移写入（空库也有）。`cash_transfer`、`cash_ledger_entry`、`option_trade`、`audit_record` 都加了 `account_id NOT NULL`（外键到 `account`），迁移时已有行全部为 1。`cash_account` 变为每个账户一行（`id` = 账户 id），仍是该账户现金写操作的行锁；新账户由 `CashLedgerService.openAccount` 建行
+- **账户上下文**：请求头 `X-Account-Id`。`account/web/AccountRefArgumentResolver` 把它解析成 `AccountRef`（缺少 → 400 `ACCOUNT_REQUIRED`，非整数 → 400 `BAD_REQUEST`，不存在 → 404 `ACCOUNT_NOT_FOUND`）。所有账户范围的 controller 方法把 `AccountRef account` 作为**第一个参数**（所以在请求体校验之前检查），再把 `account.id()` 显式传给 service；没有隐式的"当前账户"状态。选请求头而不是路径前缀：已有路径和地址栏筛选参数都不变（Q55），前端只需在统一请求封装里加一个头
+- 隔离：所有 repository 查询都带 `accountId`（`findByIdAndAccountId`、`findAllByAccountId…`、`OptionTradeSpecifications.matching(accountId, filter)` 等），别的账户的记录在查询层面就"不存在"（404）。`CashLedgerService` 的所有方法都按账户（锁、重放、流水），改写流水时还校验流水属于该账户。合约重放、FIFO、持仓、盈亏、汇总、首页、审计全部只在一个账户内
+- 账户审计：`AuditObjectType.ACCOUNT`、`AuditOperation.CREATE`（`before` 为 `null`），记在该账户自己的审计里
+- **迁移前备份（Q60）**：`config/DatabaseBackupBeforeMigration` 是一个 `FlywayMigrationStrategy`：有待执行迁移、已有迁移记录、且是 H2 文件库（`DATABASE_PATH()` 非空）时，先执行 H2 `BACKUP TO '<库所在目录>/<库名>-backup-before-V<最高待执行版本>-<UTC 时间>Z.zip'`（在线一致性备份），确认文件存在且非空后才 `migrate()`；任何失败都抛异常 → 应用不启动、不迁移。内存库、新库不备份。**H2 的 DDL 会各自提交，迁移中途失败无法自动回滚，所以备份是回退手段**：停应用 → 移走 `<库名>.mv.db` → 把 zip 里的 `<库名>.mv.db` 解压到原目录 → 用旧版本启动
+- e2e 重置：快照包含 `account`（只有 1 号）和 `cash_account`（只有 1 号），所以重置后只剩"默认账户"、下一个账户 id 为 2；重置时锁全部账户行（`lockAllAccounts`）
+- 测试：`account/MigrationFromM1Test` 用 Flyway `target=4` 建 M1 结构的文件库、写入场景 M（通过 API 在临时内存库生成后按 id 原样拷贝），再启动应用执行备份 + V5，逐个接口比较迁移前后的 JSON 完全相同；另有迁移失败、备份失败两个场景
 
 ### E2E 测试支持（`e2e` profile）
 - 用途：Playwright 套件只启动一个后端，每个测试前调用 `POST /api/test-support/reset` 得到干净的库，代替每个测试重启后端
@@ -108,7 +118,7 @@ com.optionmgr
 - 测试：Vitest 5 + jsdom + React Testing Library + jest-dom + user-event
 - Lint：ESLint 10 flat config（`eslint.config.js`），typescript-eslint `strictTypeChecked`（类型感知）、react-hooks、react-refresh；`--max-warnings 0`；禁止 `any`
 - TypeScript 停在 6.0.x：TypeScript 7（Go 原生版）目前不被 typescript-eslint 支持（peer `<6.1`），等其支持后再升级
-- 命令（在 `frontend/` 下）：`npm run dev`（5173，`/api` 代理到 `http://localhost:8080`）、`npm run build`（`tsc -b && vite build`）、`npm run lint`、`npm run typecheck`（`tsc -b --noEmit`）、`npm test`（`vitest run`，非 watch）、`npm run test:watch`
+- 命令（在 `frontend/` 下）：`npm run dev`（5173，`/api` 代理到 `http://localhost:8080`；环境变量 `OPTION_MGR_API_TARGET` 可改代理目标，如 `http://localhost:8081` 的 e2e 测试后端）、`npm run build`（`tsc -b && vite build`）、`npm run lint`、`npm run typecheck`（`tsc -b --noEmit`）、`npm test`（`vitest run`，非 watch）、`npm run test:watch`
 
 ### 目录结构
 ```
@@ -119,15 +129,17 @@ frontend/
 ├── tsconfig*.json        app（src/）与 node（vite.config.ts）两个 project
 └── src/
     ├── main.tsx          入口：AppProviders + BrowserRouter + App
-    ├── App.tsx           路由表与外层 Layout（Header + Content）
+    ├── App.tsx           路由表与外层 Layout（Header + 账户切换器 + Content）；`AccountProvider` 包住全部路由，页面内容按当前账户 key 重新挂载
+    ├── account/          FEAT-033 当前账户：AccountProvider（加载账户、选当前账户、通知 API client）、AccountContext（`useAccount`、`useAccountId`、`accountKey`）、accountStorage（localStorage 记住选择、最小 id 回退）
     ├── AppProviders.tsx  QueryClientProvider + antd ConfigProvider(en_US) + antd App；测试复用
     ├── queryClient.ts    QueryClient 默认配置
     ├── api/
     │   ├── types.ts      按 API 契约手写的请求/响应类型（含统一错误格式 ApiErrorResponse）
-    │   ├── client.ts     fetch 封装 apiRequest<T>() 与 ApiError
-    │   └── <feature>.ts  每个领域一个文件：请求函数 + queryKey（health.ts；cash.ts: getCashSummary/getCashLedger/createCashTransfer、cashQueryKeys；optionTrades.ts: createOptionTrade/createCloseTrade/getOptionTrade/listOptionTrades/updateOptionTrade/deleteOptionTrade；cash.ts 另有 updateCashTransfer/deleteCashTransfer；auditLog.ts: getAuditLog、auditLogQueryKeys；closedTrades.ts: listClosedTrades、closedTradeQueryKeys；dashboard.ts: getDashboard、getPnlSummary 及其 queryKey、optionTradeQueryKeys；optionPositions.ts: getOptionPositions、optionPositionQueryKeys）
-    ├── pages/            路由级页面组件（HomePage、CashPage、TradeEntryPage、TradeListPage、PositionsPage、ClosedTradesPage、PnlSummaryPage、AuditLogPage、NotFoundPage）
+    │   ├── client.ts     fetch 封装 apiRequest<T>() 与 ApiError；`setApiAccountId()` 后给账户范围内的请求加 `X-Account-Id`（FEAT-033）
+    │   └── <feature>.ts  每个领域一个文件：请求函数 + queryKey（health.ts；cash.ts: getCashSummary/getCashLedger/createCashTransfer、cashQueryKeys；optionTrades.ts: createOptionTrade/createCloseTrade/getOptionTrade/listOptionTrades/updateOptionTrade/deleteOptionTrade；cash.ts 另有 updateCashTransfer/deleteCashTransfer；auditLog.ts: getAuditLog、auditLogQueryKeys；closedTrades.ts: listClosedTrades、closedTradeQueryKeys；dashboard.ts: getDashboard、getPnlSummary 及其 queryKey；accounts.ts: listAccounts/createAccount/updateAccount、accountQueryKeys、optionTradeQueryKeys；optionPositions.ts: getOptionPositions、optionPositionQueryKeys）
+    ├── pages/            路由级页面组件（HomePage、CashPage、TradeEntryPage、TradeListPage、PositionsPage、ClosedTradesPage、PnlSummaryPage、AuditLogPage、AccountsPage、NotFoundPage）
     ├── components/       跨页面复用组件：QueryError（查询错误 + 重试）、DeleteConfirmModal（删除确认，FEAT-005）
+    │   ├── account/      AccountSwitcher（顶部账户切换器，FEAT-033）
     │   ├── cash/         CashSummaryCard（可复用现金汇总）、CashTransferForm + cashTransferValidation、CashLedgerTable
     │   └── trade/        TradeEntryForm（录入交易，开仓 + 平仓）、EditTradeModal（修改交易，FEAT-005）+ openTradeValidation、TradeConfirmation（开/平仓确认，含被平批次与已实现盈亏）、tradeFormSupport（字段错误映射、保存后刷新、净额标签）；TradeFilterForm、TradeTable、tradeListFilters（FEAT-002 列表筛选与 URL 状态）；tradeLabels（方向文案、正负颜色，共用）
     │   ├── audit/        AuditTable（可展开修改前后）、auditSearch（审计页 URL 状态与校验）、auditLinks（各行"历史"链接）（FEAT-005）
@@ -135,7 +147,7 @@ frontend/
     │   ├── closed/       ClosedTradeTable（已平仓记录，可展开被平批次）（FEAT-006）
     │   └── position/     PositionTable（可展开批次、平仓按钮）、ClosePositionModal（平仓对话框，FEAT-004）、positionLinks（合约 → 交易列表 URL，`tradesUrlForContract`，持仓和已平仓共用）（FEAT-003）
     ├── utils/format.ts   统一的显示格式化（时间、金额）
-    └── test/             setup.ts（jest-dom、matchMedia / ResizeObserver polyfill、清理 mock）、render.tsx（renderWithProviders、jsonResponse、mockFetch）
+    └── test/             setup.ts（jest-dom、matchMedia / ResizeObserver polyfill、清理 mock、清空当前账户和 localStorage）、render.tsx（renderWithProviders、jsonResponse、mockFetch——默认回答 `GET /api/accounts`）、userEvent.ts（无延迟、不做 pointer-events 检查的 user-event）、homeFixtures.ts
 ```
 测试文件与被测文件放在一起：`*.test.ts(x)`。
 
@@ -149,10 +161,12 @@ frontend/
 | `/trades/new` | `TradeEntryPage` | 录入交易（FEAT-001 开仓 BTO/STO + FEAT-004 平仓 BTC/STC，按方向调用不同接口）：现金汇总 + 表单 + 成功确认（导航"录入交易"） |
 | `/closed` | `ClosedTradesPage` | FEAT-006 已平仓记录：筛选结果笔数 + 已实现盈亏合计，平仓表格（可展开被平批次），筛选/分页/URL 同交易列表，方向只有 BTC/STC（导航"已平仓"） |
 | `/audit` | `AuditLogPage` | FEAT-005 审计记录：只读，按对象筛选（URL 参数 `objectType`/`objectId`/`page`/`size`），可展开修改前后（导航"审计记录"） |
+| `/accounts` | `AccountsPage` | FEAT-033 账户：列表、新增、改名、切换到此账户；没有删除（从顶部切换器的"管理账户"进入） |
 | `/cash` | `CashPage` | FEAT-007 资金：现金汇总、入金/出金表单、现金流水（导航"资金"） |
 | `*` | `NotFoundPage` | 404 |
 
 ### 服务端数据与错误处理
+- **账户（FEAT-033）**：所有业务数据都在"当前账户"内。当前账户由 `AccountProvider` 决定（localStorage 记住，不存在时取最小 id），`apiRequest` 自动加 `X-Account-Id`（`/api/health`、`/api/accounts/**`、`/api/test-support/**` 除外）；按账户的查询一律用 `account/useAccountQuery`（key 末尾自动加 `{ accountId }`，确定当前账户后才发请求；账户列表失败时报"账户未就绪，请重试"，其重试会重新加载账户列表），新页面也要这样做；`apiRequest` 在没有账户时不发账户范围的请求，后端的账户错误显示为中文；地址栏参数不带账户。切换账户时页面重新挂载，打开的对话框关闭
 - 服务端数据只用 TanStack Query；不把服务端数据复制到全局 store。queryKey 与请求函数放在同一个 `src/api/<feature>.ts`
 - QueryClient 默认：网络错误/5xx 重试 1 次，4xx 不重试；`refetchOnWindowFocus: false`；mutation 不重试
 - `apiRequest` 总是抛 `ApiError { code, message, status, details, path }`：

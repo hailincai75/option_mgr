@@ -35,7 +35,7 @@ describe('auditSearch', () => {
   it.each([
     [{ objectType: '', objectId: '' }, {}],
     [{ objectType: 'CASH_TRANSFER', objectId: '' }, {}],
-    [{ objectType: 'X', objectId: '' }, { objectType: '对象类型只能是期权交易或入金/出金' }],
+    [{ objectType: 'X', objectId: '' }, { objectType: '对象类型只能是期权交易、入金/出金或账户' }],
     [{ objectType: '', objectId: '3' }, { objectType: '请同时指定对象类型' }],
     [{ objectType: 'OPTION_TRADE', objectId: '0' }, { objectId: '对象 ID 必须是正整数' }],
     [{ objectType: 'OPTION_TRADE', objectId: 'abc' }, { objectId: '对象 ID 必须是正整数' }],

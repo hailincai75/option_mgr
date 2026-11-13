@@ -283,10 +283,11 @@ describe('OpenTradePage', () => {
       '该合约（AAPL 2026-12-18 200 P）在成交时为空头持仓（1 张），不能买入开仓；如要平仓请使用 Buy to Close（BTC）',
       { action: 'BTO', netAmount: '300.00' },
     ],
+    // FEAT-038: SELL_CALL_NOT_SUPPORTED no longer exists (STO call is allowed).
     [
-      'SELL_CALL_NOT_SUPPORTED',
-      '需要股票持仓功能（FEAT-011）后才能卖出 call',
-      { type: 'call', strike: '250', netAmount: '120.00' },
+      'POSITION_DIRECTION_CONFLICT',
+      '该合约（AAPL 2026-12-18 210 C）在成交时为多头持仓（1 张），不能卖出开仓；如要平仓请使用 Sell to Close（STC）',
+      { type: 'call', strike: '210', netAmount: '120.00' },
     ],
     [
       'MULTIPLIER_MISMATCH',
@@ -294,7 +295,7 @@ describe('OpenTradePage', () => {
       { symbol: 'XYZ' },
     ],
   ] as const)(
-    'shows 422 %s verbatim and keeps every input (AC 4, 8, 9, 15, 16)',
+    'shows 422 %s verbatim and keeps every input (AC 4, 8, 15, 16)',
     async (code, message, overrides) => {
       const requests = startFakeServer({
         summary: SUMMARY_30000,
@@ -378,11 +379,21 @@ describe('OpenTradePage', () => {
 
     expect(await screen.findByText('请选择方向')).toBeInTheDocument()
     expect(screen.getByText('请选择 Call 或 Put')).toBeInTheDocument()
-    expect(within(formItemOf(byTestId('open-trade-symbol'))).getByText('标的不能为空')).toBeInTheDocument()
-    expect(within(formItemOf(byTestId('open-trade-expiration'))).getByText('到期日不能为空')).toBeInTheDocument()
-    expect(within(formItemOf(byTestId('open-trade-strike'))).getByText('行权价不能为空')).toBeInTheDocument()
-    expect(within(formItemOf(byTestId('open-trade-contracts'))).getByText('张数不能为空')).toBeInTheDocument()
-    expect(within(formItemOf(byTestId('open-trade-net-amount'))).getByText('净额不能为空')).toBeInTheDocument()
+    expect(
+      within(formItemOf(byTestId('open-trade-symbol'))).getByText('标的不能为空'),
+    ).toBeInTheDocument()
+    expect(
+      within(formItemOf(byTestId('open-trade-expiration'))).getByText('到期日不能为空'),
+    ).toBeInTheDocument()
+    expect(
+      within(formItemOf(byTestId('open-trade-strike'))).getByText('行权价不能为空'),
+    ).toBeInTheDocument()
+    expect(
+      within(formItemOf(byTestId('open-trade-contracts'))).getByText('张数不能为空'),
+    ).toBeInTheDocument()
+    expect(
+      within(formItemOf(byTestId('open-trade-net-amount'))).getByText('净额不能为空'),
+    ).toBeInTheDocument()
     expect(requests.some((r) => r.method === 'POST')).toBe(false)
   })
 
@@ -430,5 +441,81 @@ describe('OpenTradePage', () => {
     expect(byTestId('open-trade-strike')).toHaveValue('')
     expect(byTestId('open-trade-multiplier')).toHaveValue('100')
     expect(byTestId('open-trade-time')).not.toHaveValue('')
+  })
+
+  describe('STO call (FEAT-038, Q61)', () => {
+    const HINT =
+      '卖出 call 不冻结现金，请自行确保账户有足够股票覆盖（每张 = multiplier 股）；股票持仓功能（FEAT-011）上线后将自动检查。'
+
+    it('shows the hint only for STO + Call', async () => {
+      startFakeServer({ summary: SUMMARY_30000 })
+      renderWithProviders(<TradeEntryPage />)
+      const user = userEvent.setup()
+      await screen.findByTestId('cash-summary-total')
+      expect(screen.queryByTestId('open-trade-short-call-hint')).not.toBeInTheDocument()
+
+      await user.click(byTestId('open-trade-action-sto'))
+      await user.click(byTestId('open-trade-type-put'))
+      expect(screen.queryByTestId('open-trade-short-call-hint')).not.toBeInTheDocument()
+
+      await user.click(byTestId('open-trade-type-call'))
+      expect(byTestId('open-trade-short-call-hint')).toHaveTextContent(HINT)
+
+      await user.click(byTestId('open-trade-action-bto'))
+      expect(screen.queryByTestId('open-trade-short-call-hint')).not.toBeInTheDocument()
+      for (const closing of ['btc', 'stc']) {
+        await user.click(byTestId(`open-trade-action-${closing}`))
+        expect(screen.queryByTestId('open-trade-short-call-hint')).not.toBeInTheDocument()
+      }
+    })
+
+    it('does not block submitting an STO call; frozen change shows — (AC 1)', async () => {
+      const ixqz = {
+        ...savedTrade,
+        id: 1,
+        symbol: 'IXQZ',
+        expirationDate: '2026-11-20',
+        strike: '7.5',
+        optionType: 'CALL' as const,
+        netAmount: '14.34',
+        cashChange: '14.34',
+        frozenChange: '0.00',
+        contractLabel: 'IXQZ 2026-11-20 7.5 C',
+        tradedAt: '2026-11-09T18:40:00Z',
+        tradedAtLocal: '2026-11-09T13:40:00',
+        note: null,
+      }
+      const requests = startFakeServer({
+        summary: SUMMARY_30000,
+        onPost: () => jsonResponse(ixqz, 201),
+      })
+      renderWithProviders(<TradeEntryPage />)
+      const user = await fillTrade({
+        ...AC1_TRADE,
+        symbol: 'IXQZ',
+        expiration: '2026-11-20',
+        strike: '7.5',
+        type: 'call',
+        netAmount: '14.34',
+        time: '2026-11-09T13:40',
+        note: '',
+      })
+      expect(byTestId('open-trade-short-call-hint')).toBeInTheDocument()
+      await user.click(byTestId('open-trade-submit'))
+
+      const confirmation = await screen.findByTestId('open-trade-confirmation')
+      expect(
+        within(confirmation).getByTestId('open-trade-confirmation-cash-change'),
+      ).toHaveTextContent('+14.34')
+      expect(
+        within(confirmation).getByTestId('open-trade-confirmation-frozen-change'),
+      ).toHaveTextContent('—')
+      expect(requests.find((r) => r.method === 'POST')?.body).toMatchObject({
+        action: 'STO',
+        optionType: 'CALL',
+        strike: '7.5',
+        netAmount: '14.34',
+      })
+    })
   })
 })

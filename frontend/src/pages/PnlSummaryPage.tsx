@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useAccountQuery } from '../account/useAccountQuery'
 import { Alert, Button, Card, Col, Form, Input, Row, Space, Table, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { HTMLAttributes } from 'react'
@@ -107,7 +107,8 @@ export function PnlSummaryPage() {
   const params = toPnlParams(range)
   const filtered = hasPnlRange(range)
 
-  const { data, error, isFetching, refetch } = useQuery({
+  const { data, error, isFetching, refetch } = useAccountQuery({
+    // FEAT-033: per-account key; runs only once the current account is known.
     queryKey: pnlSummaryQueryKeys.detail(params),
     queryFn: ({ signal }) => getPnlSummary(params, signal),
     enabled: valid,

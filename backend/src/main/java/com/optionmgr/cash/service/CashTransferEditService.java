@@ -55,9 +55,9 @@ public class CashTransferEditService {
     }
 
     @Transactional
-    public CashTransferService.Result update(long id, CashTransferService.Command cmd) {
-        ledger.lockAccount();
-        CashTransferEntity transfer = find(id);
+    public CashTransferService.Result update(long accountId, long id, CashTransferService.Command cmd) {
+        ledger.lockAccount(accountId);
+        CashTransferEntity transfer = find(accountId, id);
         CashLedgerEntryEntity entry = entryOf(transfer);
 
         Instant occurredAt = MarketTime.toInstant(cmd.occurredAtLocal());
@@ -73,39 +73,39 @@ public class CashTransferEditService {
         }
 
         BigDecimal signed = cmd.type().signedAmount(amount);
-        List<ReplayStep> steps = ledger.replayWithChanges(
+        List<ReplayStep> steps = ledger.replayWithChanges(accountId,
                 Map.of(entry.getId(), new CashMovement(occurredAt, entry.getId(), signed, Money.ZERO)), Set.of());
         rejectNegative(steps, "修改");
 
         Map<String, Object> before = snapshot(transfer);
         transfer.update(cmd.type(), amount, occurredAt, remark);
-        ledger.updateEntry(entry.getId(), occurredAt, cmd.type().sourceType(), signed, Money.ZERO, null, remark);
+        ledger.updateEntry(accountId, entry.getId(), occurredAt, cmd.type().sourceType(), signed, Money.ZERO, null, remark);
         Map<String, Object> after = snapshot(transfer);
-        audit.record(new AuditService.NewAuditRecord(AuditOperation.UPDATE, AuditObjectType.CASH_TRANSFER, id,
+        audit.record(new AuditService.NewAuditRecord(accountId, AuditOperation.UPDATE, AuditObjectType.CASH_TRANSFER, id,
                 summary(before), before, after, changes(before, after), List.of()));
         return new CashTransferService.Result(transfer, entry);
     }
 
     @Transactional
-    public void delete(long id) {
-        ledger.lockAccount();
-        CashTransferEntity transfer = find(id);
+    public void delete(long accountId, long id) {
+        ledger.lockAccount(accountId);
+        CashTransferEntity transfer = find(accountId, id);
         CashLedgerEntryEntity entry = entryOf(transfer);
-        rejectNegative(ledger.replayWithChanges(Map.of(), Set.of(entry.getId())), "删除");
+        rejectNegative(ledger.replayWithChanges(accountId, Map.of(), Set.of(entry.getId())), "删除");
 
         Map<String, Object> before = snapshot(transfer);
-        ledger.deleteEntry(entry.getId());
+        ledger.deleteEntry(accountId, entry.getId());
         transfers.delete(transfer);
-        audit.record(new AuditService.NewAuditRecord(AuditOperation.DELETE, AuditObjectType.CASH_TRANSFER, id,
+        audit.record(new AuditService.NewAuditRecord(accountId, AuditOperation.DELETE, AuditObjectType.CASH_TRANSFER, id,
                 summary(before), before, null, List.of(), List.of()));
     }
 
-    private CashTransferEntity find(long id) {
-        return transfers.findById(id).orElseThrow(() -> ApiException.notFound("Cash transfer " + id + " not found"));
+    private CashTransferEntity find(long accountId, long id) {
+        return transfers.findByIdAndAccountId(id, accountId).orElseThrow(() -> ApiException.notFound("Cash transfer " + id + " not found"));
     }
 
     private CashLedgerEntryEntity entryOf(CashTransferEntity t) {
-        return Optional.ofNullable(ledger.findBySources(TRANSFER_SOURCES, List.of(t.getId())).get(t.getId()))
+        return Optional.ofNullable(ledger.findBySources(t.getAccountId(), TRANSFER_SOURCES, List.of(t.getId())).get(t.getId()))
                 .orElseThrow(() -> new IllegalStateException("ledger entry missing for transfer " + t.getId()));
     }
 

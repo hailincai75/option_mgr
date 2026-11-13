@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, configure } from '@testing-library/react'
 import { afterEach, vi } from 'vitest'
+import { setApiAccountId } from '../api/client'
 
 // findBy* / waitFor default to 1 s, which is too tight for antd pages under parallel runs.
 configure({ asyncUtilTimeout: 5_000 })
@@ -9,6 +10,13 @@ afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+  // FEAT-033: no account or remembered choice leaks into the next test.
+  setApiAccountId(null)
+  try {
+    window.localStorage.clear()
+  } catch {
+    // storage unavailable
+  }
 })
 
 // jsdom does not implement matchMedia, which Ant Design's responsive utilities use.

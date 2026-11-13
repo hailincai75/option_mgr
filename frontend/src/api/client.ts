@@ -62,6 +62,46 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
+/** FEAT-033: request header naming the account every business endpoint reads / writes. */
+export const ACCOUNT_HEADER = 'X-Account-Id'
+
+/** Endpoints that are not account-scoped (the header is not sent to them). */
+const ACCOUNT_FREE_PREFIXES = ['/api/health', '/api/accounts', '/api/test-support'] as const
+
+let currentAccountId: number | null = null
+
+/**
+ * Sets the account sent as `X-Account-Id` on every account-scoped request. Called by the account
+ * context when the current account is resolved or switched; `null` sends no header (the backend
+ * then rejects the request with ACCOUNT_REQUIRED, so nothing is ever written to a guessed account).
+ */
+export function setApiAccountId(accountId: number | null): void {
+  currentAccountId = accountId
+}
+
+export function getApiAccountId(): number | null {
+  return currentAccountId
+}
+
+/** User-facing (Chinese) messages for account errors; the backend's English text is not shown. */
+export const ACCOUNT_ERROR_MESSAGES = {
+  ACCOUNT_REQUIRED: '账户未就绪，请重试',
+  ACCOUNT_NOT_FOUND: '当前账户不存在，已切换到 ID 最小的账户',
+} as const
+
+let accountNotFoundHandler: (() => void) | null = null
+
+/** Called when the backend says the current account does not exist (e.g. deleted later). */
+export function setAccountNotFoundHandler(handler: (() => void) | null): void {
+  accountNotFoundHandler = handler
+}
+
+function isAccountScoped(path: string): boolean {
+  return !ACCOUNT_FREE_PREFIXES.some(
+    (prefix) => path === prefix || path.startsWith(`${prefix}/`) || path.startsWith(`${prefix}?`),
+  )
+}
+
 export interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   /** Serialized as JSON. Send money values as strings (see API contract). */
@@ -75,8 +115,21 @@ export interface RequestOptions {
  */
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, signal } = options
+  if (currentAccountId === null && isAccountScoped(path)) {
+    // Never send an account-scoped request without an account (FEAT-033): it could not succeed,
+    // and a write must never land in a guessed account.
+    throw new ApiError({
+      code: 'ACCOUNT_REQUIRED',
+      message: ACCOUNT_ERROR_MESSAGES.ACCOUNT_REQUIRED,
+      status: 0,
+      path,
+    })
+  }
   const headers: Record<string, string> = { Accept: 'application/json' }
   if (body !== undefined) headers['Content-Type'] = 'application/json'
+  if (currentAccountId !== null && isAccountScoped(path)) {
+    headers[ACCOUNT_HEADER] = String(currentAccountId)
+  }
 
   let response: Response
   try {
@@ -99,6 +152,21 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   const data = await readJson(response)
 
   if (!response.ok) {
+    if (
+      isApiErrorResponse(data) &&
+      (data.code === 'ACCOUNT_REQUIRED' || data.code === 'ACCOUNT_NOT_FOUND')
+    ) {
+      if (data.code === 'ACCOUNT_NOT_FOUND') accountNotFoundHandler?.()
+      throw new ApiError({
+        code: data.code,
+        message:
+          data.code === 'ACCOUNT_NOT_FOUND'
+            ? ACCOUNT_ERROR_MESSAGES.ACCOUNT_NOT_FOUND
+            : ACCOUNT_ERROR_MESSAGES.ACCOUNT_REQUIRED,
+        status: data.status,
+        path: data.path,
+      })
+    }
     if (isApiErrorResponse(data)) {
       throw new ApiError({
         code: data.code,

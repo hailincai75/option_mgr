@@ -6,8 +6,9 @@ import java.time.Instant;
 import java.util.Objects;
 
 /**
- * A cash ledger entry to append. Used by deposits/withdrawals and by later features (FEAT-001 trades, ...).
+ * A cash ledger entry to append. Used by deposits/withdrawals and trades.
  *
+ * @param accountId    account the entry belongs to (FEAT-033)
  * @param occurredAt   when the cash moved (UTC)
  * @param sourceType   kind of originating record
  * @param sourceId     id of the originating record (save it first, in the same transaction)
@@ -16,8 +17,8 @@ import java.util.Objects;
  * @param description  system-generated text, may be null
  * @param remark       user remark, may be null
  */
-public record NewLedgerEntry(Instant occurredAt, CashSourceType sourceType, long sourceId, BigDecimal amount,
-                             BigDecimal frozenChange, String description, String remark) {
+public record NewLedgerEntry(long accountId, Instant occurredAt, CashSourceType sourceType, long sourceId,
+                             BigDecimal amount, BigDecimal frozenChange, String description, String remark) {
 
     public NewLedgerEntry {
         Objects.requireNonNull(occurredAt, "occurredAt");

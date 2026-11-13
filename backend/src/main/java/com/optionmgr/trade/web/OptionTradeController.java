@@ -1,5 +1,6 @@
 package com.optionmgr.trade.web;
 
+import com.optionmgr.account.web.AccountRef;
 import com.optionmgr.cash.repository.CashLedgerEntryEntity;
 import com.optionmgr.common.time.MarketTime;
 import com.optionmgr.trade.domain.ContractKey;
@@ -48,27 +49,28 @@ public class OptionTradeController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public TradeResponse open(@Valid @RequestBody OpenTradeRequest req) {
+    public TradeResponse open(AccountRef account, @Valid @RequestBody OpenTradeRequest req) {
         ContractKey contract = new ContractKey(req.symbol(), req.expirationDate(), req.strike(), req.optionType());
         int multiplier = req.multiplier() == null
                 ? OpenTradeTerms.DEFAULT_MULTIPLIER
                 : req.multiplier().intValueExact();
-        return toResponse(service.open(new OptionTradeService.OpenCommand(contract, req.action(),
+        return toResponse(service.open(account.id(), new OptionTradeService.OpenCommand(contract, req.action(),
                 req.contracts().intValueExact(), multiplier, req.netAmount(), req.tradedAtLocal(), req.note())));
     }
 
     /** FEAT-004: record a closing trade (BTC / STC). */
     @PostMapping("/closes")
     @ResponseStatus(HttpStatus.CREATED)
-    public TradeResponse close(@Valid @RequestBody CloseTradeRequest req) {
+    public TradeResponse close(AccountRef account, @Valid @RequestBody CloseTradeRequest req) {
         ContractKey contract = new ContractKey(req.symbol(), req.expirationDate(), req.strike(), req.optionType());
-        return toResponse(service.close(new OptionTradeService.CloseCommand(contract, req.action(),
+        return toResponse(service.close(account.id(), new OptionTradeService.CloseCommand(contract, req.action(),
                 req.contracts().intValueExact(), req.netAmount(), req.tradedAtLocal(), req.note())));
     }
 
     /** FEAT-002 trade list; all filters optional, see TradeListQuery. */
     @GetMapping
     public TradePageResponse list(
+            AccountRef account,
             @RequestParam(required = false) String symbol,
             @RequestParam(required = false) String expirationDate,
             @RequestParam(required = false) String strike,
@@ -80,15 +82,15 @@ public class OptionTradeController {
             @RequestParam(defaultValue = "20") int size) {
         TradeFilter filter = TradeListQuery.parse(symbol, expirationDate, strike, optionType, actions, startDate,
                 endDate, page, size);
-        OptionTradeService.TradePage p = service.list(filter, page, size);
+        OptionTradeService.TradePage p = service.list(account.id(), filter, page, size);
         return new TradePageResponse(p.items().stream().map(OptionTradeController::toResponse).toList(),
                 p.page(), p.size(), p.totalItems(), p.totalPages());
     }
 
     /** FEAT-005: edit the editable fields of a trade. */
     @PutMapping("/{id}")
-    public TradeResponse update(@PathVariable long id, @Valid @RequestBody EditTradeRequest req) {
-        return toResponse(edits.update(id, new OptionTradeEditService.EditCommand(req.contracts().intValueExact(),
+    public TradeResponse update(AccountRef account, @PathVariable long id, @Valid @RequestBody EditTradeRequest req) {
+        return toResponse(edits.update(account.id(), id, new OptionTradeEditService.EditCommand(req.contracts().intValueExact(),
                 req.netAmount(), req.tradedAtLocal(),
                 req.multiplier() == null ? null : req.multiplier().intValueExact(), req.note())));
     }
@@ -96,13 +98,13 @@ public class OptionTradeController {
     /** FEAT-005: delete a trade and its ledger entry. */
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void delete(@PathVariable long id) {
-        edits.delete(id);
+    public void delete(AccountRef account, @PathVariable long id) {
+        edits.delete(account.id(), id);
     }
 
     @GetMapping("/{id}")
-    public TradeResponse get(@PathVariable long id) {
-        return toResponse(service.get(id));
+    public TradeResponse get(AccountRef account, @PathVariable long id) {
+        return toResponse(service.get(account.id(), id));
     }
 
     private static TradeResponse toResponse(OptionTradeService.TradeView view) {

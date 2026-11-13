@@ -32,6 +32,7 @@ import org.springframework.test.web.servlet.MvcResult;
  */
 @SpringBootTest
 @AutoConfigureMockMvc
+@org.springframework.context.annotation.Import(com.optionmgr.account.DefaultAccountMockMvc.class)
 class CashControllerTest {
 
     static final Instant NOW = Instant.parse("2026-11-10T14:45:00Z");

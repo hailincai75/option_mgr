@@ -6,9 +6,6 @@ import java.util.List;
 /** User-facing (Chinese) texts for rejected trades, see docs/api/api-contract.md FEAT-001 / FEAT-004. */
 public final class TradeRejectionMessages {
 
-    /** Q16, wording fixed by the requirement. */
-    public static final String SELL_CALL_NOT_SUPPORTED = "需要股票持仓功能（FEAT-011）后才能卖出 call";
-
     private TradeRejectionMessages() {
     }
 

@@ -1,4 +1,4 @@
-import { Button, Table, Tag, Typography } from 'antd'
+import { Button, Table, Tag, Tooltip, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { HTMLAttributes, ReactNode } from 'react'
 import { Link } from 'react-router-dom'
@@ -195,9 +195,19 @@ function positionColumns(
       title: '冻结现金',
       key: 'frozenCash',
       align: 'right',
-      render: (_value: unknown, position) => (
-        <FrozenMoney value={position.frozenCash} testId="position-cell-frozen" />
-      ),
+      render: (_value: unknown, position) =>
+        position.direction === 'SHORT' && position.optionType === 'CALL' ? (
+          // FEAT-038 (Q62): short calls freeze no cash (frozenCash is "0.00"); say so explicitly.
+          <span data-testid="position-cell-frozen">
+            <Tooltip title="卖出 call 不冻结现金，需自行保证股票覆盖">
+              <Tag data-testid="position-cell-frozen-none" style={{ marginInlineEnd: 0 }}>
+                未冻结
+              </Tag>
+            </Tooltip>
+          </span>
+        ) : (
+          <FrozenMoney value={position.frozenCash} testId="position-cell-frozen" />
+        ),
     },
     {
       title: '到期日',

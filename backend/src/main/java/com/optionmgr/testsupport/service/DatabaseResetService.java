@@ -85,7 +85,7 @@ public class DatabaseResetService {
     @Transactional
     public void reset() {
         requireInMemoryDatabase();
-        cashLedger.lockAccount();
+        cashLedger.lockAllAccounts();
 
         Set<String> dirty = new HashSet<>();
         for (TableSnapshot table : snapshot) {

@@ -10,14 +10,16 @@ describe('App routing', () => {
 
     renderWithProviders(<App />, { route: '/' })
 
-    expect(screen.getByTestId('health-card')).toBeInTheDocument()
+    // Pages render once the account list (FEAT-033) has loaded.
+    expect(await screen.findByTestId('health-card')).toBeInTheDocument()
     expect(await screen.findByTestId('health-status')).toHaveTextContent('UP')
   })
 
-  it('renders a not-found page for unknown routes', () => {
+  it('renders a not-found page for unknown routes', async () => {
+    mockFetch()
     renderWithProviders(<App />, { route: '/no-such-page' })
 
-    expect(screen.getByText('Page not found')).toBeInTheDocument()
+    expect(await screen.findByText('Page not found')).toBeInTheDocument()
   })
 })
 

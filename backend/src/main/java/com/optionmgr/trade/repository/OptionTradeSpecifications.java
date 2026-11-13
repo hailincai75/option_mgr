@@ -13,9 +13,11 @@ public final class OptionTradeSpecifications {
     private OptionTradeSpecifications() {
     }
 
-    public static Specification<OptionTradeEntity> matching(TradeFilter f) {
+    /** Trades of {@code accountId} matching {@code f} (FEAT-033: always within one account). */
+    public static Specification<OptionTradeEntity> matching(long accountId, TradeFilter f) {
         return (root, query, cb) -> {
             List<Predicate> p = new ArrayList<>();
+            p.add(cb.equal(root.get("accountId"), accountId));
             if (f.symbol() != null) {
                 p.add(cb.equal(root.get("symbol"), f.symbol()));
             }

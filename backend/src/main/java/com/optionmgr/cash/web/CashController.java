@@ -1,5 +1,6 @@
 package com.optionmgr.cash.web;
 
+import com.optionmgr.account.web.AccountRef;
 import com.optionmgr.cash.domain.CashBalance;
 import com.optionmgr.cash.service.CashLedgerService;
 import com.optionmgr.cash.service.CashTransferEditService;
@@ -41,15 +42,15 @@ public class CashController {
     }
 
     @GetMapping("/summary")
-    public CashSummaryResponse summary() {
-        CashBalance b = ledger.currentBalance();
+    public CashSummaryResponse summary(AccountRef account) {
+        CashBalance b = ledger.currentBalance(account.id());
         return new CashSummaryResponse(b.total(), b.frozen(), b.available());
     }
 
     @PostMapping("/transfers")
     @ResponseStatus(HttpStatus.CREATED)
-    public TransferResponse createTransfer(@Valid @RequestBody CreateTransferRequest req) {
-        CashTransferService.Result r = transfers.create(new CashTransferService.Command(
+    public TransferResponse createTransfer(AccountRef account, @Valid @RequestBody CreateTransferRequest req) {
+        CashTransferService.Result r = transfers.create(account.id(), new CashTransferService.Command(
                 req.type(), req.amount(), req.occurredAtLocal(), req.remark()));
         var t = r.transfer();
         return new TransferResponse(t.getId(), t.getType(), t.getAmount(), t.getOccurredAt(), t.getRemark(),
@@ -58,8 +59,8 @@ public class CashController {
 
     /** FEAT-005: edit a deposit / withdrawal (same body as POST). */
     @PutMapping("/transfers/{id}")
-    public TransferResponse updateTransfer(@PathVariable long id, @Valid @RequestBody CreateTransferRequest req) {
-        CashTransferService.Result r = edits.update(id, new CashTransferService.Command(
+    public TransferResponse updateTransfer(AccountRef account, @PathVariable long id, @Valid @RequestBody CreateTransferRequest req) {
+        CashTransferService.Result r = edits.update(account.id(), id, new CashTransferService.Command(
                 req.type(), req.amount(), req.occurredAtLocal(), req.remark()));
         var t = r.transfer();
         return new TransferResponse(t.getId(), t.getType(), t.getAmount(), t.getOccurredAt(), t.getRemark(),
@@ -69,16 +70,17 @@ public class CashController {
     /** FEAT-005: delete a deposit / withdrawal. */
     @DeleteMapping("/transfers/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void deleteTransfer(@PathVariable long id) {
-        edits.delete(id);
+    public void deleteTransfer(AccountRef account, @PathVariable long id) {
+        edits.delete(account.id(), id);
     }
 
     @GetMapping("/ledger")
     public LedgerPageResponse ledger(
+            AccountRef account,
             @RequestParam(defaultValue = "1") @Min(value = 1, message = "page 必须 ≥ 1") int page,
             @RequestParam(defaultValue = "20") @Min(value = 1, message = "size 必须在 1 到 100 之间")
             @Max(value = 100, message = "size 必须在 1 到 100 之间") int size) {
-        LedgerPage p = ledger.ledgerPage(page, size);
+        LedgerPage p = ledger.ledgerPage(account.id(), page, size);
         return new LedgerPageResponse(
                 p.items().stream().map(l -> new LedgerEntryResponse(l.id(), l.occurredAt(), l.sourceType(),
                         l.sourceId(), l.amount(), l.balanceAfter(), l.frozenChange(), l.description(),

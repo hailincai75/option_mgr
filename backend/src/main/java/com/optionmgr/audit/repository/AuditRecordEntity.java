@@ -25,6 +25,9 @@ public class AuditRecordEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "account_id", nullable = false)
+    private Long accountId;
+
     @Column(name = "operated_at", nullable = false)
     private Instant operatedAt;
 
@@ -44,7 +47,7 @@ public class AuditRecordEntity {
     @Column(nullable = false, length = 200)
     private String summary;
 
-    @Column(name = "before_json", nullable = false, length = 10000)
+    @Column(name = "before_json", length = 10000)
     private String beforeJson;
 
     @Column(name = "after_json", length = 10000)
@@ -59,9 +62,10 @@ public class AuditRecordEntity {
     protected AuditRecordEntity() {
     }
 
-    public AuditRecordEntity(Instant operatedAt, AuditOperation operation, AuditObjectType objectType, long objectId,
+    public AuditRecordEntity(long accountId, Instant operatedAt, AuditOperation operation, AuditObjectType objectType, long objectId,
                              String summary, String beforeJson, String afterJson, String changesJson,
                              String sideEffectsJson) {
+        this.accountId = accountId;
         this.operatedAt = operatedAt;
         this.operation = operation;
         this.objectType = objectType;
@@ -75,6 +79,10 @@ public class AuditRecordEntity {
 
     public Long getId() {
         return id;
+    }
+
+    public long getAccountId() {
+        return accountId;
     }
 
     public Instant getOperatedAt() {

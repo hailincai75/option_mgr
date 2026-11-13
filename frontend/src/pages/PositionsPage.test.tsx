@@ -595,3 +595,86 @@ describe('PositionsPage', () => {
     expect(lots.map((row) => row.getAttribute('data-trade-id'))).toEqual(['1', '4', '7'])
   })
 })
+
+describe('short calls (FEAT-038, Q62)', () => {
+  const IXQZ_9_C = position({
+    symbol: 'IXQZ',
+    strike: '9',
+    optionType: 'CALL',
+    direction: 'SHORT',
+    contracts: 2,
+    openingNetTotal: '55.68',
+    averageNetPerContract: '27.84',
+    frozenCash: '0.00',
+    dte: 36,
+    lots: [
+      lot({
+        tradeId: 2,
+        tradedAt: '2026-11-10T17:43:00Z',
+        tradedAtLocal: '2026-11-10T12:43:00',
+        remainingNetAmount: '18.34',
+      }),
+      lot({
+        tradeId: 5,
+        tradedAt: '2026-11-11T17:21:00Z',
+        tradedAtLocal: '2026-11-11T12:21:00',
+        remainingNetAmount: '37.34',
+      }),
+    ],
+  })
+  const IXQZ_10_C = position({
+    symbol: 'IXQZ',
+    strike: '10',
+    optionType: 'CALL',
+    direction: 'SHORT',
+    openingNetTotal: '20.34',
+    averageNetPerContract: '20.34',
+    frozenCash: '0.00',
+    dte: 36,
+    lots: [lot({ tradeId: 3, remainingNetAmount: '20.34' })],
+  })
+
+  it('marks only short call rows as 未冻结 with a tooltip (AC 2)', async () => {
+    mockFetch().mockImplementation(() =>
+      Promise.resolve(
+        jsonResponse({
+          asOfDate: '2026-11-12',
+          positionCount: 4,
+          frozenTotal: '40000.00',
+          positions: [AAPL_200_P, AAPL_210_C, IXQZ_9_C, IXQZ_10_C],
+        }),
+      ),
+    )
+    renderWithProviders(<PositionsPage />)
+    await screen.findAllByTestId('position-row')
+
+    const frozenOf = (contract: string) =>
+      within(rowOf(contract)).getByTestId('position-cell-frozen')
+    expect(
+      within(frozenOf('IXQZ 2026-12-18 9 C')).getByTestId('position-cell-frozen-none'),
+    ).toHaveTextContent('未冻结')
+    expect(
+      within(frozenOf('IXQZ 2026-12-18 10 C')).getByTestId('position-cell-frozen-none'),
+    ).toHaveTextContent('未冻结')
+    // Long call: still "—"; short put: still its amount.
+    expect(frozenOf('AAPL 2026-12-18 210 C')).toHaveTextContent('—')
+    expect(
+      within(frozenOf('AAPL 2026-12-18 210 C')).queryByTestId('position-cell-frozen-none'),
+    ).toBeNull()
+    expect(frozenOf('AAPL 2026-12-18 200 P')).toHaveTextContent('40,000.00')
+
+    // Other columns behave like a short put.
+    expect(cellTexts(rowOf('IXQZ 2026-12-18 9 C')).slice(1, 5)).toEqual([
+      '空头',
+      '2',
+      '+55.68',
+      '+27.84',
+    ])
+    expect(within(rowOf('IXQZ 2026-12-18 9 C')).getByTestId('position-close')).toBeInTheDocument()
+
+    await userEvent.hover(
+      within(frozenOf('IXQZ 2026-12-18 9 C')).getByTestId('position-cell-frozen-none'),
+    )
+    expect(await screen.findByText('卖出 call 不冻结现金，需自行保证股票覆盖')).toBeInTheDocument()
+  })
+})

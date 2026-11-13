@@ -55,7 +55,7 @@ public class CashTransferService {
     }
 
     @Transactional
-    public Result create(Command cmd) {
+    public Result create(long accountId, Command cmd) {
         Instant occurredAt = MarketTime.toInstant(cmd.occurredAtLocal());
         if (occurredAt.isAfter(clock.instant())) {
             throw new ApiException(ErrorCode.VALIDATION_ERROR, "Request validation failed",
@@ -65,10 +65,10 @@ public class CashTransferService {
         BigDecimal signed = cmd.type().signedAmount(amount);
         String remark = cmd.remark() == null || cmd.remark().isBlank() ? null : cmd.remark();
 
-        ledger.lockAccount();
+        ledger.lockAccount(accountId);
         // Deposits only add cash, so they can never make any point negative (spec: always allowed).
         if (cmd.type() == TransferType.WITHDRAWAL) {
-            InsertionCheck check = ledger.checkInsertion(occurredAt, signed, Money.ZERO);
+            InsertionCheck check = ledger.checkInsertion(accountId, occurredAt, signed, Money.ZERO);
             if (!check.allowed()) {
                 throw new ApiException(ErrorCode.CASH_INSUFFICIENT,
                         CashShortfallMessages.insufficient(amount, check));
@@ -76,8 +76,8 @@ public class CashTransferService {
         }
 
         CashTransferEntity transfer = transfers.save(
-                new CashTransferEntity(cmd.type(), amount, occurredAt, remark, clock.instant()));
-        CashLedgerEntryEntity entry = ledger.append(new NewLedgerEntry(occurredAt, cmd.type().sourceType(),
+                new CashTransferEntity(accountId, cmd.type(), amount, occurredAt, remark, clock.instant()));
+        CashLedgerEntryEntity entry = ledger.append(new NewLedgerEntry(accountId, occurredAt, cmd.type().sourceType(),
                 transfer.getId(), signed, Money.ZERO, null, remark));
         return new Result(transfer, entry);
     }

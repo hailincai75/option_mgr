@@ -18,7 +18,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
- * FEAT-001 acceptance 12 (field validation) and 19 (upper limits), check order fields → Q7 → Q16 → Q23 → cash,
+ * FEAT-001 acceptance 12 (field validation) and 19 (upper limits), check order fields → Q7 → Q23 → cash (Q16 superseded by FEAT-038),
  * Q7/Q23 across later time points, 0DTE / NY-date boundaries, error contract, GET errors and concurrency.
  */
 class Feat001OpenTradeValidationSystemTest extends OptionTradeSystemTestBase {
@@ -255,7 +255,7 @@ class Feat001OpenTradeValidationSystemTest extends OptionTradeSystemTestBase {
     // ------------------------------------------------------------------ check order
 
     @Test
-    @DisplayName("检查顺序：字段先于 Q7；Q7 先于现金；Q16 先于现金；Q23 先于现金")
+    @DisplayName("检查顺序（FEAT-038 后为 字段 → Q7 → Q23 → 现金）：字段先于 Q7；Q7 先于现金；Q23 先于现金；STO call 不做现金/担保检查")
     void checkOrder() {
         deposit("30000.00", DEP);
         okTrade(aapl("STO", "200", "PUT", "349.35", AT));
@@ -267,8 +267,10 @@ class Feat001OpenTradeValidationSystemTest extends OptionTradeSystemTestBase {
                 "POSITION_DIRECTION_CONFLICT")).contains("空头持仓");
 
         emptyLedger();
-        // STO call with zero cash -> Q16 not cash
-        rejectedTrade(aapl("STO", "250", "CALL", "1.00", AT), "SELL_CALL_NOT_SUPPORTED");
+        // FEAT-038 (Q16 superseded): an STO call with zero cash is accepted - no collateral, nothing frozen
+        assertThat(okTrade(aapl("STO", "250", "CALL", "1.00", AT)).get("frozenChange").asText()).isEqualTo("0.00");
+        assertSummary("1.00", "0.00", "1.00");
+        emptyLedger();
         // multiplier mismatch with zero cash for the new one -> Q23 not cash
         deposit("100.00", DEP);
         okTrade(trade("BTO", 1, "XYZ", "2026-12-18", "50", "CALL", "10.00", AT, 10));

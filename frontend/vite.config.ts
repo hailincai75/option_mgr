@@ -9,7 +9,9 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:8080',
+        // Default 8080. OPTION_MGR_API_TARGET points a second dev server at another backend
+        // (e.g. an e2e-profile backend on 8081) without touching the default setup.
+        target: process.env.OPTION_MGR_API_TARGET ?? 'http://localhost:8080',
         changeOrigin: true,
       },
     },

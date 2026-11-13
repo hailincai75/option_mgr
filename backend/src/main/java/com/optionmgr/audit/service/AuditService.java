@@ -41,16 +41,16 @@ public class AuditService {
     /**
      * An audit record to write.
      *
-     * @param before full content before (JSON-serializable, e.g. a LinkedHashMap)
+     * @param accountId account the record belongs to (FEAT-033)
+     * @param before    full content before (JSON-serializable, e.g. a LinkedHashMap); null for a creation
      * @param after  full content after; null for a deletion
      */
-    public record NewAuditRecord(AuditOperation operation, AuditObjectType objectType, long objectId, String summary,
+    public record NewAuditRecord(long accountId, AuditOperation operation, AuditObjectType objectType, long objectId, String summary,
                                  Object before, Object after, List<FieldChange> changes,
                                  List<SideEffect> sideEffects) {
         public NewAuditRecord {
             Objects.requireNonNull(operation, "operation");
             Objects.requireNonNull(objectType, "objectType");
-            Objects.requireNonNull(before, "before");
             changes = List.copyOf(changes);
             sideEffects = List.copyOf(sideEffects);
         }
@@ -88,23 +88,23 @@ public class AuditService {
             m.put("text", e.text());
             return m;
         }).toList();
-        AuditRecordEntity saved = records.save(new AuditRecordEntity(clock.instant(), r.operation(), r.objectType(),
-                r.objectId(), r.summary(), write(r.before()), r.after() == null ? null : write(r.after()),
+        AuditRecordEntity saved = records.save(new AuditRecordEntity(r.accountId(), clock.instant(), r.operation(),
+                r.objectType(), r.objectId(), r.summary(), r.before() == null ? null : write(r.before()), r.after() == null ? null : write(r.after()),
                 write(changes), write(effects)));
         return saved.getId();
     }
 
     /** Newest first (same instant: higher id first); optional filter by object type and id. */
     @Transactional(readOnly = true)
-    public AuditPage page(AuditObjectType objectType, Long objectId, int page, int size) {
+    public AuditPage page(long accountId, AuditObjectType objectType, Long objectId, int page, int size) {
         PageRequest request = PageRequest.of(page - 1, size, ORDER);
         Page<AuditRecordEntity> result;
         if (objectType == null) {
-            result = records.findAll(request);
+            result = records.findByAccountId(accountId, request);
         } else if (objectId == null) {
-            result = records.findByObjectType(objectType, request);
+            result = records.findByAccountIdAndObjectType(accountId, objectType, request);
         } else {
-            result = records.findByObjectTypeAndObjectId(objectType, objectId, request);
+            result = records.findByAccountIdAndObjectTypeAndObjectId(accountId, objectType, objectId, request);
         }
         return new AuditPage(result.getContent().stream().map(this::view).toList(), page, size,
                 result.getTotalElements(), result.getTotalPages());
@@ -112,7 +112,7 @@ public class AuditService {
 
     private AuditView view(AuditRecordEntity e) {
         return new AuditView(e.getId(), e.getOperatedAt(), e.getOperation(), e.getObjectType(), e.getObjectId(),
-                e.getSummary(), read(e.getBeforeJson()), e.getAfterJson() == null ? null : read(e.getAfterJson()),
+                e.getSummary(), e.getBeforeJson() == null ? null : read(e.getBeforeJson()), e.getAfterJson() == null ? null : read(e.getAfterJson()),
                 read(e.getChangesJson()), read(e.getSideEffectsJson()));
     }
 

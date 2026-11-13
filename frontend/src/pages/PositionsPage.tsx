@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useAccountQuery } from '../account/useAccountQuery'
 import { Card, Space, Spin, Typography } from 'antd'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -16,7 +16,8 @@ import { formatMoney } from '../utils/format'
  */
 export function PositionsPage() {
   const [closing, setClosing] = useState<OptionPosition | null>(null)
-  const { data, error, isPending, isFetching, refetch } = useQuery({
+  const { data, error, isPending, isFetching, refetch } = useAccountQuery({
+    // FEAT-033: per-account key; runs only once the current account is known.
     queryKey: optionPositionQueryKeys.all,
     queryFn: ({ signal }) => getOptionPositions(signal),
   })

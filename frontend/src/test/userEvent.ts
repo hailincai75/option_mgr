@@ -17,6 +17,7 @@ const userEvent = {
   click: (...args: Parameters<UserEvent['click']>) => setup().click(...args),
   type: (...args: Parameters<UserEvent['type']>) => setup().type(...args),
   clear: (...args: Parameters<UserEvent['clear']>) => setup().clear(...args),
+  hover: (...args: Parameters<UserEvent['hover']>) => setup().hover(...args),
 }
 
 export default userEvent

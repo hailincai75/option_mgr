@@ -39,6 +39,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  */
 @SpringBootTest
 @AutoConfigureMockMvc
+@org.springframework.context.annotation.Import(com.optionmgr.account.DefaultAccountMockMvc.class)
 class EditDeleteAuditControllerTest {
 
     static final Instant NOW = Instant.parse("2026-11-11T15:00:00Z");

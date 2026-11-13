@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { useAccountQuery } from '../account/useAccountQuery'
 import { Alert, Button, Card, Form, Input, Pagination, Radio, Space, Typography } from 'antd'
 import { useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -67,6 +67,9 @@ function AuditFilterForm({ initialValues, errors, onApply, onClear }: FilterForm
           <Radio value="CASH_TRANSFER" data-testid="audit-filter-type-transfer">
             入金/出金
           </Radio>
+          <Radio value="ACCOUNT" data-testid="audit-filter-type-account">
+            账户
+          </Radio>
         </Radio.Group>
       </Form.Item>
       <Form.Item label="对象 ID" {...itemProps('objectId')}>
@@ -103,11 +106,12 @@ export function AuditLogPage() {
   const params = toAuditParams(state)
   const filtered = hasAuditFilters(state.filters)
 
-  const { data, error, isPending, isFetching, isPlaceholderData, refetch } = useQuery({
+  const { data, error, isPending, isFetching, isPlaceholderData, refetch } = useAccountQuery({
+    // FEAT-033: per-account key; runs only once the current account is known.
     queryKey: auditLogQueryKeys.list(params),
     queryFn: ({ signal }) => getAuditLog(params, signal),
     enabled: filtersValid,
-    placeholderData: keepPreviousData,
+    keepPrevious: true,
   })
 
   const fieldErrors = { ...serverFieldErrors(error), ...clientErrors }

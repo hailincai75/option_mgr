@@ -90,9 +90,9 @@ public class OptionTradeEditService {
     // ------------------------------------------------------------------ edit
 
     @Transactional
-    public OptionTradeService.TradeView update(long id, EditCommand cmd) {
-        ledger.lockAccount();
-        OptionTradeEntity trade = find(id);
+    public OptionTradeService.TradeView update(long accountId, long id, EditCommand cmd) {
+        ledger.lockAccount(accountId);
+        OptionTradeEntity trade = find(accountId, id);
         ContractKey contract = trade.contract();
         boolean opening = trade.getAction().isOpening();
 
@@ -121,7 +121,7 @@ public class OptionTradeEditService {
         }
 
         // 2.-4. replay the contract with the edited trade (same id = same entry order)
-        OptionTradeService.ContractTrades existing = tradeService.load(contract);
+        OptionTradeService.ContractTrades existing = tradeService.load(accountId, contract);
         OpenTradeTerms terms = opening
                 ? new OpenTradeTerms(contract, trade.getAction(), cmd.contracts(), multiplier, net) : null;
         BigDecimal cashChange = opening ? terms.cashChange() : (trade.getAction().receivesCash() ? net : net.negate());
@@ -149,7 +149,7 @@ public class OptionTradeEditService {
         // 5. cash: Q18 for the edited STO put itself (Q41), Q19 at every point
         Map<Long, CashMovement> replacements = movements(existing, corrections);
         replacements.put(entry.getId(), new CashMovement(tradedAt, entry.getId(), cashChange, frozenChange));
-        List<ReplayStep> steps = ledger.replayWithChanges(replacements, Set.of());
+        List<ReplayStep> steps = ledger.replayWithChanges(accountId, replacements, Set.of());
         if (opening && terms.freezesCollateral() && sizeOrTimeChanged) {
             BigDecimal availableBefore = steps.stream().filter(s -> s.movement().sequence() == entry.getId())
                     .findFirst().orElseThrow().before().available();
@@ -164,23 +164,23 @@ public class OptionTradeEditService {
         Map<String, Object> before = snapshot(trade, entry.getAmount(), entry.getFrozenChange());
         List<SideEffect> effects = sideEffects(existing, corrections);
         trade.update(cmd.contracts(), effectiveMultiplier, net, tradedAt, note);
-        ledger.updateEntry(entry.getId(), tradedAt, entry.getSourceType(), cashChange, frozenChange,
+        ledger.updateEntry(accountId, entry.getId(), tradedAt, entry.getSourceType(), cashChange, frozenChange,
                 OpenTradeTerms.describe(trade.getAction(), cmd.contracts(), effectiveMultiplier, contract), note);
-        ledger.correctFrozenChanges(corrections);
+        ledger.correctFrozenChanges(accountId, corrections);
         Map<String, Object> after = snapshot(trade, cashChange, frozenChange);
-        audit.record(new AuditService.NewAuditRecord(AuditOperation.UPDATE, AuditObjectType.OPTION_TRADE, id,
+        audit.record(new AuditService.NewAuditRecord(accountId, AuditOperation.UPDATE, AuditObjectType.OPTION_TRADE, id,
                 summary(trade), before, after, changes(before, after), effects));
-        return tradeService.get(id);
+        return tradeService.get(accountId, id);
     }
 
     // ------------------------------------------------------------------ delete
 
     @Transactional
-    public void delete(long id) {
-        ledger.lockAccount();
-        OptionTradeEntity trade = find(id);
+    public void delete(long accountId, long id) {
+        ledger.lockAccount(accountId);
+        OptionTradeEntity trade = find(accountId, id);
         ContractKey contract = trade.contract();
-        OptionTradeService.ContractTrades existing = tradeService.load(contract);
+        OptionTradeService.ContractTrades existing = tradeService.load(accountId, contract);
         CashLedgerEntryEntity entry = existing.ledgerByTrade().get(id);
 
         ContractHistory history = ContractReplay.replay(
@@ -196,22 +196,22 @@ public class OptionTradeEditService {
         }
 
         Map<Long, BigDecimal> corrections = OptionTradeService.frozenCorrections(existing, history, id);
-        rejectNegativeCash(ledger.replayWithChanges(movements(existing, corrections), Set.of(entry.getId())), "删除");
+        rejectNegativeCash(ledger.replayWithChanges(accountId, movements(existing, corrections), Set.of(entry.getId())), "删除");
 
         Map<String, Object> before = snapshot(trade, entry.getAmount(), entry.getFrozenChange());
         List<SideEffect> effects = sideEffects(existing, corrections);
         String summary = summary(trade);
-        ledger.deleteEntry(entry.getId());
+        ledger.deleteEntry(accountId, entry.getId());
         trades.delete(trade);
-        ledger.correctFrozenChanges(corrections);
-        audit.record(new AuditService.NewAuditRecord(AuditOperation.DELETE, AuditObjectType.OPTION_TRADE, id,
+        ledger.correctFrozenChanges(accountId, corrections);
+        audit.record(new AuditService.NewAuditRecord(accountId, AuditOperation.DELETE, AuditObjectType.OPTION_TRADE, id,
                 summary, before, null, List.of(), effects));
     }
 
     // ------------------------------------------------------------------ helpers
 
-    private OptionTradeEntity find(long id) {
-        return trades.findById(id).orElseThrow(() -> ApiException.notFound("Option trade " + id + " not found"));
+    private OptionTradeEntity find(long accountId, long id) {
+        return trades.findByIdAndAccountId(id, accountId).orElseThrow(() -> ApiException.notFound("Option trade " + id + " not found"));
     }
 
     private static long firstTradeId(ContractHistory history) {

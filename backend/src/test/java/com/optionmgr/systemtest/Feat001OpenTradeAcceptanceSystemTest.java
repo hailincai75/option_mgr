@@ -154,7 +154,7 @@ class Feat001OpenTradeAcceptanceSystemTest extends OptionTradeSystemTestBase {
     // ------------------------------------------------------------------ AC 8, 9, 10
 
     @Test
-    @DisplayName("AC8 多空冲突：空头时 BTO 被拒（提示 BTC）；不同行权价允许；多头 call 时 STO 被拒（提示 STC，先于 Q16）")
+    @DisplayName("AC8 多空冲突：空头时 BTO 被拒（提示 BTC）；不同行权价允许；多头 call 时 STO 被拒（提示 STC）")
     void ac8_directionConflict() {
         deposit("30000.00", DEP);
         okTrade(aapl("STO", "200", "PUT", "349.35", AT));
@@ -172,13 +172,18 @@ class Feat001OpenTradeAcceptanceSystemTest extends OptionTradeSystemTestBase {
     }
 
     @Test
-    @DisplayName("AC9 STO call 被拒：需要股票持仓功能（FEAT-011）后才能卖出 call")
-    void ac9_stoCallRejected() {
+    @DisplayName("AC9（FEAT-038 取代 Q16）STO call 允许：现金 +120.00、冻结 0.00，流水说明同 FEAT-001")
+    void ac9_stoCallAcceptedWithoutFreeze() {
         deposit("100000.00", DEP);
-        assertThat(rejectedTrade(aapl("STO", "250", "CALL", "120.00", AT), "SELL_CALL_NOT_SUPPORTED"))
-                .isEqualTo("需要股票持仓功能（FEAT-011）后才能卖出 call");
-        assertThat(tradeCount()).isZero();
-        assertThat(ledgerCount()).isEqualTo(1);
+        JsonNode t = okTrade(aapl("STO", "250", "CALL", "120.00", AT));
+        assertThat(t.get("cashChange").asText()).isEqualTo("120.00");
+        assertThat(t.get("frozenChange").asText()).isEqualTo("0.00");
+        assertThat(t.get("contractLabel").asText()).isEqualTo("AAPL 2026-12-18 250 C");
+        assertSummary("100120.00", "0.00", "100120.00");
+        JsonNode row = ledgerRowFor("OPTION_OPEN", t.get("id").asLong());
+        assertThat(row.get("frozenChange").asText()).isEqualTo("0.00");
+        assertThat(row.get("description").asText()).isEqualTo("STO 1 张 AAPL 2026-12-18 250 C");
+        assertThat(tradeCount()).isEqualTo(1);
     }
 
     @Test

@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useAccountQuery } from '../../account/useAccountQuery'
 import type { ReactNode } from 'react'
 import { Card, Col, Row, Spin, Statistic } from 'antd'
 import { cashQueryKeys, getCashSummary } from '../../api/cash'
@@ -29,7 +29,8 @@ export function CashSummaryCard({
   size = 'medium',
   extra,
 }: CashSummaryCardProps) {
-  const { data, error, isPending, isFetching, refetch } = useQuery({
+  const { data, error, isPending, isFetching, refetch } = useAccountQuery({
+    // FEAT-033: per-account key; runs only once the current account is known.
     queryKey: cashQueryKeys.summary,
     queryFn: ({ signal }) => getCashSummary(signal),
   })

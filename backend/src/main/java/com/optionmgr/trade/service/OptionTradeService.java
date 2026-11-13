@@ -17,7 +17,7 @@ import com.optionmgr.trade.domain.ContractKey;
 import com.optionmgr.trade.domain.ContractReplay;
 import com.optionmgr.trade.domain.LotTrade;
 import com.optionmgr.trade.domain.OpenTradeTerms;
-import com.optionmgr.trade.domain.OptionType;
+
 import com.optionmgr.trade.domain.ReplayedTrade;
 import com.optionmgr.trade.domain.TradeAction;
 import com.optionmgr.trade.domain.TradeFilter;
@@ -128,11 +128,11 @@ public class OptionTradeService {
     // ------------------------------------------------------------------ open (FEAT-001)
 
     /**
-     * Checks in the order of FEAT-001 (fields, Q7 incl. later trades, Q16, Q23, cash) and saves trade + ledger entry
+     * Checks in the order of FEAT-001 (fields, Q7 incl. later trades, Q23, cash; FEAT-038: no Q16) and saves trade + ledger entry
      * in one transaction; any failure throws {@link ApiException} and nothing is saved.
      */
     @Transactional
-    public TradeView open(OpenCommand cmd) {
+    public TradeView open(long accountId, OpenCommand cmd) {
         // 1. field rules that need the clock / the trade's New York date
         Instant tradedAt = MarketTime.toInstant(cmd.tradedAtLocal());
         LocalDate tradeDate = MarketTime.toLocal(tradedAt).toLocalDate();
@@ -146,31 +146,28 @@ public class OptionTradeService {
         String note = blankToNull(cmd.note());
 
         // Every cash-changing transaction holds the account lock: replay and cash checks see a stable state.
-        ledger.lockAccount();
+        ledger.lockAccount(accountId);
         ContractKey contract = terms.contract();
-        ContractTrades existing = load(contract);
+        ContractTrades existing = load(accountId, contract);
         LotTrade candidate = new LotTrade(LotTrade.NOT_YET_ENTERED, tradedAt, terms.action(), terms.contracts(),
                 terms.multiplier(), terms.cashChange(), terms.frozenChange(), note);
         ContractHistory history = replayWith(existing, candidate);
 
         // 2. Q7 at the trade, and every later trade of the contract still valid (Q27/Q39)
         rejectFirstViolation(contract, history, NOT_MULTIPLIER);
-        // 3. Q16
-        if (terms.action() == TradeAction.STO && contract.optionType() == OptionType.CALL) {
-            throw new ApiException(ErrorCode.SELL_CALL_NOT_SUPPORTED, TradeRejectionMessages.SELL_CALL_NOT_SUPPORTED);
-        }
-        // 4. Q23
+        // 3. Q23 (FEAT-038: STO call is allowed - Q16 superseded; no share-coverage check before FEAT-011)
         rejectFirstViolation(contract, history, MULTIPLIER);
 
-        // 5. cash (Q13, Q18, Q19), with later closes' re-matched frozen release
+        // 4. cash (Q13, Q18 for STO put only, Q19), with later closes' re-matched frozen release.
+        // A short call freezes nothing (OpenTradeTerms.freezesCollateral), so it only adds cash.
         Map<Long, BigDecimal> corrections = frozenCorrections(existing, history);
-        checkOpenCash(terms, tradedAt, corrections);
+        checkOpenCash(accountId, terms, tradedAt, corrections);
 
-        OptionTradeEntity trade = trades.save(new OptionTradeEntity(contract, terms.action(), terms.contracts(),
+        OptionTradeEntity trade = trades.save(new OptionTradeEntity(accountId, contract, terms.action(), terms.contracts(),
                 terms.multiplier(), terms.netAmount(), tradedAt, note, clock.instant()));
-        CashLedgerEntryEntity entry = ledger.append(new NewLedgerEntry(tradedAt, CashSourceType.OPTION_OPEN,
+        CashLedgerEntryEntity entry = ledger.append(new NewLedgerEntry(accountId, tradedAt, CashSourceType.OPTION_OPEN,
                 trade.getId(), terms.cashChange(), terms.frozenChange(), terms.description(), note));
-        ledger.correctFrozenChanges(corrections);
+        ledger.correctFrozenChanges(accountId, corrections);
         return new TradeView(trade, entry, Optional.empty());
     }
 
@@ -181,7 +178,7 @@ public class OptionTradeService {
      * Q20 release first) and saves trade + ledger entry; any failure throws {@link ApiException}, nothing is saved.
      */
     @Transactional
-    public TradeView close(CloseCommand cmd) {
+    public TradeView close(long accountId, CloseCommand cmd) {
         ContractKey contract = cmd.contract();
         // 1. field rules that need the clock / the trade's New York date
         Instant tradedAt = MarketTime.toInstant(cmd.tradedAtLocal());
@@ -196,8 +193,8 @@ public class OptionTradeService {
         BigDecimal cashChange = cmd.action().receivesCash() ? net : net.negate();
         String note = blankToNull(cmd.note());
 
-        ledger.lockAccount();
-        ContractTrades existing = load(contract);
+        ledger.lockAccount(accountId);
+        ContractTrades existing = load(accountId, contract);
         LotTrade candidate = new LotTrade(LotTrade.NOT_YET_ENTERED, tradedAt, cmd.action(), cmd.contracts(),
                 LotTrade.INHERIT_MULTIPLIER, cashChange, Money.ZERO, note);
         ContractHistory history = replayWith(existing, candidate);
@@ -210,7 +207,7 @@ public class OptionTradeService {
 
         // 5. cash: release first, then check (Q20); Q19 replay for later points
         Map<Long, BigDecimal> corrections = frozenCorrections(existing, history);
-        InsertionCheck check = ledger.checkInsertion(tradedAt, cashChange, frozenChange, corrections);
+        InsertionCheck check = ledger.checkInsertion(accountId, tradedAt, cashChange, frozenChange, corrections);
         if (!check.allowed()) {
             String message;
             if (check.violatedAtInsertedPoint()) {
@@ -225,41 +222,42 @@ public class OptionTradeService {
         }
 
         int multiplier = step.effectiveMultiplier();
-        OptionTradeEntity trade = trades.save(new OptionTradeEntity(contract, cmd.action(), cmd.contracts(),
+        OptionTradeEntity trade = trades.save(new OptionTradeEntity(accountId, contract, cmd.action(), cmd.contracts(),
                 multiplier, net, tradedAt, note, clock.instant()));
-        CashLedgerEntryEntity entry = ledger.append(new NewLedgerEntry(tradedAt, CashSourceType.OPTION_CLOSE,
+        CashLedgerEntryEntity entry = ledger.append(new NewLedgerEntry(accountId, tradedAt, CashSourceType.OPTION_CLOSE,
                 trade.getId(), cashChange, frozenChange,
                 OpenTradeTerms.describe(cmd.action(), cmd.contracts(), multiplier, contract), note));
-        ledger.correctFrozenChanges(corrections);
+        ledger.correctFrozenChanges(accountId, corrections);
         return new TradeView(trade, entry, Optional.of(match));
     }
 
     // ------------------------------------------------------------------ reads
 
     @Transactional(readOnly = true)
-    public TradeView get(long id) {
-        OptionTradeEntity trade = trades.findById(id)
+    public TradeView get(long accountId, long id) {
+        OptionTradeEntity trade = trades.findByIdAndAccountId(id, accountId)
                 .orElseThrow(() -> ApiException.notFound("Option trade " + id + " not found"));
-        return views(List.of(trade)).get(0);
+        return views(accountId, List.of(trade)).get(0);
     }
 
     /** One page of the trade list (FEAT-002): newest first, same instant: later entered first. */
     @Transactional(readOnly = true)
-    public TradePage list(TradeFilter filter, int page, int size) {
-        Page<OptionTradeEntity> result = trades.findAll(OptionTradeSpecifications.matching(filter),
+    public TradePage list(long accountId, TradeFilter filter, int page, int size) {
+        Page<OptionTradeEntity> result = trades.findAll(OptionTradeSpecifications.matching(accountId, filter),
                 PageRequest.of(page - 1, size, LIST_ORDER));
-        return new TradePage(views(result.getContent()), page, size, result.getTotalElements(),
+        return new TradePage(views(accountId, result.getContent()), page, size, result.getTotalElements(),
                 result.getTotalPages());
     }
 
     /** All stored trades of one contract with their ledger entries, in replay order. */
     @Transactional(readOnly = true)
-    public List<LotTrade> contractTrades(ContractKey contract) {
-        return load(contract).trades();
+    public List<LotTrade> contractTrades(long accountId, ContractKey contract) {
+        return load(accountId, contract).trades();
     }
 
-    List<TradeView> views(List<OptionTradeEntity> page) {
-        Map<Long, CashLedgerEntryEntity> entries = ledger.findBySources(TRADE_SOURCE_TYPES,
+    /** Views of trades of one account. */
+    List<TradeView> views(long accountId, List<OptionTradeEntity> page) {
+        Map<Long, CashLedgerEntryEntity> entries = ledger.findBySources(accountId, TRADE_SOURCE_TYPES,
                 page.stream().map(OptionTradeEntity::getId).toList());
         // closes: their current FIFO match, one replay per contract
         Map<ContractKey, ContractHistory> histories = new HashMap<>();
@@ -272,7 +270,7 @@ public class OptionTradeService {
             Optional<CloseMatch> match = Optional.empty();
             if (!t.getAction().isOpening()) {
                 ContractHistory h = histories.computeIfAbsent(t.contract(),
-                        c -> ContractReplay.replay(load(c).trades()));
+                        c -> ContractReplay.replay(load(accountId, c).trades()));
                 match = h.step(t.getId()).match();
             }
             out.add(new TradeView(t, e, match));
@@ -282,11 +280,11 @@ public class OptionTradeService {
 
     // ------------------------------------------------------------------ helpers
 
-    ContractTrades load(ContractKey c) {
+    ContractTrades load(long accountId, ContractKey c) {
         List<OptionTradeEntity> entities = trades
-                .findBySymbolAndExpirationDateAndStrikeAndOptionTypeOrderByTradedAtAscIdAsc(
-                        c.symbol(), c.expirationDate(), c.strike(), c.optionType());
-        Map<Long, CashLedgerEntryEntity> entries = ledger.findBySources(TRADE_SOURCE_TYPES,
+                .findByAccountIdAndSymbolAndExpirationDateAndStrikeAndOptionTypeOrderByTradedAtAscIdAsc(
+                        accountId, c.symbol(), c.expirationDate(), c.strike(), c.optionType());
+        Map<Long, CashLedgerEntryEntity> entries = ledger.findBySources(accountId, TRADE_SOURCE_TYPES,
                 entities.stream().map(OptionTradeEntity::getId).toList());
         Map<Long, CashLedgerEntryEntity> byTrade = new LinkedHashMap<>();
         List<LotTrade> lotTrades = new ArrayList<>(entities.size());
@@ -368,8 +366,9 @@ public class OptionTradeService {
         }
     }
 
-    private void checkOpenCash(OpenTradeTerms terms, Instant tradedAt, Map<Long, BigDecimal> corrections) {
-        InsertionCheck check = ledger.checkInsertion(tradedAt, terms.cashChange(), terms.frozenChange(), corrections);
+    private void checkOpenCash(long accountId, OpenTradeTerms terms, Instant tradedAt, Map<Long, BigDecimal> corrections) {
+        InsertionCheck check = ledger.checkInsertion(accountId, tradedAt, terms.cashChange(), terms.frozenChange(),
+                corrections);
         if (terms.freezesCollateral()) {
             // Q18: available cash before this trade (premium not counted) must cover the collateral.
             BigDecimal collateral = terms.collateral();

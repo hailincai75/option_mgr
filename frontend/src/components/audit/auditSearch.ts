@@ -6,7 +6,7 @@ import type { AuditLogParams, AuditObjectType } from '../../api/types'
  */
 
 export interface AuditFilterValues {
-  /** '' = all, otherwise expected OPTION_TRADE / CASH_TRANSFER. */
+  /** '' = all, otherwise expected OPTION_TRADE / CASH_TRANSFER / ACCOUNT (FEAT-033). */
   objectType: string
   objectId: string
 }
@@ -26,10 +26,11 @@ const DEFAULT_SIZE = 20
 export const AUDIT_OBJECT_TYPE_LABELS: Record<AuditObjectType, string> = {
   OPTION_TRADE: '期权交易',
   CASH_TRANSFER: '入金/出金',
+  ACCOUNT: '账户',
 }
 
 function isObjectType(value: string): value is AuditObjectType {
-  return value === 'OPTION_TRADE' || value === 'CASH_TRANSFER'
+  return value === 'OPTION_TRADE' || value === 'CASH_TRANSFER' || value === 'ACCOUNT'
 }
 
 export function isAuditFilterField(field: string): field is AuditFilterField {
@@ -73,7 +74,7 @@ export function validateAuditFilters(
   const objectType = filters.objectType.trim()
   const objectId = filters.objectId.trim()
   if (objectType !== '' && !isObjectType(objectType)) {
-    errors.objectType = '对象类型只能是期权交易或入金/出金'
+    errors.objectType = '对象类型只能是期权交易、入金/出金或账户'
   }
   if (objectId !== '') {
     if (!/^\d{1,15}$/.test(objectId) || !/[1-9]/.test(objectId)) {

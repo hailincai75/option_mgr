@@ -18,6 +18,7 @@ import org.springframework.test.web.servlet.MockMvc;
 /** Without the e2e profile (normal "test" profile) the reset endpoint does not exist. */
 @SpringBootTest
 @AutoConfigureMockMvc
+@org.springframework.context.annotation.Import(com.optionmgr.account.DefaultAccountMockMvc.class)
 class TestSupportDisabledWithoutE2eProfileTest {
 
     @Autowired

@@ -18,7 +18,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,10 +44,10 @@ public class OptionPositionService {
     }
 
     @Transactional(readOnly = true)
-    public PositionSummary currentPositions() {
+    public PositionSummary currentPositions(long accountId) {
         LocalDate today = MarketTime.toLocal(clock.instant()).toLocalDate();
-        List<OptionTradeEntity> all = trades.findAll(Sort.by(Sort.Order.asc("tradedAt"), Sort.Order.asc("id")));
-        Map<Long, CashLedgerEntryEntity> entries = ledger.findBySources(OptionTradeService.TRADE_SOURCE_TYPES,
+        List<OptionTradeEntity> all = trades.findByAccountIdOrderByTradedAtAscIdAsc(accountId);
+        Map<Long, CashLedgerEntryEntity> entries = ledger.findBySources(accountId, OptionTradeService.TRADE_SOURCE_TYPES,
                 all.stream().map(OptionTradeEntity::getId).toList());
 
         Map<ContractKey, List<LotTrade>> byContract = new LinkedHashMap<>();

@@ -47,8 +47,8 @@ public class PnlSummaryService {
 
     /** Realized P&amp;L of the closes whose New York close date is within [startDate, endDate] (either may be null). */
     @Transactional(readOnly = true)
-    public PnlSummary summary(LocalDate startDate, LocalDate endDate) {
-        List<PnlSummary.Entry> entries = closedTrades.all(
+    public PnlSummary summary(long accountId, LocalDate startDate, LocalDate endDate) {
+        List<PnlSummary.Entry> entries = closedTrades.all(accountId,
                         new TradeFilter(null, null, null, null, Set.of(), startDate, endDate)).stream()
                 .map(v -> new PnlSummary.Entry(v.trade().trade().getSymbol(), v.trade().trade().getTradedAt(),
                         v.figures().realizedPnl()))
@@ -57,13 +57,13 @@ public class PnlSummaryService {
     }
 
     @Transactional(readOnly = true)
-    public Dashboard dashboard() {
+    public Dashboard dashboard(long accountId) {
         LocalDate today = MarketTime.toLocal(clock.instant()).toLocalDate();
         YearMonth month = YearMonth.from(today);
-        PnlSummary all = summary(null, null);
+        PnlSummary all = summary(accountId, null, null);
         // No trade is later than now, so "from the 1st of this month" = this month so far.
-        PnlSummary thisMonth = summary(month.atDay(1), null);
-        OptionPositionService.PositionSummary ps = positions.currentPositions();
+        PnlSummary thisMonth = summary(accountId, month.atDay(1), null);
+        OptionPositionService.PositionSummary ps = positions.currentPositions(accountId);
         int expiring = 0;
         int expired = 0;
         for (OptionPosition p : ps.positions()) {
@@ -74,7 +74,7 @@ public class PnlSummaryService {
                 expiring++;
             }
         }
-        return new Dashboard(today, month, ledger.currentBalance(), all.total(), thisMonth.total(),
+        return new Dashboard(today, month, ledger.currentBalance(accountId), all.total(), thisMonth.total(),
                 ps.positions().size(), ps.frozenTotal(), expiring, expired);
     }
 }

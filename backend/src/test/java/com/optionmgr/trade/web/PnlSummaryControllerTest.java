@@ -35,6 +35,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 /** FEAT-008 acceptance criteria (backend part). "Now" defaults to 2026-11-12 10:00 New York (15:00Z). */
 @SpringBootTest
 @AutoConfigureMockMvc
+@org.springframework.context.annotation.Import(com.optionmgr.account.DefaultAccountMockMvc.class)
 class PnlSummaryControllerTest {
 
     static final Instant DEFAULT_NOW = Instant.parse("2026-11-12T15:00:00Z");

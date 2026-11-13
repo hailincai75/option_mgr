@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { useAccountQuery } from '../../account/useAccountQuery'
 import { Button, Card, Pagination, Space, Table, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { type HTMLAttributes, useState } from 'react'
@@ -170,10 +170,11 @@ export function CashLedgerTable({
   onPageChange,
   pageSize = CASH_LEDGER_PAGE_SIZE,
 }: CashLedgerTableProps) {
-  const { data, error, isPending, isFetching, refetch } = useQuery({
+  const { data, error, isPending, isFetching, refetch } = useAccountQuery({
+    // FEAT-033: per-account key; runs only once the current account is known.
     queryKey: cashQueryKeys.ledger(page, pageSize),
     queryFn: ({ signal }) => getCashLedger(page, pageSize, signal),
-    placeholderData: keepPreviousData,
+    keepPrevious: true,
   })
   const [editing, setEditing] = useState<CashLedgerEntry | null>(null)
   const [deleting, setDeleting] = useState<CashLedgerEntry | null>(null)

@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Alert, Button, Card, Form, Input, Radio, Space } from 'antd'
+import { Alert, Button, Card, Form, Input, Radio, Space, Typography } from 'antd'
 import { useState } from 'react'
 import { createCloseTrade, createOptionTrade } from '../../api/optionTrades'
 import type { OptionTrade, OptionType, TradeAction } from '../../api/types'
@@ -59,6 +59,10 @@ const ACTION_OPTIONS: { value: TradeAction; label: string }[] = [
   { value: 'STC', label: 'STC 卖出平仓' },
 ]
 
+/** Q61 wording (FEAT-038). */
+const SHORT_CALL_HINT =
+  '卖出 call 不冻结现金，请自行确保账户有足够股票覆盖（每张 = multiplier 股）；股票持仓功能（FEAT-011）上线后将自动检查。'
+
 function initialValues(): TradeEntryFormValues {
   return {
     symbol: '',
@@ -109,6 +113,9 @@ export function TradeEntryForm() {
   const [submitError, setSubmitError] = useState<SubmitError | null>(null)
   const [saved, setSaved] = useState<OptionTrade | null>(null)
   const action = Form.useWatch('action', form)
+  const optionType = Form.useWatch('optionType', form)
+  // FEAT-038 (Q61): selling a call freezes no cash; one line of guidance, no confirm, no block.
+  const shortCall = action === 'STO' && optionType === 'CALL'
   const closing = isClosingAction(action)
 
   const mutation = useMutation({
@@ -242,7 +249,16 @@ export function TradeEntryForm() {
           name="netAmount"
           required
           rules={[toRule(validateNetAmount)]}
-          extra="只填正数；方向决定现金流入还是流出"
+          extra={
+            <>
+              <div>只填正数；方向决定现金流入还是流出</div>
+              {shortCall && (
+                <Typography.Text type="warning" data-testid="open-trade-short-call-hint">
+                  {SHORT_CALL_HINT}
+                </Typography.Text>
+              )}
+            </>
+          }
         >
           <Input
             inputMode="decimal"

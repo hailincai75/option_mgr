@@ -3,6 +3,7 @@ package com.optionmgr.testsupport;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -29,6 +30,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 /** POST /api/test-support/reset with the e2e profile (in-memory H2 "e2e" from application-e2e.yml). */
 @SpringBootTest
 @AutoConfigureMockMvc
+@org.springframework.context.annotation.Import(com.optionmgr.account.DefaultAccountMockMvc.class)
 @ActiveProfiles({"test", "e2e"})
 class TestSupportResetE2eProfileTest {
 
@@ -65,7 +67,7 @@ class TestSupportResetE2eProfileTest {
     @Test
     void coversEveryTableFromTheSchemaExceptFlywayHistory() {
         assertThat(resetService.tables())
-                .contains("cash_account", "cash_transfer", "cash_ledger_entry", "option_trade", "audit_record")
+                .contains("account", "cash_account", "cash_transfer", "cash_ledger_entry", "option_trade", "audit_record")
                 .doesNotContain("flyway_schema_history");
     }
 
@@ -137,7 +139,7 @@ class TestSupportResetE2eProfileTest {
         CountDownLatch locked = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         CompletableFuture<Void> writer = CompletableFuture.runAsync(() -> tx.executeWithoutResult(status -> {
-            cashLedger.lockAccount();
+            cashLedger.lockAccount(1L);
             locked.countDown();
             try {
                 release.await(5, TimeUnit.SECONDS);
@@ -154,6 +156,30 @@ class TestSupportResetE2eProfileTest {
         release.countDown();
         writer.get(5, TimeUnit.SECONDS);
         reset.get(5, TimeUnit.SECONDS);
+    }
+
+    @Test
+    void resetLeavesOnlyTheDefaultAccount() throws Exception {
+        String created = mvc.perform(post("/api/accounts").contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("name", "小账户"))))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        assertThat(json.readTree(created).get("id").asLong()).isEqualTo(2);
+        mvc.perform(put("/api/accounts/1").contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(Map.of("name", "主账户")))).andExpect(status().isOk());
+        transfer("DEPOSIT", "100.00", "2026-01-05T10:00");
+
+        reset();
+
+        JsonNode accounts = getJson("/api/accounts");
+        assertThat(accounts).hasSize(1);
+        assertThat(accounts.get(0).get("id").asLong()).isEqualTo(1);
+        assertThat(accounts.get(0).get("name").asText()).isEqualTo("默认账户");
+        assertThat(getJson("/api/audit-log").get("totalItems").asInt()).isZero();
+        assertThat(getJson("/api/cash/summary").get("totalCash").asText()).isEqualTo("0.00");
+        String again = mvc.perform(post("/api/accounts").contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("name", "小账户"))))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        assertThat(json.readTree(again).get("id").asLong()).isEqualTo(2);
     }
 
     private void reset() throws Exception {

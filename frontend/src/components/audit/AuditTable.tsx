@@ -20,6 +20,10 @@ const SNAPSHOT_FIELDS: Record<string, { key: string; label: string; format: Fiel
     { key: 'cashChange', label: '现金变动', format: 'signedMoney' },
     { key: 'frozenChange', label: '冻结变动', format: 'signedMoney' },
   ],
+  ACCOUNT: [
+    { key: 'name', label: '名称', format: 'text' },
+    { key: 'brokerNote', label: '券商备注', format: 'text' },
+  ],
   CASH_TRANSFER: [
     { key: 'type', label: '类型', format: 'transferType' },
     { key: 'amount', label: '金额', format: 'money' },
@@ -48,11 +52,15 @@ function formatValue(value: string | number | null | undefined, format: FieldFor
   }
 }
 
-/** "期权交易 #2" / "入金 #1" / "出金 #3" (transfer kind from the snapshot before the change). */
+/**
+ * "期权交易 #2" / "入金 #1" / "出金 #3" (transfer kind from the snapshot before the change) /
+ * "账户 #1" (FEAT-033).
+ */
 function objectLabel(record: AuditRecord): string {
+  if (record.objectType === 'ACCOUNT') return `账户 #${String(record.objectId)}`
   if (record.objectType === 'OPTION_TRADE') return `期权交易 #${String(record.objectId)}`
   if (record.objectType === 'CASH_TRANSFER') {
-    const kind = record.before.type === 'WITHDRAWAL' ? '出金' : '入金'
+    const kind = (record.before ?? record.after)?.type === 'WITHDRAWAL' ? '出金' : '入金'
     return `${kind} #${String(record.objectId)}`
   }
   return `${record.objectType} #${String(record.objectId)}`
@@ -63,11 +71,14 @@ function Snapshot({
   snapshot,
   objectType,
   testId,
+  emptyText,
 }: {
   title: string
   snapshot: AuditSnapshot | null
   objectType: string
   testId: string
+  /** Shown when the snapshot is null: "已删除" (after a delete) or "无（新增）" (before a create). */
+  emptyText: string
 }) {
   const fields =
     SNAPSHOT_FIELDS[objectType] ??
@@ -81,7 +92,7 @@ function Snapshot({
       data-testid={testId}
       items={
         snapshot === null
-          ? [{ key: 'deleted', label: '状态', children: '已删除' }]
+          ? [{ key: 'empty', label: '状态', children: emptyText }]
           : fields.map((field) => ({
               key: field.key,
               label: field.label,
@@ -124,14 +135,18 @@ const columns: ColumnsType<AuditRecord> = [
     key: 'operation',
     render: (_value: unknown, record) => (
       <Tag
-        color={record.operation === 'DELETE' ? 'red' : 'blue'}
+        color={
+          record.operation === 'DELETE' ? 'red' : record.operation === 'CREATE' ? 'green' : 'blue'
+        }
         data-testid="audit-cell-operation"
       >
         {record.operation === 'DELETE'
           ? '删除'
           : record.operation === 'UPDATE'
             ? '修改'
-            : record.operation}
+            : record.operation === 'CREATE'
+              ? '新增'
+              : record.operation}
       </Tag>
     ),
   },
@@ -157,6 +172,8 @@ const columns: ColumnsType<AuditRecord> = [
     render: (_value: unknown, record) =>
       record.operation === 'DELETE' ? (
         <span data-testid="audit-cell-changes">已删除</span>
+      ) : record.operation === 'CREATE' ? (
+        <span data-testid="audit-cell-changes">已新增</span>
       ) : (
         lines(
           record.changes.map((change) => change.text),
@@ -203,6 +220,7 @@ export function AuditTable({ records, loading, empty }: AuditTableProps) {
                 snapshot={record.before}
                 objectType={record.objectType}
                 testId="audit-before"
+                emptyText="无（新增）"
               />
             </Col>
             <Col xs={24} md={12}>
@@ -211,6 +229,7 @@ export function AuditTable({ records, loading, empty }: AuditTableProps) {
                 snapshot={record.after}
                 objectType={record.objectType}
                 testId="audit-after"
+                emptyText="已删除"
               />
             </Col>
           </Row>
