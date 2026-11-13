@@ -25,6 +25,7 @@ import { EditTradeModal } from '../components/trade/EditTradeModal'
 import { TradeTable } from '../components/trade/TradeTable'
 import {
   isAssignmentAction,
+  isCallAssignment,
   isExpiryAction,
   tradeActionLabel,
 } from '../components/trade/tradeLabels'
@@ -33,14 +34,16 @@ import { formatDateTimeNY, formatInteger, formatMoney } from '../utils/format'
 /**
  * e.g. "STO 1 张 AAPL 2026-12-18 200 P，2026-11-04 11:00，+360.00", or for FEAT-012
  * "到期作废 3 张 XYZ 2026-11-20 45 P，2026-11-20 16:00，0.00", or for FEAT-013
- * "被指派 3 张 XYZ 2026-11-20 45 P，2026-11-20 16:00，买入 300 股 XYZ" (backend values, formatted).
+ * "被指派 3 张 XYZ 2026-11-20 45 P，2026-11-20 16:00，买入 300 股 XYZ" (FEAT-041 call: "卖出 300 股
+ * IXQZ") (backend values, formatted).
  */
 function tradeSummary(trade: OptionTrade): string {
   const time = formatDateTimeNY(trade.tradedAt)
   const head = `${String(trade.contracts)} 张 ${trade.contractLabel}，${time}`
   if (isAssignmentAction(trade.action) && trade.assignment !== null) {
     const shares = formatInteger(trade.assignment.shares)
-    return `${tradeActionLabel(trade.action)} ${head}，买入 ${shares} 股 ${trade.symbol}`
+    const verb = isCallAssignment(trade) ? '卖出' : '买入'
+    return `${tradeActionLabel(trade.action)} ${head}，${verb} ${shares} 股 ${trade.symbol}`
   }
   const cash = formatMoney(trade.cashChange, { signed: true })
   const action = isExpiryAction(trade.action) ? tradeActionLabel(trade.action) : trade.action
@@ -54,6 +57,10 @@ const EXPIRY_DELETE_WARNING = '删除后持仓恢复、冻结恢复，会写入�
 const ASSIGNMENT_DELETE_WARNING =
   '删除后期权持仓、冻结、现金恢复，生成的股票记录一起删除，会写入审计记录。'
 
+/** FEAT-041: deleting a call 被指派 gives back the delivered shares (no frozen cash involved). */
+const CALL_ASSIGNMENT_DELETE_WARNING =
+  '删除后期权持仓、现金恢复，交出的股票恢复为持仓，生成的股票记录一起删除，会写入审计记录。'
+
 function deleteTitle(trade: OptionTrade): string {
   const id = String(trade.id)
   if (isExpiryAction(trade.action)) return `删除到期作废 #${id}`
@@ -63,7 +70,9 @@ function deleteTitle(trade: OptionTrade): string {
 
 function deleteWarning(trade: OptionTrade): string | undefined {
   if (isExpiryAction(trade.action)) return EXPIRY_DELETE_WARNING
-  if (isAssignmentAction(trade.action)) return ASSIGNMENT_DELETE_WARNING
+  if (isAssignmentAction(trade.action)) {
+    return isCallAssignment(trade) ? CALL_ASSIGNMENT_DELETE_WARNING : ASSIGNMENT_DELETE_WARNING
+  }
   return undefined
 }
 

@@ -15,7 +15,8 @@ public enum CashSourceType {
     /** FEAT-012 expire worthless; source id = option_trade.id of the EXP record. Written only when it releases
      *  frozen cash (short put): amount 0, frozen change = -released; the frozen change may be corrected (Q39). */
     OPTION_EXPIRE,
-    /** FEAT-013 short put assigned; source id = option_trade.id of the ASG record. amount = -(purchase + fee),
+    /** FEAT-013 short put assigned (FEAT-041: or short call: amount +(strike amount - fee), frozen 0); source id =
+     *  option_trade.id of the ASG record. Put: amount = -(purchase + fee),
      *  frozen change = -released; the frozen change may be corrected (Q39). */
     OPTION_ASSIGN,
     /** FEAT-011 stock purchase; source id = stock_trade.id; amount = -paid, frozen change 0. */

@@ -53,9 +53,11 @@ public class OptionPositionController {
                                    /* FEAT-012: contracts at the cutoff = the expiry size to send back */
                                    int expiryContracts,
                                    Instant expiryAt, String expiryAtLocal,
-                                   /* FEAT-013: short put, any time (Q95) */
+                                   /* FEAT-013: short put, any time (Q95); FEAT-041: also short call */
                                    boolean assignable, List<AssignChoice> assignChoices,
-                                   LocalDate assignmentDateMax, LocalDate assignmentDateDefault) {
+                                   LocalDate assignmentDateMax, LocalDate assignmentDateDefault,
+                                   /* FEAT-041: short call rows: current shares of the underlying; null otherwise */
+                                   Long underlyingShares) {
     }
 
     /** FEAT-013: one selectable assignment size (earliest whole lots) and its shares. */
@@ -81,7 +83,8 @@ public class OptionPositionController {
         Instant now = s.now();
         long dte = p.dte(today);
         Instant cutoff = ExpirationTimes.tradingCutoff(c.expirationDate());
-        boolean assignable = p.direction() == PositionDirection.SHORT && c.optionType() == OptionType.PUT;
+        boolean assignable = p.direction() == PositionDirection.SHORT;
+        Long underlyingShares = assignable && c.optionType() == OptionType.CALL ? s.underlyingShares(p) : null;
         LocalDate latest = assignable ? AssignmentTerms.latestDate(c.expirationDate(), now) : null;
         return new PositionResponse(c.symbol(), c.expirationDate(), ContractKey.strikeText(c.strike()),
                 c.optionType(), c.label(), p.direction(), p.contracts(), p.multiplier(), p.openingNetTotal(),
@@ -92,7 +95,7 @@ public class OptionPositionController {
                 assignable
                         ? p.allowedCloseContracts().stream().map(n -> new AssignChoice(n, n * p.multiplier())).toList()
                         : List.of(),
-                latest, latest);
+                latest, latest, underlyingShares);
     }
 
     private static LotResponse toResponse(PositionLot l) {

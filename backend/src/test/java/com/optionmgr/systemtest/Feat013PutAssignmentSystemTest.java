@@ -473,7 +473,7 @@ class Feat013PutAssignmentSystemTest extends OptionTradeSystemTestBase {
     // ================================================================== AC 1
 
     @Test
-    @DisplayName("AC1 按钮时间窗（Q95）：11-17 平仓+被指派；11-20 16:30 到期待确认只有被指派；11-23 作废+被指派；多头 / 空头 call 不可被指派")
+    @DisplayName("AC1 按钮时间窗（Q95）：11-17 平仓+被指派；11-20 16:30 到期待确认只有被指派；11-23 作废+被指派；多头不可被指派；空头 call 自 FEAT-041 起可被指派（无股票 → 持股不足）")
     void ac1_buttonsAndChoices() {
         scenarioP();
 
@@ -482,9 +482,9 @@ class Feat013PutAssignmentSystemTest extends OptionTradeSystemTestBase {
         assertThat(buttons(xyz)).isEqualTo("true/false/false/true");
         assertThat(buttons(position(QRTV_P))).isEqualTo("true/false/false/true");
         assertThat(buttons(position(QRTV_C))).isEqualTo("true/false/false/false");
-        assertThat(buttons(position(IXQZ))).isEqualTo("true/false/false/false");
+        // FEAT-041: a short call is assignable too (was false in FEAT-013)
+        assertThat(buttons(position(IXQZ))).isEqualTo("true/false/false/true");
         assertNotAssignable(position(QRTV_C));
-        assertNotAssignable(position(IXQZ));
         // before 16:00: latest selectable date is yesterday (Q94)
         assertThat(xyz.get("assignmentDateMax").asText()).isEqualTo("2026-11-16");
         assertThat(xyz.get("assignmentDateDefault").asText()).isEqualTo("2026-11-16");
@@ -495,7 +495,7 @@ class Feat013PutAssignmentSystemTest extends OptionTradeSystemTestBase {
         assertThat(xyz.get("expirationStatus").asText()).isEqualTo("EXPIRES_TODAY");
         assertThat(buttons(xyz)).as("16:30: only 被指派").isEqualTo("false/true/false/true");
         assertThat(xyz.get("assignmentDateMax").asText()).isEqualTo("2026-11-20");
-        assertThat(buttons(position(IXQZ))).isEqualTo("false/true/false/false");
+        assertThat(buttons(position(IXQZ))).isEqualTo("false/true/false/true");
         assertThat(buttons(position(QRTV_C))).isEqualTo("false/true/false/false");
 
         clock.set(MON_1000);
@@ -506,7 +506,7 @@ class Feat013PutAssignmentSystemTest extends OptionTradeSystemTestBase {
         assertThat(xyz.get("assignmentDateMax").asText()).isEqualTo("2026-11-20");
         assertThat(xyz.get("assignmentDateDefault").asText()).isEqualTo("2026-11-20");
         assertThat(buttons(position(QRTV_C))).isEqualTo("false/false/true/false");
-        assertThat(buttons(position(IXQZ))).isEqualTo("false/false/true/false");
+        assertThat(buttons(position(IXQZ))).isEqualTo("false/false/true/true");
         // not yet expired short put: min(expiration, yesterday) = 11-22
         JsonNode qrtvP = position(QRTV_P);
         assertThat(qrtvP.get("assignable").asBoolean()).isTrue();
@@ -514,7 +514,8 @@ class Feat013PutAssignmentSystemTest extends OptionTradeSystemTestBase {
         assertThat(assignChoices(qrtvP)).containsExactly("1:100");
 
         assertThat(rejectedAssign(asgBody("IXQZ", "2026-11-20", "8", "CALL", 1, "2026-11-20", null, null),
-                "ASSIGN_CALL_NOT_SUPPORTED")).isEqualTo("卖出 call 的被指派暂不支持（FEAT-041）");
+                "SHARES_INSUFFICIENT")).as("FEAT-041: ASSIGN_CALL_NOT_SUPPORTED no longer returned")
+                .isEqualTo("持股不足：被指派需要 100 股 IXQZ，2026-11-20 16:00 时持有 0 股。请先录入股票（转入或更早的买入）");
         // a long position (call or put) is checked first: the long call gets the long-position text
         assertThat(rejectedAssign(asgBody("QRTV", "2026-11-20", "25", "CALL", 1, "2026-11-20", null, null),
                 "ASSIGN_LONG_POSITION")).isEqualTo("多头持仓不能被指派（主动行权见 FEAT-014）");

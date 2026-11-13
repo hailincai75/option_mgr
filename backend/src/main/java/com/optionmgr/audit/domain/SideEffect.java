@@ -15,6 +15,10 @@ public record SideEffect(long tradeId, String action, String contractLabel, Stri
 
     /** FEAT-013: {@link #field()} of a corrected assignment's stock cost. */
     public static final String STOCK_COST = "stockCost";
+    /** FEAT-041: {@link #field()} of a corrected call assignment's sale proceeds. */
+    public static final String PROCEEDS = "proceeds";
+    /** FEAT-041: {@link #field()} of a call assignment whose delivered shares' cost changed (new FIFO match). */
+    public static final String SOLD_COST = "soldCost";
 
     /**
      * "交易 #3 BTC 冻结变动 −24.70 → −24.69"; an expiry (FEAT-012): "到期作废 #17 冻结变动 −24.70 → −24.69"; an
@@ -26,7 +30,12 @@ public record SideEffect(long tradeId, String action, String contractLabel, Stri
             case "ASG" -> "被指派 #" + tradeId;
             default -> "交易 #" + tradeId + " " + action;
         };
-        String label = STOCK_COST.equals(field) ? "股票成本" : "冻结变动";
+        String label = switch (field) {
+            case STOCK_COST -> "股票成本";
+            case PROCEEDS -> "股票卖出实收";
+            case SOLD_COST -> "交出成本";
+            default -> "冻结变动";
+        };
         return subject + " " + label + " " + before + " → " + after;
     }
 }

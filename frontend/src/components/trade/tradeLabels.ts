@@ -38,20 +38,27 @@ export function isDeleteOnlyAction(action: string): boolean {
 /** Tag colors of the system-generated directions (told apart from BTO / STO / BTC / STC). */
 export const SPECIAL_ACTION_COLORS: Record<string, string> = { EXP: 'purple', ASG: 'magenta' }
 
+/** FEAT-041: a call assignment delivers shares (指派卖出); a put assignment buys them. */
+export function isCallAssignment(trade: Pick<OptionTrade, 'optionType'>): boolean {
+  return trade.optionType === 'CALL'
+}
+
 /**
- * FEAT-013 small text of a 被指派 row: "买入 300 股 XYZ，现金 −13,500.00" (+ "，指派费 5.00" when the
- * fee is not zero); backend values only. null for other records.
+ * Small text of a 被指派 row: put (FEAT-013) "买入 300 股 XYZ，现金 −13,500.00", call (FEAT-041)
+ * "卖出 300 股 IXQZ，现金 +2,700.00" (+ "，指派费 5.00" when the fee is not zero); backend values
+ * only. null for other records.
  */
 export function assignmentRowText(trade: OptionTrade): string | null {
   const assignment = trade.assignment
   if (assignment === null) return null
+  const verb = isCallAssignment(trade) ? '卖出' : '买入'
   const shares = formatInteger(assignment.shares)
   const cash = formatMoney(trade.cashChange, { signed: true })
   const fee =
     decimalSign(assignment.assignmentFee) === 0
       ? ''
       : `，指派费 ${formatMoney(assignment.assignmentFee)}`
-  return `买入 ${shares} 股 ${trade.symbol}，现金 ${cash}${fee}`
+  return `${verb} ${shares} 股 ${trade.symbol}，现金 ${cash}${fee}`
 }
 
 /** Text colors for signed money: positive green, negative red (index with `decimalSign()`). */

@@ -254,8 +254,8 @@ function positionColumns(
       title: '操作',
       key: 'actions',
       // Backend flags only: 平仓 before 16:00 NY on the expiration date (`closable`), 作废 from
-      // 17:30 (`expirable`, FEAT-012), and 被指派 on short puts at any time (`assignable`,
-      // FEAT-013 Q95 — the only button while 到期待确认).
+      // 17:30 (`expirable`, FEAT-012), and 被指派 on short puts / calls at any time (`assignable`,
+      // FEAT-013 / FEAT-041 Q95 — the only button while 到期待确认).
       render: (_value: unknown, position) => {
         if (!position.closable && !position.expirable && !position.assignable) return null
         return (

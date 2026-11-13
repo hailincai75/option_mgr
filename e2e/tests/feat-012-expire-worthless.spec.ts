@@ -576,9 +576,10 @@ test.describe('FEAT-012 到期作废', () => {
       await expect(today.getByTestId('position-expiry-pending')).toHaveText('到期待确认')
       await expect(today.getByTestId('position-close')).toHaveCount(0)
       await expect(today.getByTestId('position-expire')).toHaveCount(0)
-      await expect(today.getByRole('button')).toHaveCount(0)
+      // no action button (the row's 批次 expand toggle is also a button, so match by name)
+      await expect(today.getByRole('button', { name: /平\s*仓|作\s*废|被\s*指\s*派/ })).toHaveCount(0)
       await today.getByTestId('position-expiry-pending').hover()
-      await expect(page.getByRole('tooltip')).toHaveText('16:00 已停止交易；17:30 前仍可能被指派（空头 put 可记录被指派），17:30（美东）起可作废')
+      await expect(page.getByRole('tooltip')).toHaveText('16:00 已停止交易；17:30 前仍可能被指派，17:30（美东）起可作废')
     } else {
       await expect(today.getByTestId('position-expire')).toBeVisible()
       await expect(today.getByTestId('position-close')).toHaveCount(0)

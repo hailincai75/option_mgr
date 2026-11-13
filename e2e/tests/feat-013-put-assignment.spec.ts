@@ -436,7 +436,7 @@ class Ui {
 // ------------------------------------------------------------------------------------------------ tests
 
 test.describe('FEAT-013 卖出 put 被指派', () => {
-  test('AC1 按钮：已过期 XYZ 作废+被指派、未到期 QRTV put 平仓+被指派、多头 / 空头 call 只有作废；对话框只读信息、张数选项、默认日期与最晚日期、指派费 0.00', async ({ page }) => {
+  test('AC1 按钮：已过期 XYZ 作废+被指派、未到期 QRTV put 平仓+被指派、多头 call 只有作废、空头 call 作废+被指派（FEAT-041）；对话框只读信息、张数选项、默认日期与最晚日期、指派费 0.00', async ({ page }) => {
     await scenarioP()
     const ui = new Ui(page)
     await ui.openPositions()
@@ -446,10 +446,10 @@ test.describe('FEAT-013 卖出 put 被指派', () => {
     await expect.poll(() => ui.rowButtons(XYZ)).toEqual(['作废', '被指派'])
     await expect(ui.posRow(XYZ).getByTestId(S.posAssign)).toHaveText(TEXT.assignButton)
     await expect.poll(() => ui.rowButtons(QRTV_P)).toEqual(['平仓', '被指派'])
-    for (const c of [QRTV_C, IXQZ]) {
-      await expect.poll(() => ui.rowButtons(c)).toEqual(['作废'])
-      await expect(ui.posRow(c).getByTestId(S.posAssign)).toHaveCount(0)
-    }
+    await expect.poll(() => ui.rowButtons(QRTV_C)).toEqual(['作废'])
+    await expect(ui.posRow(QRTV_C).getByTestId(S.posAssign)).toHaveCount(0)
+    // FEAT-041: the short call is assignable as well
+    await expect.poll(() => ui.rowButtons(IXQZ)).toEqual(['作废', '被指派'])
 
     const d = await ui.openAssign(XYZ)
     await expect(d.getByTestId(S.assignContract)).toHaveText(XYZ)
@@ -494,7 +494,7 @@ test.describe('FEAT-013 卖出 put 被指派', () => {
     } else if (phase === 'pending') {
       await expect(ui.posRow(put).getByTestId(S.posPending)).toHaveText('到期待确认')
       await expect.poll(() => ui.rowButtons(put)).toEqual(['被指派'])
-      await expect(ui.posRow(call).getByRole('button')).toHaveCount(0)
+      await expect.poll(() => ui.rowButtons(call)).toEqual([]) // the 批次 expand toggle is also a button
     } else {
       await expect.poll(() => ui.rowButtons(put)).toEqual(['作废', '被指派'])
       await expect.poll(() => ui.rowButtons(call)).toEqual(['作废'])

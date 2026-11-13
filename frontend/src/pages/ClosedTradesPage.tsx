@@ -31,6 +31,10 @@ const EXPIRY_NOTE = '到期作废的平仓净额为 0.00，记在到期日 16:00
 const ASSIGNMENT_NOTE =
   '被指派（卖出 put）的期权已实现盈亏为 0.00，权利金计入股票成本，股票卖出时体现在股票盈亏中。'
 
+/** FEAT-041: page note sentence about call assignments (Q8 provisional rule, Q100). */
+const CALL_ASSIGNMENT_NOTE =
+  '被指派（卖出 call，暂定口径）的期权已实现盈亏为 0.00，权利金计入股票卖出实收；股票“指派卖出”行按 FIFO 显示股票盈亏，一次被指派计 2 笔。'
+
 /** FEAT-040: page note sentence about stock sales (requirement wording). */
 const STOCK_NOTE =
   '股票卖出：成本为按 FIFO 被卖出批次的成本（部分卖出按比例四舍五入到分），每股数字保留 4 位小数，仅供参考；股票转入和买入没有已实现盈亏。'
@@ -155,6 +159,7 @@ export function ClosedTradesPage() {
           净额均已含手续费；空头开仓为实收、多头开仓为实付；每张平均四舍五入到分，仅供参考。展开行查看被平掉的开仓批次（FIFO）。
           <span data-testid="closed-expiry-note">{EXPIRY_NOTE}</span>
           <span data-testid="closed-assignment-note">{ASSIGNMENT_NOTE}</span>
+          <span data-testid="closed-call-assignment-note">{CALL_ASSIGNMENT_NOTE}</span>
           <span data-testid="closed-stock-note">{STOCK_NOTE}</span>
         </Typography.Text>
         <ClosedTradeTable

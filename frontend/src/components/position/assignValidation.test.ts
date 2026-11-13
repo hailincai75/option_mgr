@@ -58,7 +58,7 @@ describe('FEAT-013 links and filters', () => {
     })
     expect(validateStockFilters({ ...EMPTY_STOCK_FILTERS, type: ['ASSIGN_BUY'] })).toEqual({})
     expect(validateStockFilters({ ...EMPTY_STOCK_FILTERS, type: ['X'] })).toEqual({
-      type: '类型只能是 BUY、SELL、TRANSFER_IN、ASSIGN_BUY',
+      type: '类型只能是 BUY、SELL、TRANSFER_IN、ASSIGN_BUY、ASSIGN_SELL',
     })
   })
 })

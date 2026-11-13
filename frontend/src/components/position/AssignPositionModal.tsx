@@ -11,6 +11,7 @@ import {
   formatMoney,
 } from '../../utils/format'
 import { NOTE_MAX_LENGTH, validateNote } from '../trade/openTradeValidation'
+import { SoldLotTable } from '../stock/SoldLotTable'
 import { CoveredLotTable } from '../trade/TradeConfirmation'
 import {
   applySubmitError,
@@ -18,7 +19,7 @@ import {
   toRule,
   type SubmitError,
 } from '../trade/tradeFormSupport'
-import { SIGNED_MONEY_COLORS } from '../trade/tradeLabels'
+import { isCallAssignment, SIGNED_MONEY_COLORS } from '../trade/tradeLabels'
 import {
   assignmentFeeForRequest,
   validateAssignmentDate,
@@ -40,10 +41,15 @@ const FIELD_NAMES: readonly (keyof AssignFormValues)[] = [
   'note',
 ]
 
-const EXPLANATION =
+const PUT_EXPLANATION =
   '被指派后按行权价用该批次冻结的现金买入股票；股票成本 = 行权价 × 股数 − 被指派批次的权利金 + 指派费，期权一侧已实现盈亏记 0.00（权利金在股票卖出时体现）。记错可以在交易列表中删除。'
 
-function SignedMoney({ value, testId }: { value: string; testId: string }) {
+/** FEAT-041: call wording (requirement 页面与交互, Q8 provisional rule). */
+const CALL_EXPLANATION =
+  '按行权价按 FIFO 交出股票；卖出实收 = 行权价 × 股数 + 权利金 − 指派费，期权已实现盈亏记 0.00（暂定口径）。持股不足时请先录入股票。'
+
+function SignedMoney({ value, testId }: { value: string | null; testId: string }) {
+  if (value === null) return <span data-testid={testId}>{EMPTY_VALUE}</span>
   return (
     <span
       data-testid={testId}
@@ -61,20 +67,21 @@ function Money({
   signed = false,
   dashZero = false,
 }: {
-  value: string
+  value: string | null
   testId: string
   signed?: boolean
   dashZero?: boolean
 }) {
   return (
     <span data-testid={testId} style={{ fontVariantNumeric: 'tabular-nums' }}>
-      {dashZero && decimalSign(value) === 0 ? EMPTY_VALUE : formatMoney(value, { signed })}
+      {value !== null && dashZero && decimalSign(value) === 0 ? EMPTY_VALUE : formatMoney(value, { signed })}
     </span>
   )
 }
 
 function AssignResult({ trade, onDone }: { trade: OptionTrade; onDone: () => void }) {
   const assignment = trade.assignment
+  const isCall = isCallAssignment(trade)
   return (
     <Space orientation="vertical" size={12} style={{ width: '100%' }}>
       <Alert type="success" showIcon title="已记录被指派" data-testid="assign-result" />
@@ -93,7 +100,41 @@ function AssignResult({ trade, onDone }: { trade: OptionTrade; onDone: () => voi
             {trade.multiplier !== 100 && `（multiplier ${String(trade.multiplier)}）`}
           </span>
         </Descriptions.Item>
-        {assignment !== null && (
+        {assignment !== null && isCall && (
+          <>
+            <Descriptions.Item label="权利金合计">
+              <Money value={assignment.premium} testId="assign-result-premium" />
+            </Descriptions.Item>
+            <Descriptions.Item label="卖出股数">
+              <span data-testid="assign-result-shares">
+                {formatInteger(assignment.shares)} 股 {trade.symbol}
+              </span>
+            </Descriptions.Item>
+            <Descriptions.Item label="行权金额">
+              <Money value={assignment.saleAmount ?? null} testId="assign-result-sale-amount" />
+            </Descriptions.Item>
+            <Descriptions.Item label="指派费">
+              <Money value={assignment.assignmentFee} testId="assign-result-fee" />
+            </Descriptions.Item>
+            <Descriptions.Item label="卖出实收">
+              <strong>
+                <Money value={assignment.proceeds ?? null} testId="assign-result-proceeds" />
+              </strong>
+            </Descriptions.Item>
+            <Descriptions.Item label="交出成本">
+              <Money value={assignment.soldCost ?? null} testId="assign-result-sold-cost" />
+            </Descriptions.Item>
+            <Descriptions.Item label="股票已实现盈亏">
+              <strong>
+                <SignedMoney
+                  value={assignment.stockRealizedPnl ?? null}
+                  testId="assign-result-stock-pnl"
+                />
+              </strong>
+            </Descriptions.Item>
+          </>
+        )}
+        {assignment !== null && !isCall && (
           <>
             <Descriptions.Item label="权利金合计">
               <Money value={assignment.premium} testId="assign-result-premium" />
@@ -138,6 +179,12 @@ function AssignResult({ trade, onDone }: { trade: OptionTrade; onDone: () => voi
           <CoveredLotTable lots={trade.coveredLots} />
         </div>
       )}
+      {isCall && assignment?.soldLots != null && (
+        <div data-testid="assign-result-sold-lots">
+          <div style={{ margin: '0 0 4px' }}>交出的股票批次（FIFO）</div>
+          <SoldLotTable lots={assignment.soldLots} />
+        </div>
+      )}
       <Button type="primary" onClick={onDone} data-testid="assign-done">
         完成
       </Button>
@@ -152,11 +199,14 @@ interface AssignPositionModalProps {
 }
 
 /**
- * 记录被指派 dialog (FEAT-013) opened from an assignable (short put) position row. Contracts can
+ * 记录被指派 dialog (FEAT-013 put / FEAT-041 call) opened from an assignable short position row. Contracts can
  * only be one of the backend's `assignChoices`; the date defaults to `assignmentDateDefault` and
  * the picker stops at `assignmentDateMax`. Only format checks happen here: date / position / cash
  * rules come back as 422 and are shown verbatim, keeping the dialog and its values. On success the
- * result (stock cost, cash and frozen changes, assigned lots) is the backend's response.
+ * result (put: stock cost; call: proceeds, sold cost, stock P&L and delivered lots; cash and frozen
+ * changes, assigned lots) is the backend's response. For a call the dialog shows the backend's
+ * current `underlyingShares` instead of the frozen cash; SHARES_INSUFFICIENT /
+ * ASSIGNMENT_PROCEEDS_NOT_POSITIVE come back as 422 and are shown verbatim.
  */
 export function AssignPositionModal({ position, onDone }: AssignPositionModalProps) {
   const [form] = Form.useForm<AssignFormValues>()
@@ -164,6 +214,7 @@ export function AssignPositionModal({ position, onDone }: AssignPositionModalPro
   const [submitError, setSubmitError] = useState<SubmitError | null>(null)
   const [saved, setSaved] = useState<OptionTrade | null>(null)
   const choices = position.assignChoices
+  const isCall = isCallAssignment(position)
 
   const mutation = useMutation({
     mutationFn: (values: AssignFormValues) =>
@@ -222,9 +273,19 @@ export function AssignPositionModal({ position, onDone }: AssignPositionModalPro
             <Descriptions.Item label="当前持仓">
               <span data-testid="assign-position-contracts">{position.contracts} 张</span>
             </Descriptions.Item>
-            <Descriptions.Item label="冻结现金" span={2}>
-              <Money value={position.frozenCash} testId="assign-frozen" dashZero />
-            </Descriptions.Item>
+            {isCall ? (
+              <Descriptions.Item label="当前持股" span={2}>
+                <span data-testid="assign-underlying-shares">
+                  {position.underlyingShares == null
+                    ? EMPTY_VALUE
+                    : `${formatInteger(position.underlyingShares)} 股 ${position.symbol}`}
+                </span>
+              </Descriptions.Item>
+            ) : (
+              <Descriptions.Item label="冻结现金" span={2}>
+                <Money value={position.frozenCash} testId="assign-frozen" dashZero />
+              </Descriptions.Item>
+            )}
           </Descriptions>
           <Form<AssignFormValues>
             form={form}
@@ -278,7 +339,7 @@ export function AssignPositionModal({ position, onDone }: AssignPositionModalPro
               label="指派费"
               name="assignmentFee"
               rules={[toRule(validateAssignmentFee)]}
-              extra="券商收取的指派手续费，计入股票成本"
+              extra={isCall ? '券商收取的指派手续费，从卖出实收中扣' : '券商收取的指派手续费，计入股票成本'}
             >
               <Input
                 inputMode="decimal"
@@ -297,7 +358,7 @@ export function AssignPositionModal({ position, onDone }: AssignPositionModalPro
               />
             </Form.Item>
             <Typography.Paragraph type="secondary" data-testid="assign-explanation">
-              {EXPLANATION}
+              {isCall ? CALL_EXPLANATION : PUT_EXPLANATION}
             </Typography.Paragraph>
             {submitError !== null && (
               <Form.Item>

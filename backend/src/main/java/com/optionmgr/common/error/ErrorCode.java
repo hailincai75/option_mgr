@@ -42,8 +42,11 @@ public enum ErrorCode {
     SHARES_INSUFFICIENT(HttpStatus.UNPROCESSABLE_ENTITY),
     /** FEAT-011: an edit tries to change the symbol or type of a stock trade (delete and re-enter instead). */
     STOCK_TRADE_IDENTITY_NOT_EDITABLE(HttpStatus.UNPROCESSABLE_ENTITY),
-    /** FEAT-013: only short puts can be assigned here (short calls: FEAT-041). */
+    /** FEAT-013: short calls could not be assigned. Deprecated: no longer returned since FEAT-041. */
+    @Deprecated
     ASSIGN_CALL_NOT_SUPPORTED(HttpStatus.UNPROCESSABLE_ENTITY),
+    /** FEAT-041: a short-call assignment's sale proceeds would be 0 or negative (fee too large). */
+    ASSIGNMENT_PROCEEDS_NOT_POSITIVE(HttpStatus.UNPROCESSABLE_ENTITY),
     /** FEAT-013: the position at the assignment time is long (exercise: FEAT-014). */
     ASSIGN_LONG_POSITION(HttpStatus.UNPROCESSABLE_ENTITY),
     /** FEAT-013 Q76 / Q94: assignment date later than the expiration date / today / now. */

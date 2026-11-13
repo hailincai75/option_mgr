@@ -16,6 +16,7 @@ import com.optionmgr.trade.domain.PositionDirection;
 import com.optionmgr.trade.domain.PositionLot;
 import com.optionmgr.trade.repository.OptionTradeEntity;
 import com.optionmgr.trade.service.ClosedTradeService;
+import com.optionmgr.trade.service.OptionTradeService;
 import com.optionmgr.trade.service.ClosedTradeService.ClosedRecordView;
 import com.optionmgr.trade.service.ClosedTradeService.ClosedTradeView;
 import com.optionmgr.trade.service.ClosedTradeService.StockSaleView;
@@ -49,21 +50,23 @@ public class ClosedTradeController {
     public record ClosedTradeResponse(ClosedRecordType type, long id, Instant tradedAt, String tradedAtLocal,
                                       String symbol, LocalDate expirationDate, String strike, OptionType optionType,
                                       String contractLabel,
-                                      /* BTC / STC / EXP; SELL on stock rows */
+                                      /* BTC / STC / EXP / ASG; SELL / ASSIGN_SELL on stock rows */
                                       String action, PositionDirection closedDirection, Integer contracts,
                                       Integer multiplier, Integer shares, BigDecimal openingNetTotal,
                                       BigDecimal openingNetPerContract, BigDecimal costPerShare,
                                       BigDecimal closeNetAmount, BigDecimal closeNetPerContract,
                                       BigDecimal pricePerShare, BigDecimal realizedPnl, String note,
                                       List<CoveredLotResponse> coveredLots, List<SoldLotResponse> soldLots,
-                                      /* FEAT-013: ASG rows only (shares, stock cost, generated lot id) */
+                                      /* FEAT-013: ASG rows only (shares, stock cost or (FEAT-041) proceeds, generated record id) */
                                       AssignedStockResponse assignment,
+                                      /* FEAT-041: ASSIGN_SELL stock rows: the call assignment (option trade id); null otherwise */
+                                      Long assignmentTradeId,
                                       /* the closing trade's / sale's (id) stored flag: it has been edited */
                                       boolean hasAuditLog) {
     }
 
-    /** FEAT-013: where an assignment's premium went: the generated stock lot. */
-    public record AssignedStockResponse(int shares, BigDecimal stockCost, Long stockTradeId) {
+    /** FEAT-013: where an assignment's premium went: the generated stock lot (put) or (FEAT-041) stock sale (call). */
+    public record AssignedStockResponse(int shares, BigDecimal stockCost, BigDecimal proceeds, Long stockTradeId) {
     }
 
     /** A lot part taken by a stock sale; {@code netAmount} = -cost (cash sign). */
@@ -112,9 +115,17 @@ public class ClosedTradeController {
                 c.label(), t.getAction().name(), f.closedDirection(), t.getContracts(), t.getMultiplier(), null,
                 f.openingNetTotal(), f.openingNetPerContract(), null, f.closeNetAmount(), f.closeNetPerContract(),
                 null, f.realizedPnl(), t.getNote(), f.coveredLots().stream().map(ClosedTradeController::toLot).toList(),
-                null, v.trade().assignment().map(a -> new AssignedStockResponse(a.shares(), a.stockCost(),
-                        v.trade().assignedLot() == null ? null : v.trade().assignedLot().getId())).orElse(null),
-                t.hasAuditLog());
+                null, assignedStock(v.trade()), null, t.hasAuditLog());
+    }
+
+    /** FEAT-013 put: shares + stock cost; FEAT-041 call: shares + proceeds; null for other records. */
+    private static AssignedStockResponse assignedStock(OptionTradeService.TradeView view) {
+        Long stockTradeId = view.assignedLot() == null ? null : view.assignedLot().getId();
+        return view.assignment()
+                .map(a -> new AssignedStockResponse(a.shares(), a.stockCost(), null, stockTradeId))
+                .or(() -> view.callAssignment()
+                        .map(a -> new AssignedStockResponse(a.shares(), null, a.proceeds(), stockTradeId)))
+                .orElse(null);
     }
 
     private static ClosedTradeResponse toResponse(StockSaleView v) {
@@ -124,7 +135,8 @@ public class ClosedTradeController {
                 t.getSymbol(), null, null, null, null, t.getType().name(), null, null, null, t.getShares(),
                 f.openingNetTotal(), null, f.costPerShare(), f.closeNetAmount(), null, f.pricePerShare(),
                 f.realizedPnl(), t.getNote(), null,
-                f.match().lots().stream().map(ClosedTradeController::toSoldLot).toList(), null, t.hasAuditLog());
+                f.match().lots().stream().map(ClosedTradeController::toSoldLot).toList(), null,
+                t.getType() == StockTradeType.ASSIGN_SELL ? t.getOptionTradeId() : null, t.hasAuditLog());
     }
 
     private static CoveredLotResponse toLot(PositionLot l) {

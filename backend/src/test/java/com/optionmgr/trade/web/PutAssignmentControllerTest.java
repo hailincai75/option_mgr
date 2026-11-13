@@ -275,7 +275,7 @@ class PutAssignmentControllerTest {
         assertThat(buttons(XYZ)).containsExactly(true, false, false, true);
         assertThat(buttons("QRTV 2026-12-18 30 P")).containsExactly(true, false, false, true);
         assertThat(buttons("QRTV 2026-11-20 25 C")).containsExactly(true, false, false, false);
-        assertThat(buttons("IXQZ 2026-11-20 8 C")).containsExactly(true, false, false, false);
+        assertThat(buttons("IXQZ 2026-11-20 8 C")).containsExactly(true, false, false, true) /* FEAT-041: short call */;
         JsonNode longCall = position("QRTV 2026-11-20 25 C");
         assertThat(longCall.get("assignChoices")).isEmpty();
         assertThat(longCall.get("assignmentDateMax").isNull()).isTrue();
@@ -284,13 +284,13 @@ class PutAssignmentControllerTest {
         clock.set(FRI_20_1630);
         assertThat(buttons(XYZ)).containsExactly(false, true, false, true);
         assertThat(position(XYZ).get("expirationStatus").asText()).isEqualTo("EXPIRES_TODAY");
-        assertThat(buttons("IXQZ 2026-11-20 8 C")).containsExactly(false, true, false, false);
+        assertThat(buttons("IXQZ 2026-11-20 8 C")).containsExactly(false, true, false, true);
         assertThat(buttons("QRTV 2026-11-20 25 C")).containsExactly(false, true, false, false);
 
         clock.set(MON_23_10AM);
         assertThat(buttons(XYZ)).containsExactly(false, false, true, true);
         assertThat(buttons("QRTV 2026-11-20 25 C")).containsExactly(false, false, true, false);
-        assertThat(buttons("IXQZ 2026-11-20 8 C")).containsExactly(false, false, true, false);
+        assertThat(buttons("IXQZ 2026-11-20 8 C")).containsExactly(false, false, true, true);
         JsonNode xyz = position(XYZ);
         assertThat(xyz.get("daysPastExpiration").asInt()).isEqualTo(3);
         assertThat(json.writeValueAsString(xyz.get("assignChoices")))
@@ -298,8 +298,8 @@ class PutAssignmentControllerTest {
         assertThat(xyz.get("assignmentDateMax").asText()).isEqualTo("2026-11-20");
         assertThat(xyz.get("assignmentDateDefault").asText()).isEqualTo("2026-11-20");
 
-        assignRejected(assignBody("IXQZ", "8", "CALL", 1, "2026-11-20", null), "ASSIGN_CALL_NOT_SUPPORTED",
-                "卖出 call 的被指派暂不支持（FEAT-041）");
+        assignRejected(assignBody("IXQZ", "8", "CALL", 1, "2026-11-20", null), "SHARES_INSUFFICIENT",
+                "持股不足：被指派需要 100 股 IXQZ，2026-11-20 16:00 时持有 0 股。请先录入股票（转入或更早的买入）"); // FEAT-041
         assignRejected(assignBody("QRTV", "25", "CALL", 1, "2026-11-20", null), "ASSIGN_LONG_POSITION",
                 "多头持仓不能被指派（主动行权见 FEAT-014）");
     }
@@ -374,7 +374,7 @@ class PutAssignmentControllerTest {
                 "openingNetTotal", "openingNetPerContract", "closeNetAmount", "closeNetPerContract", "realizedPnl"))
                 .containsExactly("OPTION " + id + " ASG SHORT 3 370.00 123.33 0.00 0.00 0.00");
         assertThat(json.writeValueAsString(row.get("assignment")))
-                .isEqualTo("{\"shares\":300,\"stockCost\":\"13130.00\",\"stockTradeId\":" + stockId + "}");
+                .isEqualTo("{\"shares\":300,\"stockCost\":\"13130.00\",\"proceeds\":null,\"stockTradeId\":" + stockId + "}");
         assertThat(getJson("/api/closed-trades?action=ASG").get("filteredCount").asInt()).isEqualTo(1);
 
         JsonNode pnl = getJson("/api/pnl-summary");

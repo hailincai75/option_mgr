@@ -225,9 +225,9 @@ class Feat033MigrationSystemTest {
             assertThat(call(m, get("/api/accounts"), null, 200)).hasSize(2);
         }
         assertThat(backups("cashdb")).hasSize(1);
-        // all migrations applied: the highest version equals the highest V<n>__*.sql shipped in db/migration
+        // all migrations applied (version is VARCHAR in flyway history, so compare numerically: "9" > "10" as text): the highest version equals the highest V<n>__*.sql shipped in db/migration
         // (derived from the files so a new migration, e.g. FEAT-012's V7, does not require editing this test)
-        assertThat(count(url, "SELECT MAX(version) FROM \"flyway_schema_history\" WHERE success"))
+        assertThat(count(url, "SELECT MAX(CAST(version AS INT)) FROM \"flyway_schema_history\" WHERE success"))
                 .isEqualTo(latestMigrationVersion());
     }
 }

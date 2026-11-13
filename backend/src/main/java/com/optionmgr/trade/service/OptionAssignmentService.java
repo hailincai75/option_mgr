@@ -10,9 +10,14 @@ import com.optionmgr.common.error.ApiException;
 import com.optionmgr.common.error.ErrorCode;
 import com.optionmgr.common.money.Money;
 import com.optionmgr.common.time.MarketTime;
+import com.optionmgr.stock.domain.StockMessages;
+import com.optionmgr.stock.domain.StockRecord;
+import com.optionmgr.stock.domain.StockTradeType;
 import com.optionmgr.stock.repository.StockTradeEntity;
 import com.optionmgr.stock.repository.StockTradeRepository;
+import com.optionmgr.stock.service.StockTradeService;
 import com.optionmgr.trade.domain.AssignmentTerms;
+import com.optionmgr.trade.domain.CallAssignmentTerms;
 import com.optionmgr.trade.domain.CloseMatch;
 import com.optionmgr.trade.domain.ContractHistory;
 import com.optionmgr.trade.domain.ContractKey;
@@ -28,6 +33,7 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -41,6 +47,9 @@ import org.springframework.transaction.annotation.Transactional;
  * lots (Q73 / Q21) with option realized P&amp;L 0 (Q8). The frozen cash of those lots buys the shares at the strike
  * (rounded up, Q96): one ledger entry OPTION_ASSIGN (cash -(purchase + fee), frozen -released) and one generated
  * stock lot ASSIGN_BUY whose cost = purchase - premium + fee. Deleting goes through {@link OptionTradeEditService}.
+ * <p>FEAT-041: a short call is assigned the same way; the shares held are delivered at the strike (rounded down,
+ * Q99): ledger entry OPTION_ASSIGN (cash +(strike amount - fee), frozen 0) and one generated ASSIGN_SELL record whose
+ * proceeds = strike amount + premium - fee, sold FIFO like a SELL.
  */
 @Service
 public class OptionAssignmentService {
@@ -49,10 +58,13 @@ public class OptionAssignmentService {
     private final OptionTradeService tradeService;
     private final StockTradeRepository stockTrades;
     private final CashLedgerService ledger;
+    private final StockTradeService stocks;
     private final Clock clock;
 
     public OptionAssignmentService(OptionTradeRepository trades, OptionTradeService tradeService,
-                                   StockTradeRepository stockTrades, CashLedgerService ledger, Clock clock) {
+                                   StockTradeRepository stockTrades, CashLedgerService ledger,
+                                   StockTradeService stocks, Clock clock) {
+        this.stocks = stocks;
         this.trades = trades;
         this.tradeService = tradeService;
         this.stockTrades = stockTrades;
@@ -87,13 +99,10 @@ public class OptionAssignmentService {
         ContractHistory history = OptionTradeService.replayWith(existing, candidate);
         ReplayedTrade step = history.step(LotTrade.NOT_YET_ENTERED);
 
-        // 2. short puts only: a long position (call or put) is exercised, not assigned (FEAT-014);
-        //    short calls follow in FEAT-041
+        // 2. short positions only: a long position (call or put) is exercised, not assigned (FEAT-014);
+        //    short calls are accepted since FEAT-041
         if (step.violations().contains(ViolationKind.CLOSE_WRONG_DIRECTION)) {
             throw new ApiException(ErrorCode.ASSIGN_LONG_POSITION, "多头持仓不能被指派（主动行权见 FEAT-014）");
-        }
-        if (contract.optionType() == OptionType.CALL) {
-            throw new ApiException(ErrorCode.ASSIGN_CALL_NOT_SUPPORTED, "卖出 call 的被指派暂不支持（FEAT-041）");
         }
 
         // 3. Q76 / Q94: not later than the expiration date, today, now
@@ -112,6 +121,9 @@ public class OptionAssignmentService {
         OptionTradeService.rejectFirstViolation(contract, history, k -> true);
         CloseMatch match = step.match().orElseThrow();
         int multiplier = step.effectiveMultiplier();
+        if (contract.optionType() == OptionType.CALL) {
+            return assignCall(accountId, cmd, existing, history, match, multiplier, fee, note, at);
+        }
         AssignmentTerms terms = AssignmentTerms.of(contract, cmd.contracts(), multiplier, fee, match);
 
         // 7. stock cost > 0 (this assignment, and later ones re-matched to other lots)
@@ -142,7 +154,60 @@ public class OptionAssignmentService {
                 terms.shares(), terms.stockCost(), at, assignment.getId(), now));
         ledger.correctFrozenChanges(accountId, corrections);
         OptionTradeService.applyCostCorrections(costs);
-        return new OptionTradeService.TradeView(assignment, entry, Optional.of(match), lot);
+        return new OptionTradeService.TradeView(assignment, entry, Optional.of(match), lot, null);
+    }
+
+    /**
+     * FEAT-041 steps 7-9 of a short-call assignment (steps 1-6 are shared with puts): proceeds &gt; 0, shares held at
+     * the assignment time and for every later sale / call assignment of the symbol (Q75, Q15), cash. Saves the ASG
+     * record, its OPTION_ASSIGN entry (+(strike amount - fee), frozen 0) and the generated ASSIGN_SELL record.
+     */
+    private OptionTradeService.TradeView assignCall(long accountId, AssignCommand cmd,
+                                                    OptionTradeService.ContractTrades existing,
+                                                    ContractHistory history, CloseMatch match, int multiplier,
+                                                    BigDecimal fee, String note, Instant at) {
+        ContractKey contract = cmd.contract();
+        CallAssignmentTerms terms = CallAssignmentTerms.of(contract, cmd.contracts(), multiplier, fee, match);
+
+        // 7. sale proceeds > 0 (this assignment, and later ones re-matched to other lots)
+        if (terms.proceeds().signum() <= 0) {
+            throw new ApiException(ErrorCode.ASSIGNMENT_PROCEEDS_NOT_POSITIVE, "被指派后股票卖出实收将为 "
+                    + Money.display(terms.proceeds()) + "，请检查指派费");
+        }
+        List<OptionTradeService.CostCorrection> costs = tradeService.costCorrections(accountId, contract, existing,
+                history, LotTrade.NOT_YET_ENTERED);
+        OptionTradeService.rejectNonPositiveCost(costs, "补录");
+
+        // 8. shares (Q75, Q15): the delivered shares are sold at (assignment time, new stock record id)
+        StockRecord pending = new StockRecord(StockRecord.NOT_YET_ENTERED, StockTradeType.ASSIGN_SELL, at,
+                terms.shares(), terms.proceeds(), null);
+        stocks.checkHoldings(accountId, contract.symbol(), records -> {
+            List<StockRecord> all = new ArrayList<>(records);
+            all.add(pending);
+            return all;
+        }, StockRecord.NOT_YET_ENTERED, "补录", s -> StockMessages.assignmentExceedsHolding(contract.symbol(), s));
+
+        // 9. cash (Q19): only a fee larger than the strike amount can lower cash
+        Map<Long, BigDecimal> corrections = OptionTradeService.frozenCorrections(existing, history);
+        InsertionCheck check = ledger.checkInsertion(accountId, at, terms.cashChange(), terms.frozenChange(),
+                corrections);
+        check.firstViolation().ifPresent(v -> {
+            throw new ApiException(ErrorCode.CASH_INSUFFICIENT,
+                    CashShortfallMessages.insufficientAt(terms.availableDecrease(), v));
+        });
+
+        Instant now = clock.instant();
+        OptionTradeEntity assignment = trades.save(OptionTradeEntity.assignment(accountId, contract, cmd.contracts(),
+                multiplier, fee, at, note, now));
+        ledger.append(new NewLedgerEntry(accountId, at, CashSourceType.OPTION_ASSIGN, assignment.getId(),
+                terms.cashChange(), terms.frozenChange(),
+                CallAssignmentTerms.describe(contract, cmd.contracts(), multiplier), note));
+        stockTrades.save(StockTradeEntity.assignedSale(accountId, contract.symbol(), terms.shares(),
+                terms.proceeds(), at, assignment.getId(), now));
+        ledger.correctFrozenChanges(accountId, corrections);
+        OptionTradeService.applyCostCorrections(costs);
+        stockTrades.flush();
+        return tradeService.views(accountId, List.of(assignment)).get(0);
     }
 
     /**

@@ -115,9 +115,15 @@ public final class OptionTradeDtos {
             AssignmentResponse assignment) {
     }
 
-    /** FEAT-013 figures of an assignment under its current match. */
+    /**
+     * FEAT-013 / FEAT-041 figures of an assignment under its current match. Put-only fields (purchaseAmount, stockCost,
+     * stockCostPerShare) are null for a call; call-only fields (saleAmount … soldLots) are null for a put.
+     */
     public record AssignmentResponse(LocalDate assignmentDate, BigDecimal assignmentFee, BigDecimal premium, int shares,
                                      BigDecimal purchaseAmount, BigDecimal stockCost, BigDecimal stockCostPerShare,
+                                     BigDecimal saleAmount, BigDecimal proceeds, BigDecimal soldCost,
+                                     BigDecimal stockRealizedPnl,
+                                     List<com.optionmgr.stock.web.StockTradeDtos.SoldLotResponse> soldLots,
                                      Long stockTradeId) {
     }
 

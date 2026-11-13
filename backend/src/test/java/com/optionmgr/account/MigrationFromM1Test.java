@@ -172,7 +172,7 @@ class MigrationFromM1Test {
 
     private List<Path> backups(String dbName) throws Exception {
         try (Stream<Path> files = Files.list(dir)) {
-            return files.filter(p -> p.getFileName().toString().startsWith(dbName + "-backup-before-V9-"))
+            return files.filter(p -> p.getFileName().toString().startsWith(dbName + "-backup-before-V10-"))
                     .toList();
         }
     }
@@ -209,7 +209,7 @@ class MigrationFromM1Test {
         assertThat(count(url, "SELECT MAX(version) FROM \"flyway_schema_history\" WHERE success")).isEqualTo(4);
         assertThat(backups("optionmgr")).isEmpty();
 
-        // upgrade: backup + V5 (+ V6, V7, V8, V9)
+        // upgrade: backup + V5 (+ V6, V7, V8, V9, V10)
         try (ConfigurableApplicationContext b = start(url)) {
             ScenarioM m = new ScenarioM(mvc(b), b.getBean(ObjectMapper.class), 1);
             Map<String, JsonNode> after = m.snapshot();
@@ -238,7 +238,7 @@ class MigrationFromM1Test {
         List<Path> backups = backups("optionmgr");
         assertThat(backups).hasSize(1);
         assertThat(backups.get(0).getFileName().toString())
-                .isEqualTo("optionmgr-backup-before-V9-20261112-150000Z.zip");
+                .isEqualTo("optionmgr-backup-before-V10-20261112-150000Z.zip");
         String restored = restore(backups.get(0), "restored");
         assertThat(count(restored, "SELECT MAX(version) FROM \"flyway_schema_history\" WHERE success")).isEqualTo(4);
         assertThat(count(restored, "SELECT COUNT(*) FROM option_trade")).isEqualTo(16);
@@ -275,14 +275,14 @@ class MigrationFromM1Test {
         migrateToM1(url);
         insertOneDeposit(url);
 
-        // V5 to V9 run, then a simulated failure in a later migration (test-only V10) of the same upgrade
+        // V5 to V10 run, then a simulated failure in a later migration (test-only V11) of the same upgrade
         assertThatThrownBy(() -> start(url,
                 "--spring.flyway.locations=classpath:db/migration,classpath:db/failing-migration"))
                 .hasStackTraceContaining("simulated_failure");
 
         List<Path> backups;
         try (Stream<Path> files = Files.list(dir)) {
-            backups = files.filter(p -> p.getFileName().toString().startsWith("faildb-backup-before-V10-")).toList();
+            backups = files.filter(p -> p.getFileName().toString().startsWith("faildb-backup-before-V11-")).toList();
         }
         assertThat(backups).hasSize(1);
         String restored = restore(backups.get(0), "restored");
@@ -298,7 +298,7 @@ class MigrationFromM1Test {
         migrateToM1(url);
         insertOneDeposit(url);
         // the (deterministic, fixed clock) backup file name is taken by a directory: BACKUP TO must fail
-        Files.createDirectories(dir.resolve("nobackup-backup-before-V9-20261112-150000Z.zip"));
+        Files.createDirectories(dir.resolve("nobackup-backup-before-V10-20261112-150000Z.zip"));
 
         assertThatThrownBy(() -> start(url)).hasStackTraceContaining("Database backup before migration failed");
         assertThat(count(url, "SELECT MAX(version) FROM \"flyway_schema_history\" WHERE success")).isEqualTo(4);

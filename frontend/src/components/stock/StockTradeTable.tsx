@@ -8,17 +8,29 @@ import { auditUrl } from '../audit/auditLinks'
 import { tradesUrlForAssignment } from '../position/positionLinks'
 import { SIGNED_MONEY_COLORS } from '../trade/tradeLabels'
 import { SoldLotTable } from './SoldLotTable'
-import { ASSIGN_BUY_HINT, STOCK_TYPE_COLORS, stockTimeText, stockTypeLabel } from './stockLabels'
+import {
+  ASSIGN_BUY_HINT,
+  isAssignmentStockType,
+  STOCK_TYPE_COLORS,
+  stockTimeText,
+  stockTypeLabel,
+} from './stockLabels'
+
+const AMOUNT_PREFIX: Record<string, string> = {
+  TRANSFER_IN: '总成本',
+  ASSIGN_BUY: '成本',
+  ASSIGN_SELL: '实收',
+}
 
 /**
  * "−1,500.65" / "+1,200.00" colored by cash direction; transfers "总成本 750.00" and (FEAT-013)
- * 指派买入 "成本 13,130.00" uncolored (no cash of their own).
+ * 指派买入 "成本 13,130.00" and (FEAT-041) 指派卖出 "实收 2,785.00" uncolored (no cash of their own).
  */
 export function StockAmountText({ trade, testId }: { trade: StockTrade; testId: string }) {
-  if (trade.type === 'TRANSFER_IN' || trade.type === 'ASSIGN_BUY') {
+  if (trade.type === 'TRANSFER_IN' || isAssignmentStockType(trade.type)) {
     return (
       <span data-testid={testId} style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
-        {trade.type === 'TRANSFER_IN' ? '总成本' : '成本'} {formatMoney(trade.amount)}
+        {AMOUNT_PREFIX[trade.type] ?? '金额'} {formatMoney(trade.amount)}
       </span>
     )
   }
@@ -82,9 +94,9 @@ interface StockTradeTableProps {
 
 /**
  * Stock records in backend order (FEAT-011); values are only formatted. Sell rows expand to the
- * lots they sold. Rows have 修改 / 删除 by the backend's `editable` / `deletable` (FEAT-013: not on
- * 指派买入, which shows a hint and a link to its 被指派 record), and 历史 when the record has audit
- * records.
+ * lots they sold (FEAT-041: 指派卖出 too). Rows have 修改 / 删除 by the backend's `editable` /
+ * `deletable` (FEAT-013 / FEAT-041: not on 指派买入 / 指派卖出, which show a hint and a link to
+ * their 被指派 record), and 历史 when the record has audit records.
  */
 export function StockTradeTable({
   trades,
@@ -233,7 +245,7 @@ export function StockTradeTable({
               删除
             </Button>
           )}
-          {trade.type === 'ASSIGN_BUY' && (
+          {isAssignmentStockType(trade.type) && (
             <Typography.Text
               type="secondary"
               style={{ fontSize: 12 }}

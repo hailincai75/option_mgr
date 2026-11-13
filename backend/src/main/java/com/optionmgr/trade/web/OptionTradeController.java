@@ -3,6 +3,8 @@ package com.optionmgr.trade.web;
 import com.optionmgr.account.web.AccountRef;
 import com.optionmgr.common.money.Money;
 import com.optionmgr.common.time.MarketTime;
+import com.optionmgr.stock.domain.SaleMatch;
+import com.optionmgr.stock.web.StockTradeController;
 import com.optionmgr.trade.domain.ContractKey;
 import com.optionmgr.trade.domain.OpenTradeTerms;
 import com.optionmgr.trade.domain.PositionDirection;
@@ -59,7 +61,7 @@ public class OptionTradeController {
         this.assignments = assignments;
     }
 
-    /** FEAT-013: a short put is assigned (recorded at 16:00 New York of the assignment date). */
+    /** FEAT-013 / FEAT-041: a short put or call is assigned (recorded at 16:00 New York of the assignment date). */
     @PostMapping("/assignments")
     @ResponseStatus(HttpStatus.CREATED)
     public TradeResponse assign(AccountRef account, @Valid @RequestBody AssignRequest req) {
@@ -154,12 +156,23 @@ public class OptionTradeController {
                 assignment(view));
     }
 
-    /** FEAT-013: figures of an ASG record, null for every other record. */
+    /** FEAT-013 / FEAT-041: figures of an ASG record, null for every other record. */
     static AssignmentResponse assignment(OptionTradeService.TradeView view) {
-        return view.assignment().map(a -> new AssignmentResponse(
-                MarketTime.toLocal(view.trade().getTradedAt()).toLocalDate(), Money.of(view.trade().getAssignmentFee()),
-                a.premium(), a.shares(), a.purchaseAmount(), a.stockCost(), a.stockCostPerShare(),
-                view.assignedLot() == null ? null : view.assignedLot().getId())).orElse(null);
+        java.time.LocalDate date = MarketTime.toLocal(view.trade().getTradedAt()).toLocalDate();
+        Long stockTradeId = view.assignedLot() == null ? null : view.assignedLot().getId();
+        AssignmentResponse put = view.assignment().map(a -> new AssignmentResponse(date,
+                Money.of(view.trade().getAssignmentFee()), a.premium(), a.shares(), a.purchaseAmount(), a.stockCost(),
+                a.stockCostPerShare(), null, null, null, null, null, stockTradeId)).orElse(null);
+        if (put != null) {
+            return put;
+        }
+        SaleMatch sale = view.assignedSale();
+        return view.callAssignment().map(a -> new AssignmentResponse(date,
+                Money.of(view.trade().getAssignmentFee()), a.premium(), a.shares(), null, null, null,
+                a.saleAmount(), a.proceeds(), sale == null ? null : sale.soldCost(),
+                sale == null ? null : sale.realizedPnl(),
+                sale == null ? null : sale.lots().stream().map(StockTradeController::toSoldLot).toList(),
+                stockTradeId)).orElse(null);
     }
 
     private static CoveredLotResponse toCovered(PositionLot l) {

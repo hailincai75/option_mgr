@@ -11,7 +11,7 @@ import {
   formatMoney,
 } from '../../utils/format'
 import { auditUrl } from '../audit/auditLinks'
-import { tradesUrlForContract } from '../position/positionLinks'
+import { tradesUrlForAssignment, tradesUrlForContract } from '../position/positionLinks'
 import { stockTimeText, stockTypeLabel, STOCK_TYPE_COLORS } from '../stock/stockLabels'
 import { stocksUrlForAssignment, stocksUrlForSymbol } from '../stock/stockListFilters'
 import {
@@ -205,11 +205,28 @@ const columns: ColumnsType<ClosedTrade> = [
     key: 'action',
     render: (_value: unknown, trade) => {
       if (trade.type === 'STOCK') {
-        // Same tag as 卖出 on the 股票 page; stocks have no 空头 / 多头.
+        // Same tag as 卖出 / 指派卖出 on the 股票 page; stocks have no 空头 / 多头.
+        const assignmentTradeId = trade.assignmentTradeId ?? null
         return (
-          <Tag color={STOCK_TYPE_COLORS.SELL} data-testid="closed-cell-action">
-            {stockTypeLabel(trade.action)}
-          </Tag>
+          <Space size={4} style={{ whiteSpace: 'nowrap' }}>
+            <Tag
+              color={STOCK_TYPE_COLORS[trade.action] ?? STOCK_TYPE_COLORS.SELL}
+              data-testid="closed-cell-action"
+              style={{ marginInlineEnd: 0 }}
+            >
+              {stockTypeLabel(trade.action)}
+            </Tag>
+            {assignmentTradeId !== null && (
+              // FEAT-041: the 指派卖出 row links back to its 被指派 record.
+              <Link
+                to={tradesUrlForAssignment(trade.symbol, trade.tradedAtLocal)}
+                style={{ fontSize: 12 }}
+                data-testid="closed-stock-assignment-link"
+              >
+                来自被指派 #{assignmentTradeId}
+              </Link>
+            )}
+          </Space>
         )
       }
       const tag = DIRECTION_TAGS[trade.closedDirection]
@@ -291,7 +308,9 @@ const columns: ColumnsType<ClosedTrade> = [
       const pnl = <SignedMoney value={trade.realizedPnl} testId="closed-cell-pnl" strong />
       const assignment = trade.assignment
       if (assignment === null) return pnl
-      // FEAT-013: the option P&L of a 被指派 is 0.00; the premium went into the stock cost.
+      // FEAT-013 / FEAT-041: the option P&L of a 被指派 is 0.00; the premium went into the stock
+      // cost (put) or the stock sale proceeds (call).
+      const isCall = trade.optionType === 'CALL'
       return (
         <div style={{ textAlign: 'right' }}>
           {pnl}
@@ -301,11 +320,16 @@ const columns: ColumnsType<ClosedTrade> = [
               style={{ fontSize: 12, whiteSpace: 'nowrap' }}
               data-testid="closed-cell-assignment"
             >
-              权利金已计入股票成本（{formatInteger(assignment.shares)} 股 {trade.symbol}，成本{' '}
-              {formatMoney(assignment.stockCost)}）
+              {isCall
+                ? `权利金已计入股票卖出（${formatInteger(assignment.shares)} 股 ${trade.symbol}，实收 ${formatMoney(assignment.proceeds)}）`
+                : `权利金已计入股票成本（${formatInteger(assignment.shares)} 股 ${trade.symbol}，成本 ${formatMoney(assignment.stockCost)}）`}
             </Typography.Text>{' '}
             <Link
-              to={stocksUrlForAssignment(trade.symbol, trade.tradedAtLocal)}
+              to={stocksUrlForAssignment(
+                trade.symbol,
+                trade.tradedAtLocal,
+                isCall ? 'ASSIGN_SELL' : 'ASSIGN_BUY',
+              )}
               style={{ fontSize: 12, whiteSpace: 'nowrap' }}
               data-testid="closed-assignment-stock-link"
             >

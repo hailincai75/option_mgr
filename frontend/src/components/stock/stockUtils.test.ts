@@ -163,7 +163,7 @@ describe('stock list URL state (AC 3)', () => {
   it.each([
     [{ ...EMPTY_STOCK_FILTERS, symbol: '$IXQZ' }, { symbol: '标的只能包含字母、数字和点' }],
     [{ ...EMPTY_STOCK_FILTERS, symbol: 'ABCDEFGHIJK' }, { symbol: '标的最多 10 个字符' }],
-    [{ ...EMPTY_STOCK_FILTERS, type: ['SHORT'] }, { type: '类型只能是 BUY、SELL、TRANSFER_IN、ASSIGN_BUY' }],
+    [{ ...EMPTY_STOCK_FILTERS, type: ['SHORT'] }, { type: '类型只能是 BUY、SELL、TRANSFER_IN、ASSIGN_BUY、ASSIGN_SELL' }],
     [{ ...EMPTY_STOCK_FILTERS, startDate: '2026/11/04' }, { startDate: '日期格式不正确（YYYY-MM-DD）' }],
     [
       { ...EMPTY_STOCK_FILTERS, startDate: '2026-11-06', endDate: '2026-11-05' },

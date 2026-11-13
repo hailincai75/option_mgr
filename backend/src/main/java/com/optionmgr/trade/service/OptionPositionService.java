@@ -4,6 +4,8 @@ import com.optionmgr.cash.repository.CashLedgerEntryEntity;
 import com.optionmgr.cash.service.CashLedgerService;
 import com.optionmgr.common.money.Money;
 import com.optionmgr.common.time.MarketTime;
+import com.optionmgr.stock.domain.StockPosition;
+import com.optionmgr.stock.service.StockPositionService;
 import com.optionmgr.trade.domain.ContractKey;
 import com.optionmgr.trade.domain.ExpiryReplay;
 import com.optionmgr.trade.domain.LotTrade;
@@ -30,9 +32,12 @@ public class OptionPositionService {
 
     private final OptionTradeRepository trades;
     private final CashLedgerService ledger;
+    private final StockPositionService stockPositions;
     private final Clock clock;
 
-    public OptionPositionService(OptionTradeRepository trades, CashLedgerService ledger, Clock clock) {
+    public OptionPositionService(OptionTradeRepository trades, CashLedgerService ledger,
+                                 StockPositionService stockPositions, Clock clock) {
+        this.stockPositions = stockPositions;
         this.trades = trades;
         this.ledger = ledger;
         this.clock = clock;
@@ -44,12 +49,19 @@ public class OptionPositionService {
      * @param positions       sorted for display (Q35)
      * @param frozenTotal     sum of the positions' frozen cash
      * @param expiryContracts per position: contracts at the expiration cutoff (FEAT-012 expiry size)
+     * @param stockShares     FEAT-041: current shares per symbol (symbols with shares &gt; 0)
      */
     public record PositionSummary(Instant now, LocalDate asOfDate, List<OptionPosition> positions,
-                                  BigDecimal frozenTotal, Map<ContractKey, Integer> expiryContracts) {
+                                  BigDecimal frozenTotal, Map<ContractKey, Integer> expiryContracts,
+                                  Map<String, Long> stockShares) {
 
         public int expiryContracts(OptionPosition p) {
             return expiryContracts.getOrDefault(p.contract(), 0);
+        }
+
+        /** FEAT-041: current shares of the position's underlying (0 when none). */
+        public long underlyingShares(OptionPosition p) {
+            return stockShares.getOrDefault(p.contract().symbol(), 0L);
         }
     }
 
@@ -78,6 +90,11 @@ public class OptionPositionService {
         }
         BigDecimal frozenTotal = positions.stream().map(OptionPosition::frozenCash)
                 .reduce(Money.ZERO, BigDecimal::add);
-        return new PositionSummary(now, today, positions, frozenTotal, Map.copyOf(expiryContracts));
+        Map<String, Long> stockShares = new HashMap<>();
+        for (StockPosition sp : stockPositions.currentPositions(accountId)) {
+            stockShares.put(sp.symbol(), sp.shares());
+        }
+        return new PositionSummary(now, today, positions, frozenTotal, Map.copyOf(expiryContracts),
+                Map.copyOf(stockShares));
     }
 }

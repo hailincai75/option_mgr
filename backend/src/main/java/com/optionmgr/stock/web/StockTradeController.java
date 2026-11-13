@@ -107,10 +107,11 @@ public class StockTradeController {
                 sale == null ? null : sale.soldCost(),
                 sale == null ? null : sale.realizedPnl(),
                 sale == null ? null : sale.lots().stream().map(StockTradeController::toSoldLot).toList(),
-                t.getOptionTradeId(), t.getType() != StockTradeType.ASSIGN_BUY, t.getType() != StockTradeType.ASSIGN_BUY);
+                t.getOptionTradeId(), !t.getType().isGenerated(), !t.getType().isGenerated());
     }
 
-    private static SoldLotResponse toSoldLot(LotSale l) {
+    /** One sold lot part (also used for a call assignment's delivered shares, FEAT-041). */
+    public static SoldLotResponse toSoldLot(LotSale l) {
         return new SoldLotResponse(l.sourceId(), l.sourceType(), l.tradedAt(), local(l.tradedAt()),
                 transferDate(l.sourceType(), l.tradedAt()), l.shares(), l.cost());
     }

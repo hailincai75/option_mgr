@@ -56,10 +56,28 @@ const ASSIGNMENT_FIELDS: SnapshotField[] = [
   { key: 'stockTradeId', label: '股票记录 ID', format: 'text' },
 ]
 
-/** Option trade snapshot; a 被指派 (FEAT-013) also shows its assignment fields. */
+/** FEAT-041: extra flat fields of a call 被指派 snapshot (no purchaseAmount / stockCost). */
+const CALL_ASSIGNMENT_FIELDS: SnapshotField[] = [
+  { key: 'assignmentDate', label: '指派日期', format: 'text' },
+  { key: 'assignmentFee', label: '指派费', format: 'money' },
+  { key: 'shares', label: '股数', format: 'text' },
+  { key: 'premium', label: '权利金', format: 'money' },
+  { key: 'saleAmount', label: '行权金额', format: 'money' },
+  { key: 'proceeds', label: '卖出实收', format: 'money' },
+  { key: 'soldCost', label: '交出成本', format: 'money' },
+  { key: 'stockRealizedPnl', label: '股票已实现盈亏', format: 'signedMoney' },
+  { key: 'stockTradeId', label: '股票记录 ID', format: 'text' },
+]
+
+/**
+ * Option trade snapshot; a 被指派 also shows its assignment fields: put (FEAT-013) or call
+ * (FEAT-041, by the snapshot's `optionType`).
+ */
 function optionTradeFields(snapshot: AuditSnapshot | null): SnapshotField[] {
   const base = SNAPSHOT_FIELDS.OPTION_TRADE ?? []
-  return snapshot?.action === 'ASG' ? [...base, ...ASSIGNMENT_FIELDS] : base
+  if (snapshot?.action !== 'ASG') return base
+  const isCall = snapshot.optionType === 'CALL' || 'saleAmount' in snapshot
+  return [...base, ...(isCall ? CALL_ASSIGNMENT_FIELDS : ASSIGNMENT_FIELDS)]
 }
 
 /**

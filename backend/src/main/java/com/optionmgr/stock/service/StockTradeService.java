@@ -1,5 +1,6 @@
 package com.optionmgr.stock.service;
 
+import com.optionmgr.audit.domain.SideEffect;
 import com.optionmgr.cash.domain.CashShortfallMessages;
 import com.optionmgr.cash.domain.CashSourceType;
 import com.optionmgr.cash.domain.InsertionCheck;
@@ -21,6 +22,8 @@ import com.optionmgr.stock.domain.StockTradeType;
 import com.optionmgr.stock.repository.StockTradeEntity;
 import com.optionmgr.stock.repository.StockTradeRepository;
 import com.optionmgr.stock.repository.StockTradeSpecifications;
+import com.optionmgr.trade.repository.OptionTradeEntity;
+import com.optionmgr.trade.repository.OptionTradeRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -33,6 +36,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 import org.springframework.data.domain.Page;
@@ -62,11 +66,14 @@ public class StockTradeService {
 
     private final StockTradeRepository trades;
     private final CashLedgerService ledger;
+    private final OptionTradeRepository optionTrades;
     private final Clock clock;
 
-    public StockTradeService(StockTradeRepository trades, CashLedgerService ledger, Clock clock) {
+    public StockTradeService(StockTradeRepository trades, CashLedgerService ledger,
+                             OptionTradeRepository optionTrades, Clock clock) {
         this.trades = trades;
         this.ledger = ledger;
+        this.optionTrades = optionTrades;
         this.clock = clock;
     }
 
@@ -163,26 +170,26 @@ public class StockTradeService {
         Map<Long, CashLedgerEntryEntity> entries = ledger.findBySources(accountId, STOCK_SOURCE_TYPES,
                 page.stream().map(StockTradeEntity::getId).toList());
         Map<String, StockReplay.History> histories = new HashMap<>();
-        for (String symbol : page.stream().filter(t -> t.getType() == StockTradeType.SELL)
+        for (String symbol : page.stream().filter(t -> t.getType().isSale())
                 .map(StockTradeEntity::getSymbol).collect(Collectors.toSet())) {
             histories.put(symbol, StockReplay.replay(records(accountId, symbol)));
         }
         return page.stream().map(t -> new StockTradeView(t,
                 Optional.ofNullable(entries.get(t.getId())).map(CashLedgerEntryEntity::getId).orElse(null),
-                t.getType() == StockTradeType.SELL
+                t.getType().isSale()
                         ? histories.get(t.getSymbol()).step(t.getId()).flatMap(StockReplay.Step::sale)
                         : Optional.empty())).toList();
     }
 
     private Optional<SaleMatch> saleOf(long accountId, StockTradeEntity t) {
-        if (t.getType() != StockTradeType.SELL) {
+        if (!t.getType().isSale()) {
             return Optional.empty();
         }
         return StockReplay.replay(records(accountId, t.getSymbol())).step(t.getId()).flatMap(StockReplay.Step::sale);
     }
 
     /** The account's records of a symbol as replay input. */
-    List<StockRecord> records(long accountId, String symbol) {
+    public List<StockRecord> records(long accountId, String symbol) {
         return trades.findByAccountIdAndSymbolOrderByTradedAtAscIdAsc(accountId, symbol).stream()
                 .map(StockTradeEntity::toRecord).toList();
     }
@@ -190,15 +197,66 @@ public class StockTradeService {
     /**
      * Q15: replays the symbol's records after {@code change}; every sale must stay within the shares held at its
      * time. The first violation is rejected: the {@code subjectId} record itself with "持股不足：…", another sale with
-     * "{@code verb}后 … 将超过当时持股 …".
+     * "{@code verb}后 … 将超过当时持股 …", a stored call assignment (FEAT-041) with "{@code verb}后 … 的被指派 … 请先删除该被指派".
      */
     public void checkHoldings(long accountId, String symbol, UnaryOperator<List<StockRecord>> change, long subjectId,
                        String verb) {
+        checkHoldings(accountId, symbol, change, subjectId, verb, step -> StockMessages.saleExceedsHolding(symbol, step));
+    }
+
+    /** As above; the {@code subjectId} record's own violation is worded by {@code subjectMessage}. */
+    public void checkHoldings(long accountId, String symbol, UnaryOperator<List<StockRecord>> change, long subjectId,
+                              String verb, Function<StockReplay.Step, String> subjectMessage) {
         StockReplay.replay(change.apply(records(accountId, symbol))).firstViolation().ifPresent(step -> {
-            throw new ApiException(ErrorCode.SHARES_INSUFFICIENT, step.record().id() == subjectId
-                    ? StockMessages.saleExceedsHolding(symbol, step)
-                    : StockMessages.laterSaleExceedsHolding(verb, symbol, step));
+            String message;
+            if (step.record().id() == subjectId) {
+                message = subjectMessage.apply(step);
+            } else if (step.record().type() == StockTradeType.ASSIGN_SELL) {
+                OptionTradeEntity assignment = assignmentOf(step.record().id());
+                message = StockMessages.laterAssignmentExceedsHolding(verb, assignment.getContracts(),
+                        assignment.contract().label(), step);
+            } else {
+                message = StockMessages.laterSaleExceedsHolding(verb, symbol, step);
+            }
+            throw new ApiException(ErrorCode.SHARES_INSUFFICIENT, message);
         });
+    }
+
+    /**
+     * FEAT-041 (Q42 extended): the stored call assignments (ASSIGN_SELL records) of a symbol whose delivered shares'
+     * cost (FIFO sold cost) differs after {@code change}, as audit side effects "被指派 #4 交出成本 2,550.00 → 2,350.00".
+     * Records removed by the change are not reported.
+     */
+    public List<SideEffect> assignedSaleCostEffects(long accountId, String symbol,
+                                                    UnaryOperator<List<StockRecord>> change) {
+        List<StockRecord> current = records(accountId, symbol);
+        if (current.stream().noneMatch(r -> r.type() == StockTradeType.ASSIGN_SELL)) {
+            return List.of();
+        }
+        StockReplay.History before = StockReplay.replay(current);
+        StockReplay.History after = StockReplay.replay(change.apply(current));
+        List<SideEffect> effects = new ArrayList<>();
+        for (StockReplay.Step b : before.steps()) {
+            if (b.record().type() != StockTradeType.ASSIGN_SELL || b.sale().isEmpty()) {
+                continue;
+            }
+            Optional<SaleMatch> a = after.step(b.record().id()).flatMap(StockReplay.Step::sale);
+            BigDecimal was = b.sale().get().soldCost();
+            if (a.isPresent() && a.get().soldCost().compareTo(was) != 0) {
+                OptionTradeEntity assignment = assignmentOf(b.record().id());
+                effects.add(new SideEffect(assignment.getId(), "ASG", assignment.contract().label(),
+                        SideEffect.SOLD_COST, Money.display(was), Money.display(a.get().soldCost())));
+            }
+        }
+        return effects;
+    }
+
+    /** The ASG option record that generated the stock record {@code stockTradeId}. */
+    private OptionTradeEntity assignmentOf(long stockTradeId) {
+        Long optionTradeId = trades.findById(stockTradeId).map(StockTradeEntity::getOptionTradeId)
+                .orElseThrow(() -> new IllegalStateException("stock trade " + stockTradeId + " has no assignment"));
+        return optionTrades.findById(optionTradeId)
+                .orElseThrow(() -> new IllegalStateException("assignment " + optionTradeId + " missing"));
     }
 
     /**

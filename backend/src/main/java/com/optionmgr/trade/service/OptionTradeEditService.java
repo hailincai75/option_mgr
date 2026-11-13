@@ -17,16 +17,19 @@ import com.optionmgr.common.error.ErrorCode;
 import com.optionmgr.common.error.ErrorResponse;
 import com.optionmgr.common.money.Money;
 import com.optionmgr.common.time.MarketTime;
+import com.optionmgr.stock.domain.StockRecord;
 import com.optionmgr.stock.repository.StockTradeEntity;
 import com.optionmgr.stock.repository.StockTradeRepository;
 import com.optionmgr.stock.service.StockTradeService;
 import com.optionmgr.trade.domain.AssignmentTerms;
+import com.optionmgr.trade.domain.CallAssignmentTerms;
 import com.optionmgr.trade.domain.CloseMatch;
 import com.optionmgr.trade.domain.ContractHistory;
 import com.optionmgr.trade.domain.ContractKey;
 import com.optionmgr.trade.domain.ContractReplay;
 import com.optionmgr.trade.domain.LotTrade;
 import com.optionmgr.trade.domain.OpenTradeTerms;
+import com.optionmgr.trade.domain.OptionType;
 import com.optionmgr.trade.domain.ReplayedTrade;
 import com.optionmgr.trade.domain.TradeAction;
 import com.optionmgr.trade.domain.TradeRejectionMessages;
@@ -187,6 +190,7 @@ public class OptionTradeEditService {
         // save
         Map<String, Object> before = snapshot(trade, entry.getAmount(), entry.getFrozenChange());
         List<SideEffect> effects = sideEffects(existing, corrections, costs);
+        effects.addAll(soldCostEffects(accountId, contract.symbol(), costs, null));
         trade.update(cmd.contracts(), effectiveMultiplier, net, tradedAt, note);
         trade.markAudited(); // only the edited trade; records corrected as side effects keep their flag
         ledger.updateEntry(accountId, entry.getId(), tradedAt, entry.getSourceType(), cashChange, frozenChange,
@@ -249,15 +253,28 @@ public class OptionTradeEditService {
         BigDecimal frozenChange = entry == null ? Money.ZERO : entry.getFrozenChange();
         Map<String, Object> before = snapshot(trade, cashChange, frozenChange);
         if (assignment) {
-            AssignmentTerms terms = tradeService.views(accountId, List.of(trade)).get(0).assignment().orElseThrow();
+            OptionTradeService.TradeView view = tradeService.views(accountId, List.of(trade)).get(0);
             before.put("assignmentDate", MarketTime.toLocal(trade.getTradedAt()).toLocalDate().toString());
             before.put("assignmentFee", Money.of(trade.getAssignmentFee()));
-            before.put("shares", terms.shares());
-            before.put("purchaseAmount", terms.purchaseAmount());
-            before.put("stockCost", terms.stockCost());
+            if (trade.getOptionType() == OptionType.CALL) {
+                // FEAT-041: the figures of rule 3 (premium, strike amount, proceeds, delivered cost, stock P&L)
+                CallAssignmentTerms terms = view.callAssignment().orElseThrow();
+                before.put("shares", terms.shares());
+                before.put("premium", terms.premium());
+                before.put("saleAmount", terms.saleAmount());
+                before.put("proceeds", terms.proceeds());
+                before.put("soldCost", view.assignedSale() == null ? null : view.assignedSale().soldCost());
+                before.put("stockRealizedPnl", view.assignedSale() == null ? null : view.assignedSale().realizedPnl());
+            } else {
+                AssignmentTerms terms = view.assignment().orElseThrow();
+                before.put("shares", terms.shares());
+                before.put("purchaseAmount", terms.purchaseAmount());
+                before.put("stockCost", terms.stockCost());
+            }
             before.put("stockTradeId", lot == null ? null : lot.getId());
         }
         List<SideEffect> effects = sideEffects(existing, corrections, costs);
+        effects.addAll(soldCostEffects(accountId, contract.symbol(), costs, lot == null ? null : lot.getId()));
         String summary = summary(trade);
         if (entry != null) {
             ledger.deleteEntry(accountId, entry.getId());
@@ -350,9 +367,29 @@ public class OptionTradeEditService {
         });
         for (OptionTradeService.CostCorrection c : costs) {
             effects.add(new SideEffect(c.assignmentId(), TradeAction.ASG.name(), c.contract().label(),
-                    SideEffect.STOCK_COST, Money.display(c.before()), Money.display(c.after())));
+                    c.call() ? SideEffect.PROCEEDS : SideEffect.STOCK_COST, Money.display(c.before()),
+                    Money.display(c.after())));
         }
         return effects;
+    }
+
+    /**
+     * FEAT-041: call assignments of {@code symbol} whose delivered shares' cost changes because generated records'
+     * amounts are corrected ({@code costs}: an ASSIGN_BUY lot's cost) or a generated record is removed.
+     */
+    private List<SideEffect> soldCostEffects(long accountId, String symbol,
+                                             List<OptionTradeService.CostCorrection> costs, Long removedStockId) {
+        Map<Long, BigDecimal> amounts = new HashMap<>();
+        costs.forEach(c -> amounts.put(c.lot().getId(), c.after()));
+        if (amounts.isEmpty() && removedStockId == null) {
+            return List.of();
+        }
+        return stocks.assignedSaleCostEffects(accountId, symbol, records -> records.stream()
+                .filter(r -> removedStockId == null || r.id() != removedStockId)
+                .map(r -> amounts.containsKey(r.id())
+                        ? new StockRecord(r.id(), r.type(), r.tradedAt(), r.shares(), amounts.get(r.id()), r.note())
+                        : r)
+                .toList());
     }
 
     private static Map<String, Object> snapshot(OptionTradeEntity t, BigDecimal cashChange, BigDecimal frozenChange) {
@@ -382,8 +419,9 @@ public class OptionTradeEditService {
             return t.getAction().displayName() + " " + t.contract().label() + " " + t.getContracts() + " 张";
         }
         if (t.getAction() == TradeAction.ASG) {
-            // "被指派 XYZ 2026-11-20 45 P 3 张（买入 300 股 XYZ）"
-            return t.getAction().displayName() + " " + t.contract().label() + " " + t.getContracts() + " 张（买入 "
+            // "被指派 XYZ 2026-11-20 45 P 3 张（买入 300 股 XYZ）"; a call (FEAT-041): "…（卖出 300 股 IXQZ）"
+            String verb = t.getOptionType() == OptionType.CALL ? "卖出" : "买入";
+            return t.getAction().displayName() + " " + t.contract().label() + " " + t.getContracts() + " 张（" + verb + " "
                     + t.getContracts() * t.getMultiplier() + " 股 " + t.getSymbol() + "）";
         }
         return t.getAction().name() + " " + t.contract().label();
