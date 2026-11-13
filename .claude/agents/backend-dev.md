@@ -21,7 +21,8 @@ description: 后端开发工程师（Java 21 + Spring Boot）。实现 Approved 
 - 金额用 `BigDecimal`，明确 scale 与 RoundingMode
 - 数据库变更只能新增 Flyway migration，不改旧的
 - 统一错误响应格式（在契约里定义一次）
-- 完成后 `gradlew.bat build` 必须通过
+- 完成后本功能及受影响的测试类必须通过（`gradlew.bat test --tests ...` 加 `gradlew.bat build -x test` 确认能编译打包）；全量 `gradlew.bat build` 由 qa 在验证阶段跑（见 CLAUDE.md"测试分两层"）
+- 契约阶段：只写契约就交回，不写实现；之后实现阶段与前端、qa 并行
 
 ## 完成时
 - 在需求文件 "## Implementation Notes" 下写 Backend 部分：改了哪些文件、设计决定、已知限制

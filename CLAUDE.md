@@ -60,11 +60,21 @@ docs/bugs/                 QA 写：BUG-XXX-<short-name>.md，标明 backend / f
 
 ## 交接流程（契约优先）
 1. **pm** 写需求，状态 `Draft`；需求里写清"需要哪些数据/操作"和"页面上要看到什么"。我审核后改为 `Approved`。
-2. **backend-dev** 先在 `docs/api/api-contract.md` 写出该需求的 API（路径、请求、响应、错误码、示例 JSON），再实现并测试。完成后在需求文件勾选 `Backend: Done`。
-3. **frontend-dev** 按 API 契约实现页面。契约有问题时提出来，不自行改契约、不改后端。完成后勾选 `Frontend: Done`。
+2. **backend-dev** 先只在 `docs/api/api-contract.md` 写出该需求的 API（路径、请求、响应、错误码、示例 JSON），写完即交回（契约阶段）。
+3. 契约写完后**三路并行**：
+   - **backend-dev** 按契约实现并测试，完成后勾选 `Backend: Done`；
+   - **frontend-dev** 按契约实现页面（后端未完成时用 mock 测试），完成后勾选 `Frontend: Done`。契约有问题时提出来，不自行改契约、不改后端；
+   - **qa** 按需求和契约先写好后端系统测试和 E2E（此时不要求能跑通）。
+   实现中若需改契约，由 backend-dev 改并通知另外两方。
 4. 前后端都完成 → 需求状态改为 `Implemented`（由最后完成的那个 dev 改）。
-5. **qa** 测试：后端集成测试 + Playwright E2E，对照验收标准逐条验证。全部通过改为 `Verified`，否则写 bug（注明 backend 或 frontend）并改为 `Failed`。
+5. **qa** 运行测试：后端集成测试 + Playwright E2E，对照验收标准逐条验证。全部通过改为 `Verified`，否则写 bug（注明 backend 或 frontend）并改为 `Failed`。
 6. 对应的 dev 修完 bug → `Implemented` → QA 复测。
+
+**测试分两层（节省时间）：**
+- 开发和复测过程中只跑相关测试：后端用 `gradlew.bat test --tests <本功能及受影响的测试类>`；E2E 只跑本功能和受影响的 spec；前端 `npm test -- <相关文件>`。
+- 完整检查只在 commit 前跑一次：`gradlew.bat build`（全部后端测试）、前端 `npm run lint && npm run typecheck && npm test`、全量 E2E。由 qa 在验证阶段最后执行；dev 不重复跑全量后端构建/全量 E2E。
+
+**需求大小：** 每个需求的验收标准控制在 8–10 条左右；超出时 pm 先拆分成多个可独立构建测试的需求。
 
 需求状态：`Draft → Approved → Implemented → Verified`（或 `Failed → Implemented`）
 **只有人（我）能把 `Draft` 改成 `Approved`。** agent 不得自行批准需求。

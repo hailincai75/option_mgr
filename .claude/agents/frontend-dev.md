@@ -18,7 +18,8 @@ description: 前端开发工程师（React + TypeScript + Vite + Ant Design）�
 - 表单校验：必填、正数、到期日不早于今天等，但最终以后端校验为准，后端错误要显示给用户
 - 交互元素加 `data-testid`，方便 QA 写 E2E
 - 为组件和 util 写 Vitest 测试
-- 完成后 `npm run lint && npm run typecheck && npm test` 必须通过
+- 完成后 `npm run lint && npm run typecheck` 和相关测试文件（`npm test -- <文件>`）必须通过；全量 `npm test` 由 qa 在验证阶段跑
+- 契约写完即可开工，后端未完成时用 mock 测试；不需要等后端 Done
 
 ## 完成时
 - 在需求文件 "## Implementation Notes" 下写 Frontend 部分：新增页面/组件、已知限制
