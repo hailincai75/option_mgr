@@ -45,7 +45,7 @@ e2e/                       Playwright 端到端测试（qa 负责）
 docs/backlog.md            PM 维护的需求列表、优先级、待定问题
 docs/decisions.md          已由用户确认的问题（Q 编号），PM 追加
 docs/requirements/         PM 写：FEAT-XXX-<short-name>.md（一功能一文件）
-docs/api/api-contract.md   API 契约（backend-dev 负责，frontend-dev 只读）
+docs/api/api-contract.md   API 契约索引 + 通用约定；每个功能一个文件 docs/api/FEAT-XXX.md（backend-dev 负责，frontend-dev 只读）
 docs/architecture.md       架构说明（backend-dev 写后端部分，frontend-dev 写前端部分）
 docs/test-reports/         QA 写：FEAT-XXX-test-report.md
 docs/bugs/                 QA 写：BUG-XXX-<short-name>.md，标明 backend / frontend
@@ -61,7 +61,7 @@ docs/bugs/                 QA 写：BUG-XXX-<short-name>.md，标明 backend / f
 
 ## 交接流程（契约优先）
 1. **pm** 写需求，状态 `Draft`；需求里写清"需要哪些数据/操作"和"页面上要看到什么"。我审核后改为 `Approved`。
-2. **backend-dev** 先只在 `docs/api/api-contract.md` 写出该需求的 API（路径、请求、响应、错误码、示例 JSON），写完即交回（契约阶段）。
+2. **backend-dev** 先只在 `docs/api/FEAT-XXX.md`（并在 `docs/api/api-contract.md` 索引加一行）写出该需求的 API（路径、请求、响应、错误码、示例 JSON），写完即交回（契约阶段）。
 3. 契约写完后**三路并行**：
    - **backend-dev** 按契约实现并测试，完成后勾选 `Backend: Done`；
    - **frontend-dev** 按契约实现页面（后端未完成时用 mock 测试），完成后勾选 `Frontend: Done`。契约有问题时提出来，不自行改契约、不改后端；
@@ -73,7 +73,9 @@ docs/bugs/                 QA 写：BUG-XXX-<short-name>.md，标明 backend / f
 
 **测试分两层（节省时间）：**
 - 开发和复测过程中只跑相关测试：后端用 `gradlew.bat test --tests <本功能及受影响的测试类>`；E2E 只跑本功能和受影响的 spec；前端 `npm test -- <相关文件>`。
-- 完整检查只在 commit 前跑一次：`gradlew.bat build`（全部后端测试）、前端 `npm run lint && npm run typecheck && npm test`、全量 E2E。由 qa 在验证阶段最后执行；dev 不重复跑全量后端构建/全量 E2E。
+- 每个需求验证时（qa，commit 前）跑一次：`gradlew.bat build`（全部后端测试）、前端 `npm run lint && npm run typecheck && npm test`、**本需求和受影响的 E2E spec**。dev 不跑全量。
+- **全量 E2E** 只在每个里程碑结束时、或用户要 push 前跑一次（由 qa），不在每个需求都跑。
+- frontend-dev 开发时只跑自己新建或直接修改的测试文件，其余前端测试留给 qa 的全量 `npm test`。
 
 **需求大小：** 每个需求的验收标准控制在 8–10 条左右，文件约 15 KB 以内；超出时 pm 先拆分成多个可独立构建测试的需求。已定问题只引用编号（全文在 `docs/decisions.md`）。
 

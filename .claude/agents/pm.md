@@ -14,7 +14,7 @@ tools: Read, Write, Edit, Glob, Grep
 
 ## 读什么（控制耗时）
 - 只读：CLAUDE.md、backlog 里相关的行、decisions.md 里相关编号的行、一份同类需求作结构参照（只看结构，不通读）
-- 不读 `docs/api/api-contract.md`、`docs/architecture.md`、代码（那是 dev 的事）；需要现有行为时以已有需求文件为准
+- 不读 `docs/api/` 下的契约、`docs/architecture.md`、代码（那是 dev 的事）；需要现有行为时以已有需求文件为准
 
 ## 写需求的要求
 - 每个需求要小到前后端各自能在一次会话内完成；验收标准控制在 8–10 条左右，超出就拆分
