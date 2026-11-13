@@ -84,6 +84,9 @@ test.describe('FEAT-008 首页概览与盈亏汇总', () => {
     await expect(page.getByTestId('dashboard-month-total')).toHaveText(m.total)
     await expect(page.getByTestId('dashboard-month-count')).toHaveText(m.count)
     await expect(page.getByTestId('dashboard-position-count')).toHaveText('3')
+    // FEAT-040 (Q93): label is now 期权持仓; plus 股票持仓 N 个标的
+    await expect(page.getByTestId('dashboard-positions-card')).toContainText('期权持仓 3 个')
+    await expect(page.getByTestId('dashboard-stock-positions-link')).toHaveText('股票持仓 0 个标的')
     await expect(page.getByTestId('dashboard-frozen-total')).toHaveText('44,000.00')
     await expect(page.getByTestId('dashboard-expiring-count')).toHaveText('1')
     await expect(page.getByTestId('dashboard-expiring-count')).toHaveAttribute('data-highlight', 'warning')
@@ -123,7 +126,7 @@ test.describe('FEAT-008 首页概览与盈亏汇总', () => {
     await page.getByTestId('nav-pnl-summary').click()
     await expect(page).toHaveURL(/\/pnl-summary$/)
     await expectSummary(page, '6', '+703.05')
-    await expect(page.getByTestId('pnl-total-line')).toContainText('共 6 笔平仓，已实现盈亏合计')
+    await expect(page.getByTestId('pnl-total-line')).toContainText('共 6 笔，已实现盈亏合计') // FEAT-040 (AC9) wording
     await expect.poll(() => rows(page, 'pnl-symbol-row', 'pnl-symbol')).toEqual([
       'AAPL 3 +248.70',
       'MSFT 1 +350.00',
@@ -133,7 +136,8 @@ test.describe('FEAT-008 首页概览与盈亏汇总', () => {
     expect(await totalRow(page, 'pnl-symbol')).toBe('6 +703.05')
     await expect.poll(() => rows(page, 'pnl-month-row', 'pnl-month')).toEqual(['2026-11 4 +633.05', '2026-10 2 +70.00'])
     expect(await totalRow(page, 'pnl-month')).toBe('6 +703.05')
-    await expect(page.getByText('已实现盈亏只来自平仓，已含手续费；不含入金、出金和利息等').first()).toBeVisible()
+    // FEAT-040 replaced the note
+    await expect(page.getByTestId('pnl-note')).toHaveText('已实现盈亏来自期权平仓、到期作废和股票卖出，已含手续费；不含入金、出金、股息和利息；股票转入（期初持仓）和买入没有已实现盈亏。')
     await expect(page.getByText('美东日期').first()).toBeVisible()
     await expect(page.locator('.ant-menu-item-selected')).toHaveCount(1)
     await expect(page.locator('.ant-menu-item-selected')).toContainText('盈亏汇总')

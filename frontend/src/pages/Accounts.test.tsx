@@ -186,6 +186,7 @@ function startFakeServer(server: FakeServer) {
             expiringWithin7DaysCount: 0,
             expiredUnprocessedCount: 0,
           },
+          stockPositions: { positionCount: 0 },
         }),
       )
     }

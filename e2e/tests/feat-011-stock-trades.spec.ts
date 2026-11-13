@@ -260,8 +260,9 @@ test.describe('FEAT-011 股票交易与股票持仓', () => {
     await page.goto('/')
     await ui.id('nav-stocks').click()
     await expect(ui.id('stock-list-page')).toBeVisible()
+    // FEAT-040 AC17 changed the last clause of this note
     await expect(ui.id('stock-list-note')).toHaveText(
-      '金额均已含手续费；每股价格 = 金额 ÷ 股数，仅供参考；股票已实现盈亏暂未计入已平仓页、盈亏汇总和首页（FEAT-040）',
+      '金额均已含手续费；每股价格 = 金额 ÷ 股数，仅供参考；股票已实现盈亏同时计入已平仓页、盈亏汇总和首页',
     )
     await expect
       .poll(async () => (await ui.rows()).map(({ note: _n, history: _h, ...rest }) => rest))
@@ -811,7 +812,7 @@ test.describe('FEAT-011 股票交易与股票持仓', () => {
     await expect.poll(() => ui.positionRows()).toEqual(['IXQZ 150 1,125.49 7.5033', 'XYZ 200 666.67 3.3334'])
   })
 
-  test('AC13 与期权互不影响：Q61 提示新文案；STO call 不冻结；已平仓/盈亏汇总/首页不含股票；列表互不显示', async ({ page }) => {
+  test('AC13 与期权互不影响：Q61 提示新文案；STO call 不冻结；FEAT-040（AC15）起已平仓/盈亏汇总/首页包含股票卖出；列表互不显示', async ({ page }) => {
     await scenarioS()
     const ui = new StockUi(page)
     await page.goto('/trades/new')
@@ -821,6 +822,17 @@ test.describe('FEAT-011 股票交易与股票持仓', () => {
       '卖出 call 不冻结现金，请自行确保账户有足够股票覆盖（每张 = multiplier 股）；covered call 覆盖检查（FEAT-039）上线后将自动检查。',
     )
     await apiTrade({ action: 'STO', symbol: 'IXQZ', expiration: '2026-12-18', strike: '9', type: 'CALL', contracts: 5, netAmount: '150.00', time: '2026-11-12T10:00' })
+
+    // FEAT-040 AC15 replaces the old "共 0 笔平仓 / 总计 0.00（0 笔）": S4 +74.84, S5 +66.67
+    await page.goto('/closed')
+    await expect(page.getByTestId('closed-count')).toHaveText('共 2 笔平仓')
+    await expect(page.getByTestId('closed-pnl-total')).toHaveText('+141.51')
+    await page.goto('/')
+    await expect(page.getByTestId('dashboard-realized-total')).toHaveText('+141.51')
+    await expect(page.getByTestId('dashboard-realized-count')).toHaveText('2')
+    await expect(page.getByTestId('dashboard-position-count')).toHaveText('1')
+    await expect(page.getByTestId('dashboard-stock-position-count')).toHaveText('2')
+
     await apiStock('SELL', 'IXQZ', 150, '1300.00', '2026-11-12T11:00')
 
     await page.goto('/positions')
@@ -828,15 +840,18 @@ test.describe('FEAT-011 股票交易与股票持仓', () => {
     await expect(page.getByTestId('positions-count')).toContainText('1')
     await expect(page.getByTestId('position-row').first()).toContainText('未冻结')
     await expect.poll(() => ui.positionRows()).toEqual(['XYZ 200 666.67 3.3334'])
+    // the new sale sells the remaining S2 lot (cost 1,125.49): +174.51
     await page.goto('/closed')
-    await expect(page.getByTestId('closed-count')).toHaveText('共 0 笔平仓')
-    await expect(page.getByTestId('closed-pnl-total')).toHaveText('0.00')
+    await expect(page.getByTestId('closed-count')).toHaveText('共 3 笔平仓')
+    await expect(page.getByTestId('closed-pnl-total')).toHaveText('+316.02')
     await page.goto('/pnl-summary')
-    await expect(page.getByTestId('pnl-empty')).toHaveText('暂无平仓记录')
+    await expect(page.getByTestId('pnl-total')).toHaveText('+316.02')
+    await expect(page.getByTestId('pnl-total-breakdown')).toHaveText('期权 0 笔 0.00 · 股票 3 笔 +316.02')
     await page.goto('/')
-    await expect(page.getByTestId('dashboard-realized-total')).toHaveText('0.00')
-    await expect(page.getByTestId('dashboard-realized-count')).toHaveText('0')
+    await expect(page.getByTestId('dashboard-realized-total')).toHaveText('+316.02')
+    await expect(page.getByTestId('dashboard-realized-count')).toHaveText('3')
     await expect(page.getByTestId('dashboard-position-count')).toHaveText('1')
+    await expect(page.getByTestId('dashboard-stock-position-count')).toHaveText('1')
     await page.goto('/trades')
     await expect(page.getByTestId('trade-row')).toHaveCount(1)
     await ui.openList()

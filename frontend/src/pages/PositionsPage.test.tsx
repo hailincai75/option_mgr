@@ -689,3 +689,45 @@ describe('short calls (FEAT-038, Q62)', () => {
     expect(await screen.findByText('卖出 call 不冻结现金，需自行保证股票覆盖')).toBeInTheDocument()
   })
 })
+
+describe('stock section anchor (FEAT-040, Q89)', () => {
+  it('scrolls the 股票持仓 section into view for /positions#stock-positions', async () => {
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      writable: true,
+      value: scrollIntoView,
+    })
+    try {
+      startFakeServer({ positions: () => jsonResponse(BASELINE) })
+      renderWithProviders(<PositionsPage />, { route: '/positions#stock-positions' })
+
+      const section = await screen.findByTestId('stock-positions')
+      expect(section).toHaveAttribute('id', 'stock-positions')
+      await waitFor(() => {
+        expect(scrollIntoView).toHaveBeenCalledTimes(1)
+      })
+      expect(scrollIntoView.mock.contexts[0]).toBe(section)
+    } finally {
+      Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView')
+    }
+  })
+
+  it('does not scroll without the hash', async () => {
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      writable: true,
+      value: scrollIntoView,
+    })
+    try {
+      startFakeServer({ positions: () => jsonResponse(BASELINE) })
+      renderWithProviders(<PositionsPage />, { route: '/positions' })
+      await screen.findByTestId('positions-count')
+      await screen.findByTestId('stock-positions-count')
+      expect(scrollIntoView).not.toHaveBeenCalled()
+    } finally {
+      Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView')
+    }
+  })
+})

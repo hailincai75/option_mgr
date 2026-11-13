@@ -13,21 +13,26 @@ import {
 import { jsonResponse, mockFetch, renderWithProviders } from '../test/render'
 import { PnlSummaryPage } from './PnlSummaryPage'
 
-/** FEAT-008 AC 3 (scenario Q, all time). */
+/** A record type with no records (FEAT-040: never null). */
+const NONE = { closedCount: 0, realizedPnl: '0.00' }
+
+/** FEAT-008 AC 3 (scenario Q, all time; options only). */
 const ALL_TIME: PnlSummary = {
   startDate: null,
   endDate: null,
   closedCount: 6,
   realizedPnlTotal: '703.05',
+  option: { closedCount: 6, realizedPnl: '703.05' },
+  stock: NONE,
   bySymbol: [
-    { symbol: 'AAPL', closedCount: 3, realizedPnl: '248.70' },
-    { symbol: 'MSFT', closedCount: 1, realizedPnl: '350.00' },
-    { symbol: 'TSLA', closedCount: 1, realizedPnl: '120.00' },
-    { symbol: 'XYZ', closedCount: 1, realizedPnl: '-15.65' },
+    { symbol: 'AAPL', closedCount: 3, realizedPnl: '248.70', option: { closedCount: 3, realizedPnl: '248.70' }, stock: NONE },
+    { symbol: 'MSFT', closedCount: 1, realizedPnl: '350.00', option: { closedCount: 1, realizedPnl: '350.00' }, stock: NONE },
+    { symbol: 'TSLA', closedCount: 1, realizedPnl: '120.00', option: { closedCount: 1, realizedPnl: '120.00' }, stock: NONE },
+    { symbol: 'XYZ', closedCount: 1, realizedPnl: '-15.65', option: { closedCount: 1, realizedPnl: '-15.65' }, stock: NONE },
   ],
   byMonth: [
-    { month: '2026-11', closedCount: 4, realizedPnl: '633.05' },
-    { month: '2026-10', closedCount: 2, realizedPnl: '70.00' },
+    { month: '2026-11', closedCount: 4, realizedPnl: '633.05', option: { closedCount: 4, realizedPnl: '633.05' }, stock: NONE },
+    { month: '2026-10', closedCount: 2, realizedPnl: '70.00', option: { closedCount: 2, realizedPnl: '70.00' }, stock: NONE },
   ],
 }
 
@@ -37,12 +42,14 @@ const NOV_1_6: PnlSummary = {
   endDate: '2026-11-06',
   closedCount: 3,
   realizedPnlTotal: '993.05',
+  option: { closedCount: 3, realizedPnl: '993.05' },
+  stock: NONE,
   bySymbol: [
-    { symbol: 'AAPL', closedCount: 1, realizedPnl: '658.70' },
-    { symbol: 'MSFT', closedCount: 1, realizedPnl: '350.00' },
-    { symbol: 'XYZ', closedCount: 1, realizedPnl: '-15.65' },
+    { symbol: 'AAPL', closedCount: 1, realizedPnl: '658.70', option: { closedCount: 1, realizedPnl: '658.70' }, stock: NONE },
+    { symbol: 'MSFT', closedCount: 1, realizedPnl: '350.00', option: { closedCount: 1, realizedPnl: '350.00' }, stock: NONE },
+    { symbol: 'XYZ', closedCount: 1, realizedPnl: '-15.65', option: { closedCount: 1, realizedPnl: '-15.65' }, stock: NONE },
   ],
-  byMonth: [{ month: '2026-11', closedCount: 3, realizedPnl: '993.05' }],
+  byMonth: [{ month: '2026-11', closedCount: 3, realizedPnl: '993.05', option: { closedCount: 3, realizedPnl: '993.05' }, stock: NONE }],
 }
 
 const EMPTY: PnlSummary = {
@@ -50,6 +57,8 @@ const EMPTY: PnlSummary = {
   endDate: null,
   closedCount: 0,
   realizedPnlTotal: '0.00',
+  option: NONE,
+  stock: NONE,
   bySymbol: [],
   byMonth: [],
 }
@@ -139,27 +148,28 @@ describe('PnlSummaryPage', () => {
     renderPage()
 
     expect(await screen.findByTestId('pnl-total-line')).toHaveTextContent(
-      '共 6 笔平仓，已实现盈亏合计 +703.05',
+      '共 6 笔，已实现盈亏合计 +703.05',
     )
     expect(byTestId('pnl-total')).toHaveStyle({ color: '#389e0d' })
     expect(rows('pnl-symbol-row')).toEqual([
-      ['AAPL', '3', '+248.70'],
-      ['MSFT', '1', '+350.00'],
-      ['TSLA', '1', '+120.00'],
-      ['XYZ', '1', '−15.65'],
+      ['AAPL', '3', '+248.70', '—', '+248.70'],
+      ['MSFT', '1', '+350.00', '—', '+350.00'],
+      ['TSLA', '1', '+120.00', '—', '+120.00'],
+      ['XYZ', '1', '−15.65', '—', '−15.65'],
     ])
     expect(rows('pnl-month-row')).toEqual([
-      ['2026-11', '4', '+633.05'],
-      ['2026-10', '2', '+70.00'],
+      ['2026-11', '4', '+633.05', '—', '+633.05'],
+      ['2026-10', '2', '+70.00', '—', '+70.00'],
     ])
-    expect(byTestId('pnl-symbol-total-row')).toHaveTextContent('合计6+703.05')
-    expect(byTestId('pnl-month-total-row')).toHaveTextContent('合计6+703.05')
+    expect(byTestId('pnl-symbol-total-row')).toHaveTextContent('合计6+703.05—+703.05')
+    expect(byTestId('pnl-month-total-row')).toHaveTextContent('合计6+703.05—+703.05')
+    expect(byTestId('pnl-total-breakdown')).toHaveTextContent('期权 6 笔 +703.05 · 股票 0 笔 0.00')
     const xyz = screen.getAllByTestId('pnl-symbol-row')[3] as HTMLElement
     expect(within(xyz).getByTestId('pnl-symbol-pnl')).toHaveStyle({ color: '#cf1322' })
     expect(queries).toEqual([''])
-    expect(
-      screen.getByText(/已实现盈亏只来自平仓，已含手续费；不含入金、出金和利息等/),
-    ).toBeInTheDocument()
+    expect(byTestId('pnl-note')).toHaveTextContent(
+      '已实现盈亏来自期权平仓、到期作废和股票卖出，已含手续费；不含入金、出金、股息和利息；股票转入（期初持仓）和买入没有已实现盈亏。',
+    )
   })
 
   it('uses the backend totals for the totals rows (no client-side sums)', async () => {
@@ -186,17 +196,17 @@ describe('PnlSummaryPage', () => {
     await userEvent.click(byTestId('pnl-filter-submit'))
 
     await waitFor(() => {
-      expect(byTestId('pnl-total-line')).toHaveTextContent('共 3 笔平仓，已实现盈亏合计 +993.05')
+      expect(byTestId('pnl-total-line')).toHaveTextContent('共 3 笔，已实现盈亏合计 +993.05')
     })
     expect(queries.at(-1)).toBe('?startDate=2026-11-01&endDate=2026-11-06')
     expect(byTestId('location')).toHaveTextContent(
       '/pnl-summary?startDate=2026-11-01&endDate=2026-11-06',
     )
-    expect(rows('pnl-month-row')).toEqual([['2026-11', '3', '+993.05']])
+    expect(rows('pnl-month-row')).toEqual([['2026-11', '3', '+993.05', '—', '+993.05']])
 
     await userEvent.click(screen.getByText('browser-back'))
     await waitFor(() => {
-      expect(byTestId('pnl-total-line')).toHaveTextContent('共 6 笔平仓')
+      expect(byTestId('pnl-total-line')).toHaveTextContent('共 6 笔，')
     })
     expect(byTestId('pnl-filter-start-date')).toHaveValue('')
   })
@@ -251,7 +261,7 @@ describe('PnlSummaryPage', () => {
     startFakeServer(byRange)
     renderPage('/pnl-summary?startDate=2027-01-01')
     expect(await screen.findByTestId('pnl-empty')).toHaveTextContent('所选范围内没有平仓记录')
-    expect(byTestId('pnl-total-line')).toHaveTextContent('共 0 笔平仓，已实现盈亏合计 0.00')
+    expect(byTestId('pnl-total-line')).toHaveTextContent('共 0 笔，已实现盈亏合计 0.00')
     expect(screen.queryByTestId('pnl-by-symbol')).not.toBeInTheDocument()
   })
 
@@ -312,6 +322,118 @@ describe('PnlSummaryPage', () => {
     expect(await screen.findByTestId('pnl-error')).toHaveTextContent('INTERNAL_ERROR')
     await userEvent.click(byTestId('pnl-retry'))
     expect(await screen.findByTestId('pnl-total-line')).toHaveTextContent('+703.05')
+  })
+})
+
+/** FEAT-040 AC 9 (scenario M, all time): options and stocks, with 期权 / 股票 columns. */
+const SCENARIO_M: PnlSummary = {
+  startDate: null,
+  endDate: null,
+  closedCount: 5,
+  realizedPnlTotal: '141.51',
+  option: { closedCount: 2, realizedPnl: '20.00' },
+  stock: { closedCount: 3, realizedPnl: '121.51' },
+  bySymbol: [
+    {
+      symbol: 'IXQZ',
+      closedCount: 2,
+      realizedPnl: '109.84',
+      option: { closedCount: 1, realizedPnl: '35.00' },
+      stock: { closedCount: 1, realizedPnl: '74.84' },
+    },
+    {
+      symbol: 'QRTV',
+      closedCount: 1,
+      realizedPnl: '-20.00',
+      option: NONE,
+      stock: { closedCount: 1, realizedPnl: '-20.00' },
+    },
+    {
+      symbol: 'XYZ',
+      closedCount: 2,
+      realizedPnl: '51.67',
+      option: { closedCount: 1, realizedPnl: '-15.00' },
+      stock: { closedCount: 1, realizedPnl: '66.67' },
+    },
+  ],
+  byMonth: [
+    {
+      month: '2026-11',
+      closedCount: 3,
+      realizedPnl: '126.51',
+      option: { closedCount: 1, realizedPnl: '-15.00' },
+      stock: { closedCount: 2, realizedPnl: '141.51' },
+    },
+    {
+      month: '2026-10',
+      closedCount: 2,
+      realizedPnl: '15.00',
+      option: { closedCount: 1, realizedPnl: '35.00' },
+      stock: { closedCount: 1, realizedPnl: '-20.00' },
+    },
+  ],
+}
+
+describe('PnlSummaryPage with stock sales (FEAT-040)', () => {
+  it('shows 期权 / 股票 / 合计 columns and the totals breakdown (AC 9)', async () => {
+    startFakeServer(() => jsonResponse(SCENARIO_M))
+    renderPage()
+
+    expect(await screen.findByTestId('pnl-total-line')).toHaveTextContent(
+      '共 5 笔，已实现盈亏合计 +141.51',
+    )
+    expect(byTestId('pnl-total-breakdown')).toHaveTextContent(
+      '期权 2 笔 +20.00 · 股票 3 笔 +121.51',
+    )
+    expect(rows('pnl-symbol-row')).toEqual([
+      ['IXQZ', '2', '+35.00', '+74.84', '+109.84'],
+      ['QRTV', '1', '—', '−20.00', '−20.00'],
+      ['XYZ', '2', '−15.00', '+66.67', '+51.67'],
+    ])
+    expect(rows('pnl-month-row')).toEqual([
+      ['2026-11', '3', '−15.00', '+141.51', '+126.51'],
+      ['2026-10', '2', '+35.00', '−20.00', '+15.00'],
+    ])
+    expect(byTestId('pnl-symbol-total-row')).toHaveTextContent('合计5+20.00+121.51+141.51')
+    expect(byTestId('pnl-month-total-row')).toHaveTextContent('合计5+20.00+121.51+141.51')
+    const qrtv = screen.getAllByTestId('pnl-symbol-row')[1] as HTMLElement
+    expect(within(qrtv).getByTestId('pnl-symbol-stock')).toHaveStyle({ color: '#cf1322' })
+    const headers = [...document.querySelectorAll('th')].map((th) => th.textContent)
+    expect(headers).toEqual(expect.arrayContaining(['笔数', '期权', '股票', '合计']))
+    // Symbol links carry no record type (both types are shown on /closed).
+    expect(within(qrtv).getByTestId('pnl-symbol-link')).toHaveAttribute(
+      'href',
+      '/closed?symbol=QRTV',
+    )
+  })
+
+  it('shows 期权 0 笔 0.00 when the range has only stock sales (AC 10)', async () => {
+    startFakeServer(() =>
+      jsonResponse({
+        ...SCENARIO_M,
+        startDate: '2026-10-31',
+        endDate: '2026-10-31',
+        closedCount: 1,
+        realizedPnlTotal: '-20.00',
+        option: NONE,
+        stock: { closedCount: 1, realizedPnl: '-20.00' },
+        bySymbol: [SCENARIO_M.bySymbol[1]],
+        byMonth: [
+          {
+            month: '2026-10',
+            closedCount: 1,
+            realizedPnl: '-20.00',
+            option: NONE,
+            stock: { closedCount: 1, realizedPnl: '-20.00' },
+          },
+        ],
+      }),
+    )
+    renderPage('/pnl-summary?startDate=2026-10-31&endDate=2026-10-31')
+    expect(await screen.findByTestId('pnl-total-breakdown')).toHaveTextContent(
+      '期权 0 笔 0.00 · 股票 1 笔 −20.00',
+    )
+    expect(byTestId('pnl-symbol-total-row')).toHaveTextContent('合计1—−20.00−20.00')
   })
 })
 

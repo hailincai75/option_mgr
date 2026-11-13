@@ -532,6 +532,7 @@ describe('FEAT-012 trade list', () => {
 
 describe('FEAT-012 closed trades', () => {
   const closedExpiry: ClosedTrade = {
+    type: 'OPTION',
     id: 7,
     tradedAt: '2026-11-20T21:00:00Z',
     tradedAtLocal: '2026-11-20T16:00:00',
@@ -552,6 +553,10 @@ describe('FEAT-012 closed trades', () => {
     note: null,
     coveredLots: [E1_LOT, E3_LOT],
     hasAuditLog: false,
+    shares: null,
+    costPerShare: null,
+    pricePerShare: null,
+    soldLots: null,
   }
 
   it('shows an EXP row and offers the 到期作废 filter (AC 2, 3)', async () => {

@@ -195,7 +195,7 @@ describe('股票 page list (FEAT-011 AC 2)', () => {
     expect(screen.queryByTestId('stock-history')).not.toBeInTheDocument()
     expect(byTestId('stock-list-total')).toHaveTextContent('共 5 条')
     expect(byTestId('stock-list-note')).toHaveTextContent(
-      '金额均已含手续费；每股价格 = 金额 ÷ 股数，仅供参考；股票已实现盈亏暂未计入已平仓页、盈亏汇总和首页（FEAT-040）',
+      '金额均已含手续费；每股价格 = 金额 ÷ 股数，仅供参考；股票已实现盈亏同时计入已平仓页、盈亏汇总和首页',
     )
   })
 

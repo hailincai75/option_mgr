@@ -19,6 +19,7 @@ export const EMPTY_DASHBOARD: Dashboard = {
     expiringWithin7DaysCount: 0,
     expiredUnprocessedCount: 0,
   },
+  stockPositions: { positionCount: 0 },
 }
 
 /** Responses for the home page's own requests (dashboard, cash summary, health). */

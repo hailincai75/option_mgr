@@ -34,6 +34,7 @@ const DASHBOARD_Q: Dashboard = {
     expiringWithin7DaysCount: 1,
     expiredUnprocessedCount: 1,
   },
+  stockPositions: { positionCount: 0 },
 }
 
 interface FakeServer {
@@ -150,7 +151,8 @@ describe('HomePage: dashboard (FEAT-008)', () => {
     expect(byTestId('dashboard-expiring-count')).toHaveAttribute('data-highlight', 'warning')
     expect(byTestId('dashboard-expired-count')).toHaveTextContent('1')
     expect(byTestId('dashboard-expired-count')).toHaveAttribute('data-highlight', 'danger')
-    expect(byTestId('dashboard-positions-card')).toHaveTextContent('持仓 3 个')
+    expect(byTestId('dashboard-positions-card')).toHaveTextContent('期权持仓 3 个')
+    expect(byTestId('dashboard-stock-positions-link')).toHaveTextContent('股票持仓 0 个标的')
     expect(byTestId('dashboard-positions-card')).toHaveTextContent('7 天内到期 1 个')
     expect(byTestId('dashboard-positions-card')).toHaveTextContent('已过期未处理 1 个')
   })
@@ -203,7 +205,8 @@ describe('HomePage: dashboard (FEAT-008)', () => {
     await waitFor(() => {
       expect(byTestId('dashboard-pnl-card')).toHaveTextContent('本月（2026-11）0.00（0 笔）')
     })
-    expect(byTestId('dashboard-positions-card')).toHaveTextContent('持仓 0 个')
+    expect(byTestId('dashboard-positions-card')).toHaveTextContent('期权持仓 0 个')
+    expect(byTestId('dashboard-stock-positions-link')).toHaveTextContent('股票持仓 0 个标的')
     expect(byTestId('dashboard-frozen-total')).toHaveTextContent('0.00')
     expect(byTestId('dashboard-positions-card')).toHaveTextContent('7 天内到期 0 个')
     expect(byTestId('dashboard-positions-card')).toHaveTextContent('已过期未处理 0 个')
@@ -350,5 +353,45 @@ describe('HomePage: dashboard (FEAT-008)', () => {
     expect(
       fetchMock.mock.calls.filter(([input]) => input === '/api/dashboard').length,
     ).toBeGreaterThan(1)
+  })
+})
+
+describe('HomePage: stock figures (FEAT-040)', () => {
+  /** FEAT-040 AC 11 (scenario M + O5, today 2026-11-13). */
+  const DASHBOARD_M: Dashboard = {
+    asOfDate: '2026-11-13',
+    currentMonth: '2026-11',
+    cash: { totalCash: '19529.35', frozenCash: '0.00', availableCash: '19529.35' },
+    realizedPnl: { closedCount: 5, total: '141.51' },
+    currentMonthRealizedPnl: { closedCount: 3, total: '126.51' },
+    positions: {
+      positionCount: 1,
+      frozenTotal: '0.00',
+      expiringWithin7DaysCount: 0,
+      expiredUnprocessedCount: 0,
+    },
+    stockPositions: { positionCount: 2 },
+  }
+
+  it('shows 期权持仓 and 股票持仓 N 个标的 linking to the stock section (AC 11, Q89, Q93)', async () => {
+    startFakeServer({
+      dashboard: () => Promise.resolve(jsonResponse(DASHBOARD_M)),
+      cash: () => Promise.resolve(jsonResponse(DASHBOARD_M.cash)),
+    })
+    renderWithProviders(<HomePage />)
+
+    expect(await screen.findByTestId('dashboard-stock-position-count')).toHaveTextContent('2')
+    expect(byTestId('dashboard-pnl-card')).toHaveTextContent('总计+141.51（5 笔）')
+    expect(byTestId('dashboard-pnl-card')).toHaveTextContent('本月（2026-11）+126.51（3 笔）')
+    const card = byTestId('dashboard-positions-card')
+    expect(card).toHaveTextContent('期权持仓 1 个')
+    expect(card).toHaveTextContent('冻结现金合计 0.00')
+    expect(card).toHaveTextContent('7 天内到期 0 个')
+    expect(card).toHaveTextContent('已过期未处理 0 个')
+    expect(byTestId('dashboard-stock-positions-link')).toHaveTextContent('股票持仓 2 个标的')
+    expect(byTestId('dashboard-stock-positions-link')).toHaveAttribute(
+      'href',
+      '/positions#stock-positions',
+    )
   })
 })

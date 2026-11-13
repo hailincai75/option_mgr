@@ -8,6 +8,7 @@ import { dashboardQueryKeys, getDashboard } from '../api/dashboard'
 import { getHealth, healthQueryKey } from '../api/health'
 import type { Dashboard } from '../api/types'
 import { CashSummaryCard } from '../components/cash/CashSummaryCard'
+import { STOCK_POSITIONS_URL } from '../components/stock/stockPositionsAnchor'
 import { QueryError } from '../components/QueryError'
 import { EMPTY_TRADE_FILTERS, toTradeListSearch } from '../components/trade/tradeListFilters'
 import { SIGNED_MONEY_COLORS } from '../components/trade/tradeLabels'
@@ -289,7 +290,7 @@ export function HomePage() {
               render={(d) => (
                 <Space orientation="vertical" size={4}>
                   <div>
-                    持仓{' '}
+                    期权持仓{' '}
                     <strong data-testid="dashboard-position-count">
                       {d.positions.positionCount}
                     </strong>{' '}
@@ -313,6 +314,14 @@ export function HomePage() {
                     testId="dashboard-expired-count"
                     tone="danger"
                   />
+                  {/* FEAT-040 (Q89, Q93): shown also for 0, never highlighted. */}
+                  <Link to={STOCK_POSITIONS_URL} data-testid="dashboard-stock-positions-link">
+                    股票持仓{' '}
+                    <strong data-testid="dashboard-stock-position-count">
+                      {d.stockPositions.positionCount}
+                    </strong>{' '}
+                    个标的
+                  </Link>
                 </Space>
               )}
             />

@@ -3,6 +3,8 @@ package com.optionmgr.trade.web;
 import com.optionmgr.common.error.ApiException;
 import com.optionmgr.common.error.ErrorCode;
 import com.optionmgr.common.error.ErrorResponse.FieldError;
+import com.optionmgr.trade.domain.ClosedRecordFilter;
+import com.optionmgr.trade.domain.ClosedRecordType;
 import com.optionmgr.trade.domain.OptionType;
 import com.optionmgr.trade.domain.Symbols;
 import com.optionmgr.trade.domain.TradeAction;
@@ -56,28 +58,48 @@ final class TradeListQuery {
     static TradeFilter parse(String symbol, String expirationDate, String strike, String optionType,
                              List<String> actions, String startDate, String endDate, int page, int size,
                              Set<TradeAction> allowedActions, String actionMessage) {
+        return new TradeListQuery(allowedActions, actionMessage).build(symbol, expirationDate, strike, optionType,
+                actions, startDate, endDate, page, size);
+    }
+
+    /**
+     * FEAT-040 closed-records query: the FEAT-006 parameters plus {@code type} (OPTION / STOCK, blank = both; other
+     * values are BAD_REQUEST, reported together with the other unparsable parameters).
+     */
+    static ClosedRecordFilter parseClosed(String type, String symbol, String expirationDate, String strike,
+                                          String optionType, List<String> actions, String startDate, String endDate,
+                                          int page, int size, Set<TradeAction> allowedActions,
+                                          String actionMessage) {
         TradeListQuery q = new TradeListQuery(allowedActions, actionMessage);
-        String sym = q.symbol(symbol);
-        LocalDate exp = q.date("expirationDate", expirationDate);
-        BigDecimal k = q.strike(strike);
-        OptionType type = q.optionType(optionType);
-        Set<TradeAction> acts = q.actions(actions);
-        LocalDate start = q.date("startDate", startDate);
-        LocalDate end = q.date("endDate", endDate);
+        ClosedRecordType recordType = q.recordType(type);
+        TradeFilter options = q.build(symbol, expirationDate, strike, optionType, actions, startDate, endDate, page,
+                size);
+        return new ClosedRecordFilter(options, recordType);
+    }
+
+    private TradeFilter build(String symbol, String expirationDate, String strike, String optionType,
+                              List<String> actions, String startDate, String endDate, int page, int size) {
+        String sym = symbol(symbol);
+        LocalDate exp = date("expirationDate", expirationDate);
+        BigDecimal k = strike(strike);
+        OptionType type = optionType(optionType);
+        Set<TradeAction> acts = actions(actions);
+        LocalDate start = date("startDate", startDate);
+        LocalDate end = date("endDate", endDate);
         if (start != null && end != null && start.isAfter(end)) {
-            q.invalid.add(new FieldError("endDate", "开始日期不能晚于结束日期"));
+            invalid.add(new FieldError("endDate", "开始日期不能晚于结束日期"));
         }
         if (page < 1) {
-            q.invalid.add(new FieldError("page", "page 必须 ≥ 1"));
+            invalid.add(new FieldError("page", "page 必须 ≥ 1"));
         }
         if (size < 1 || size > MAX_SIZE) {
-            q.invalid.add(new FieldError("size", "size 必须在 1 到 100 之间"));
+            invalid.add(new FieldError("size", "size 必须在 1 到 100 之间"));
         }
-        if (!q.unparsable.isEmpty()) {
-            throw new ApiException(ErrorCode.BAD_REQUEST, "Invalid parameter value", sorted(q.unparsable));
+        if (!unparsable.isEmpty()) {
+            throw new ApiException(ErrorCode.BAD_REQUEST, "Invalid parameter value", sorted(unparsable));
         }
-        if (!q.invalid.isEmpty()) {
-            throw new ApiException(ErrorCode.VALIDATION_ERROR, "Request validation failed", sorted(q.invalid));
+        if (!invalid.isEmpty()) {
+            throw new ApiException(ErrorCode.VALIDATION_ERROR, "Request validation failed", sorted(invalid));
         }
         return new TradeFilter(sym, exp, k, type, acts, start, end);
     }
@@ -154,6 +176,18 @@ final class TradeListQuery {
             return OptionType.valueOf(raw.strip());
         } catch (IllegalArgumentException e) {
             unparsable.add(new FieldError("optionType", "类型只能是 CALL 或 PUT"));
+            return null;
+        }
+    }
+
+    private ClosedRecordType recordType(String raw) {
+        if (blank(raw)) {
+            return null;
+        }
+        try {
+            return ClosedRecordType.valueOf(raw.strip());
+        } catch (IllegalArgumentException e) {
+            unparsable.add(new FieldError("type", "类型只能是 OPTION 或 STOCK"));
             return null;
         }
     }

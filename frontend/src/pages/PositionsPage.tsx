@@ -102,7 +102,7 @@ export function PositionsPage() {
         )}
       </Card>
       {/* FEAT-011: stock positions below the option positions. */}
-      <StockPositionsCard />
+      <StockPositionsCard layoutReady={!isPending} />
     </Space>
   )
 }

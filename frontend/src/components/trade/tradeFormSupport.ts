@@ -61,7 +61,8 @@ export function applySubmitError<F extends string>(
  * After any saved, edited or deleted trade / transfer / stock trade: cash summary and ledger,
  * trades (lists and details), positions, closed trades (FEAT-006), the home dashboard and P&L
  * summary (FEAT-008), stock trades and stock positions (FEAT-011) and the audit log refresh
- * without reload.
+ * without reload. FEAT-040: closed trades, P&L summary and dashboard include stock sales (and the
+ * stock position count), so stock writes refresh them too — this one rule already covers it.
  */
 export async function refreshAfterChange(queryClient: QueryClient): Promise<void> {
   await Promise.all([

@@ -1,22 +1,38 @@
 import { Card, Space, Spin, Typography } from 'antd'
-import { Link, useNavigate } from 'react-router-dom'
+import { useEffect, useRef } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAccountQuery } from '../../account/useAccountQuery'
 import { getStockPositions, stockPositionQueryKeys } from '../../api/stockTrades'
 import { QueryError } from '../QueryError'
 import { stockSellUrl } from './stockListFilters'
+import { STOCK_POSITIONS_ANCHOR } from './stockPositionsAnchor'
 import { StockPositionTable } from './StockPositionTable'
 
 /**
  * 股票持仓 section of the positions page (FEAT-011): `GET /api/stock-positions`, backend order,
  * expandable FIFO lots, "卖出" opens the stock entry form prefilled. Every number is the backend's.
+ * FEAT-040: the section has the anchor `#stock-positions` (home page link); when the URL has that
+ * hash it scrolls into view once it and the content above it (`layoutReady`) have loaded.
  */
-export function StockPositionsCard() {
+export function StockPositionsCard({ layoutReady = true }: { layoutReady?: boolean }) {
   const navigate = useNavigate()
+  const { hash } = useLocation()
+  const scrolled = useRef(false)
   const { data, error, isPending, isFetching, refetch } = useAccountQuery({
     // FEAT-033: per-account key; runs only once the current account is known.
     queryKey: stockPositionQueryKeys.all,
     queryFn: ({ signal }) => getStockPositions(signal),
   })
+
+  useEffect(() => {
+    if (hash !== `#${STOCK_POSITIONS_ANCHOR}`) {
+      scrolled.current = false
+      return
+    }
+    if (scrolled.current || !layoutReady || isPending) return
+    scrolled.current = true
+    document.getElementById(STOCK_POSITIONS_ANCHOR)?.scrollIntoView({ block: 'start' })
+  }, [hash, layoutReady, isPending])
 
   let content
   if (isPending) {
@@ -77,6 +93,7 @@ export function StockPositionsCard() {
           录入股票交易
         </Link>
       }
+      id={STOCK_POSITIONS_ANCHOR}
       data-testid="stock-positions"
     >
       {content}

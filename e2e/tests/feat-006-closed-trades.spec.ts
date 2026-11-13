@@ -179,8 +179,8 @@ test.describe('FEAT-006 已平仓', () => {
     await c.open()
     await expect(page.getByTestId('closed-filter-action-bto')).toHaveCount(0)
     await expect(page.getByTestId('closed-filter-action-sto')).toHaveCount(0)
-    await expect(page.getByText('平仓开始日期').first()).toBeVisible()
-    await expect(page.getByText('平仓结束日期').first()).toBeVisible()
+    await expect(page.getByText('平仓 / 卖出开始日期（美东日期）').first()).toBeVisible() // FEAT-040 label
+    await expect(page.getByText('平仓 / 卖出结束日期（美东日期）').first()).toBeVisible() // FEAT-040 label
 
     await c.f('symbol').fill('aapl')
     await c.query()

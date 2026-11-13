@@ -5,7 +5,7 @@ import type { HTMLAttributes } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { getPnlSummary, pnlSummaryQueryKeys } from '../api/dashboard'
-import type { PnlMonthRow, PnlSymbolRow } from '../api/types'
+import type { PnlBreakdown, PnlMonthRow, PnlSymbolRow } from '../api/types'
 import {
   closedUrlForMonth,
   closedUrlForSymbol,
@@ -21,21 +21,84 @@ import {
 } from '../components/pnl/pnlSummarySearch'
 import { QueryError } from '../components/QueryError'
 import { SIGNED_MONEY_COLORS } from '../components/trade/tradeLabels'
-import { decimalSign, formatMoney } from '../utils/format'
+import { decimalSign, EMPTY_VALUE, formatMoney } from '../utils/format'
 
-function SignedMoney({ value, testId }: { value: string; testId: string }) {
+/** Page note (FEAT-040 requirement wording). */
+const PNL_NOTE =
+  '已实现盈亏来自期权平仓、到期作废和股票卖出，已含手续费；不含入金、出金、股息和利息；股票转入（期初持仓）和买入没有已实现盈亏。'
+
+function SignedMoney({
+  value,
+  testId,
+  strong = true,
+}: {
+  value: string
+  testId: string
+  strong?: boolean
+}) {
   return (
     <span
       data-testid={testId}
       style={{
         color: SIGNED_MONEY_COLORS[decimalSign(value)],
         fontVariantNumeric: 'tabular-nums',
-        fontWeight: 600,
+        fontWeight: strong ? 600 : undefined,
       }}
     >
       {formatMoney(value, { signed: true })}
     </span>
   )
+}
+
+/** 期权 / 股票 column (Q91): the type's realized P&L, `—` when that type has 0 records. */
+function BreakdownMoney({ part, testId }: { part: PnlBreakdown; testId: string }) {
+  if (part.closedCount === 0) return <span data-testid={testId}>{EMPTY_VALUE}</span>
+  return <SignedMoney value={part.realizedPnl} testId={testId} strong={false} />
+}
+
+type PnlRow = PnlSymbolRow | PnlMonthRow
+
+/** 笔数, 期权, 股票, 合计 columns shared by both tables (FEAT-040, Q91). */
+function figureColumns<T extends PnlRow>(testIdPrefix: string): ColumnsType<T> {
+  return [
+    {
+      title: '笔数',
+      key: 'closedCount',
+      align: 'right',
+      render: (_value: unknown, row) => (
+        <span data-testid={`${testIdPrefix}-count`}>{row.closedCount}</span>
+      ),
+    },
+    {
+      title: '期权',
+      key: 'option',
+      align: 'right',
+      render: (_value: unknown, row) => (
+        <BreakdownMoney part={row.option} testId={`${testIdPrefix}-option`} />
+      ),
+    },
+    {
+      title: '股票',
+      key: 'stock',
+      align: 'right',
+      render: (_value: unknown, row) => (
+        <BreakdownMoney part={row.stock} testId={`${testIdPrefix}-stock`} />
+      ),
+    },
+    {
+      title: '合计',
+      key: 'realizedPnl',
+      align: 'right',
+      render: (_value: unknown, row) => (
+        <SignedMoney value={row.realizedPnl} testId={`${testIdPrefix}-pnl`} />
+      ),
+    },
+  ]
+}
+
+/** "期权 2 笔 +20.00 · 股票 3 笔 +121.51" after the totals line (Q91). */
+function breakdownText(label: string, part: PnlBreakdown): string {
+  return `${label} ${String(part.closedCount)} 笔 ${formatMoney(part.realizedPnl, { signed: true })}`
 }
 
 function serverFieldErrors(error: Error | null): Partial<Record<PnlRangeField, string>> {
@@ -74,10 +137,10 @@ function RangeForm({ initialValues, errors, onApply, onClear }: RangeFormProps) 
       data-testid="pnl-filter-form"
       style={{ rowGap: 8 }}
     >
-      <Form.Item label="平仓开始日期（美东日期）" {...itemProps('startDate')}>
+      <Form.Item label="平仓 / 卖出开始日期（美东日期）" {...itemProps('startDate')}>
         <Input type="date" data-testid="pnl-filter-start-date" />
       </Form.Item>
-      <Form.Item label="平仓结束日期（美东日期）" {...itemProps('endDate')}>
+      <Form.Item label="平仓 / 卖出结束日期（美东日期）" {...itemProps('endDate')}>
         <Input type="date" data-testid="pnl-filter-end-date" />
       </Form.Item>
       <Form.Item>
@@ -96,8 +159,9 @@ function RangeForm({ initialValues, errors, onApply, onClear }: RangeFormProps) 
 
 /**
  * 盈亏汇总 page (FEAT-008, Q49/Q50): realized P&L by symbol and by month for an optional New York
- * close-date range kept in the URL. Totals rows use the backend totals (no client-side sums);
- * symbols and months link to the 已平仓 page with matching filters.
+ * close-date range kept in the URL. FEAT-040 (Q91): option closes and stock sales together, with
+ * 期权 / 股票 columns. Totals rows use the backend totals (no client-side sums); symbols and
+ * months link to the 已平仓 page with matching filters (no record type).
  */
 export function PnlSummaryPage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -131,22 +195,7 @@ export function PnlSummaryPage() {
         </Link>
       ),
     },
-    {
-      title: '笔数',
-      key: 'closedCount',
-      align: 'right',
-      render: (_value: unknown, row) => (
-        <span data-testid="pnl-symbol-count">{row.closedCount}</span>
-      ),
-    },
-    {
-      title: '已实现盈亏',
-      key: 'realizedPnl',
-      align: 'right',
-      render: (_value: unknown, row) => (
-        <SignedMoney value={row.realizedPnl} testId="pnl-symbol-pnl" />
-      ),
-    },
+    ...figureColumns<PnlSymbolRow>('pnl-symbol'),
   ]
 
   const monthColumns: ColumnsType<PnlMonthRow> = [
@@ -159,22 +208,7 @@ export function PnlSummaryPage() {
         </Link>
       ),
     },
-    {
-      title: '笔数',
-      key: 'closedCount',
-      align: 'right',
-      render: (_value: unknown, row) => (
-        <span data-testid="pnl-month-count">{row.closedCount}</span>
-      ),
-    },
-    {
-      title: '已实现盈亏',
-      key: 'realizedPnl',
-      align: 'right',
-      render: (_value: unknown, row) => (
-        <SignedMoney value={row.realizedPnl} testId="pnl-month-pnl" />
-      ),
-    },
+    ...figureColumns<PnlMonthRow>('pnl-month'),
   ]
 
   let content
@@ -212,16 +246,31 @@ export function PnlSummaryPage() {
           <strong data-testid={`${testIdPrefix}-total-count`}>{data.closedCount}</strong>
         </Table.Summary.Cell>
         <Table.Summary.Cell index={2} align="right">
+          <BreakdownMoney part={data.option} testId={`${testIdPrefix}-total-option`} />
+        </Table.Summary.Cell>
+        <Table.Summary.Cell index={3} align="right">
+          <BreakdownMoney part={data.stock} testId={`${testIdPrefix}-total-stock`} />
+        </Table.Summary.Cell>
+        <Table.Summary.Cell index={4} align="right">
           <SignedMoney value={data.realizedPnlTotal} testId={`${testIdPrefix}-total-pnl`} />
         </Table.Summary.Cell>
       </Table.Summary.Row>
     )
     content = (
       <Space orientation="vertical" size={16} style={{ width: '100%' }}>
-        <Typography.Text strong data-testid="pnl-total-line">
-          共 <span data-testid="pnl-total-count">{data.closedCount}</span> 笔平仓，已实现盈亏合计{' '}
-          <SignedMoney value={data.realizedPnlTotal} testId="pnl-total" />
-        </Typography.Text>
+        <div>
+          <Typography.Text strong data-testid="pnl-total-line">
+            共 <span data-testid="pnl-total-count">{data.closedCount}</span> 笔，已实现盈亏合计{' '}
+            <SignedMoney value={data.realizedPnlTotal} testId="pnl-total" />
+          </Typography.Text>
+          <Typography.Text
+            type="secondary"
+            style={{ fontSize: 12, marginLeft: 12 }}
+            data-testid="pnl-total-breakdown"
+          >
+            {breakdownText('期权', data.option)} · {breakdownText('股票', data.stock)}
+          </Typography.Text>
+        </div>
         {data.closedCount === 0 ? (
           <Typography.Text type="secondary" data-testid="pnl-empty">
             {filtered ? '所选范围内没有平仓记录' : '暂无平仓记录'}
@@ -274,8 +323,8 @@ export function PnlSummaryPage() {
             applyRange(EMPTY_PNL_RANGE)
           }}
         />
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          已实现盈亏只来自平仓，已含手续费；不含入金、出金和利息等。按平仓时间的美东日期归属；点击标的或月份查看对应的平仓记录。
+        <Typography.Text type="secondary" style={{ fontSize: 12 }} data-testid="pnl-note">
+          {PNL_NOTE}
         </Typography.Text>
         {content}
       </Space>

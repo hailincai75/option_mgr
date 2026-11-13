@@ -137,6 +137,12 @@ class ExpireWorthlessControllerTest {
         return call(req.contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(body)), expectedStatus);
     }
 
+    /** FEAT-040 option / stock split of a P&amp;L summary row that has only option records. */
+    private static String optionOnly(String count, String pnl) {
+        return "\"option\":{\"closedCount\":" + count + ",\"realizedPnl\":\"" + pnl + "\"},"
+                + "\"stock\":{\"closedCount\":0,\"realizedPnl\":\"0.00\"}";
+    }
+
     private JsonNode getJson(String url) throws Exception {
         return call(get(URI.create(url)), 200);
     }
@@ -410,11 +416,11 @@ class ExpireWorthlessControllerTest {
 
         JsonNode pnl = getJson("/api/pnl-summary");
         assertThat(pnl.get("closedCount").asInt()).isEqualTo(4);
-        assertThat(pnl.get("bySymbol").toString()).isEqualTo("[{\"symbol\":\"IXQZ\",\"closedCount\":1,\"realizedPnl\":\"22.34\"},"
-                + "{\"symbol\":\"QRTV\",\"closedCount\":2,\"realizedPnl\":\"-125.65\"},"
-                + "{\"symbol\":\"XYZ\",\"closedCount\":1,\"realizedPnl\":\"370.00\"}]");
+        assertThat(pnl.get("bySymbol").toString()).isEqualTo("[{\"symbol\":\"IXQZ\",\"closedCount\":1,\"realizedPnl\":\"22.34\"," + optionOnly("1", "22.34") + "},"
+                + "{\"symbol\":\"QRTV\",\"closedCount\":2,\"realizedPnl\":\"-125.65\"," + optionOnly("2", "-125.65") + "},"
+                + "{\"symbol\":\"XYZ\",\"closedCount\":1,\"realizedPnl\":\"370.00\"," + optionOnly("1", "370.00") + "}]");
         assertThat(pnl.get("byMonth").toString())
-                .isEqualTo("[{\"month\":\"2026-11\",\"closedCount\":4,\"realizedPnl\":\"266.69\"}]");
+                .isEqualTo("[{\"month\":\"2026-11\",\"closedCount\":4,\"realizedPnl\":\"266.69\"," + optionOnly("4", "266.69") + "}]");
 
         JsonNode d = getJson("/api/dashboard");
         assertThat(d.get("realizedPnl").toString()).isEqualTo("{\"closedCount\":4,\"total\":\"266.69\"}");
@@ -525,7 +531,7 @@ class ExpireWorthlessControllerTest {
         assertThat(d.get("currentMonthRealizedPnl").toString()).isEqualTo("{\"closedCount\":0,\"total\":\"0.00\"}");
         assertThat(d.get("realizedPnl").toString()).isEqualTo("{\"closedCount\":1,\"total\":\"95.00\"}");
         assertThat(getJson("/api/pnl-summary").get("byMonth").toString())
-                .isEqualTo("[{\"month\":\"2026-11\",\"closedCount\":1,\"realizedPnl\":\"95.00\"}]");
+                .isEqualTo("[{\"month\":\"2026-11\",\"closedCount\":1,\"realizedPnl\":\"95.00\"," + optionOnly("1", "95.00") + "}]");
 
         long withdrawal = send(post("/api/cash/transfers"), w, 201).get("id").asLong();
         assertSummary("3595.00", "0.00", "3595.00");

@@ -1,7 +1,14 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '../test/userEvent'
 import { useLocation, useNavigate } from 'react-router-dom'
-import type { ClosedTrade, ClosedTradePage, CoveredLot } from '../api/types'
+import type {
+  ClosedOptionRecord,
+  ClosedSoldLot,
+  ClosedStockRecord,
+  ClosedTrade,
+  ClosedTradePage,
+  CoveredLot,
+} from '../api/types'
 import { App } from '../App'
 import { jsonResponse, mockFetch, renderWithProviders } from '../test/render'
 import { ClosedTradesPage } from './ClosedTradesPage'
@@ -22,8 +29,15 @@ function lot(partial: Partial<CoveredLot> & Pick<CoveredLot, 'tradeId'>): Covere
   }
 }
 
-function closed(partial: Partial<ClosedTrade> & Pick<ClosedTrade, 'id'>): ClosedTrade {
-  const merged: ClosedTrade = {
+function closed(
+  partial: Partial<ClosedOptionRecord> & Pick<ClosedOptionRecord, 'id'>,
+): ClosedOptionRecord {
+  const merged: ClosedOptionRecord = {
+    type: 'OPTION',
+    shares: null,
+    costPerShare: null,
+    pricePerShare: null,
+    soldLots: null,
     tradedAt: '2026-11-05T15:00:00Z',
     tradedAtLocal: '2026-11-05T10:00:00',
     symbol: 'AAPL',
@@ -131,15 +145,26 @@ const C4 = closed({
 })
 const SCENARIO_P = [C4, C3, C2, C1]
 
-/** Test-side stand-in for the backend: filters like the contract, sums cents for the total. */
+/**
+ * Test-side stand-in for the backend: filters like the contract (FEAT-040: `type`, and the
+ * option-only filters leave stock rows out, Q90), sums cents for the total.
+ */
 function respond(all: ClosedTrade[], query: URLSearchParams): ClosedTradePage {
   const symbol = query.get('symbol')?.trim().toUpperCase()
   const actions = query.getAll('action').flatMap((a) => a.split(','))
   const startDate = query.get('startDate')
   const endDate = query.get('endDate')
   const strike = query.get('strike')
+  const type = query.get('type')
+  const optionOnly =
+    actions.length > 0 ||
+    Boolean(query.get('expirationDate')) ||
+    Boolean(strike) ||
+    Boolean(query.get('optionType'))
   const filtered = all.filter((t) => {
     const day = t.tradedAtLocal.slice(0, 10)
+    if (type && t.type !== type) return false
+    if (t.type === 'STOCK' && optionOnly) return false
     return (
       (!symbol || t.symbol === symbol) &&
       (!query.get('expirationDate') || t.expirationDate === query.get('expirationDate')) &&
@@ -438,8 +463,8 @@ describe('ClosedTradesPage', () => {
     expect(byTestId('closed-filter-action-stc')).toBeInTheDocument()
     expect(screen.queryByTestId('closed-filter-action-bto')).not.toBeInTheDocument()
     expect(screen.queryByTestId('closed-filter-action-sto')).not.toBeInTheDocument()
-    expect(screen.getByText('平仓开始日期（美东日期）')).toBeInTheDocument()
-    expect(screen.getByText('平仓结束日期（美东日期）')).toBeInTheDocument()
+    expect(screen.getByText('平仓 / 卖出开始日期（美东日期）')).toBeInTheDocument()
+    expect(screen.getByText('平仓 / 卖出结束日期（美东日期）')).toBeInTheDocument()
   })
 
   it('shows 没有符合条件的平仓记录 with 0.00 and clears (AC 3)', async () => {
@@ -703,5 +728,438 @@ describe('ClosedTradesPage', () => {
     expect(
       within(screen.getAllByTestId('closed-row')[0] as HTMLElement).getByTestId('closed-cell-pnl'),
     ).toHaveTextContent('+260.00')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// FEAT-040 scenario M: option closes and stock sales together (backend order O4, S7, S6, S3, O2)
+// ---------------------------------------------------------------------------
+
+function soldLot(partial: Partial<ClosedSoldLot> & Pick<ClosedSoldLot, 'tradeId'>): ClosedSoldLot {
+  return {
+    type: 'BUY',
+    tradedAt: '2026-11-03T15:00:00Z',
+    tradedAtLocal: '2026-11-03T10:00:00',
+    tradeDate: null,
+    shares: 100,
+    netAmount: '0.00',
+    ...partial,
+  }
+}
+
+function stockSale(
+  partial: Partial<ClosedStockRecord> & Pick<ClosedStockRecord, 'id'>,
+): ClosedStockRecord {
+  return {
+    type: 'STOCK',
+    tradedAt: '2026-11-05T15:00:00Z',
+    tradedAtLocal: '2026-11-05T10:00:00',
+    symbol: 'IXQZ',
+    expirationDate: null,
+    strike: null,
+    optionType: null,
+    contractLabel: null,
+    action: 'SELL',
+    closedDirection: null,
+    contracts: null,
+    multiplier: null,
+    shares: 100,
+    openingNetTotal: '0.00',
+    openingNetPerContract: null,
+    costPerShare: '0.0000',
+    closeNetAmount: '0.00',
+    closeNetPerContract: null,
+    pricePerShare: '0.0000',
+    realizedPnl: '0.00',
+    note: null,
+    coveredLots: null,
+    soldLots: [],
+    hasAuditLog: false,
+    ...partial,
+  }
+}
+
+const O4 = closed({
+  id: 4,
+  symbol: 'XYZ',
+  strike: '3',
+  optionType: 'CALL',
+  tradedAt: '2026-11-09T15:00:00Z',
+  tradedAtLocal: '2026-11-09T10:00:00',
+  openingNetTotal: '25.00',
+  openingNetPerContract: '25.00',
+  closeNetAmount: '-40.00',
+  closeNetPerContract: '-40.00',
+  realizedPnl: '-15.00',
+  coveredLots: [lot({ tradeId: 3, netAmount: '25.00' })],
+})
+const S7 = stockSale({
+  id: 7,
+  symbol: 'XYZ',
+  tradedAt: '2026-11-06T15:00:00Z',
+  tradedAtLocal: '2026-11-06T10:00:00',
+  shares: 100,
+  openingNetTotal: '-333.33',
+  costPerShare: '3.3333',
+  closeNetAmount: '400.00',
+  pricePerShare: '4.0000',
+  realizedPnl: '66.67',
+  soldLots: [
+    soldLot({
+      tradeId: 5,
+      tradedAt: '2026-11-04T15:00:00Z',
+      tradedAtLocal: '2026-11-04T10:00:00',
+      netAmount: '-333.33',
+    }),
+  ],
+})
+const S6 = stockSale({
+  id: 6,
+  shares: 150,
+  openingNetTotal: '-1125.16',
+  costPerShare: '7.5011',
+  closeNetAmount: '1200.00',
+  pricePerShare: '8.0000',
+  realizedPnl: '74.84',
+  soldLots: [
+    soldLot({
+      tradeId: 1,
+      type: 'TRANSFER_IN',
+      tradedAt: '2026-10-01T04:00:00Z',
+      tradedAtLocal: '2026-10-01T00:00:00',
+      tradeDate: '2026-10-01',
+      netAmount: '-750.00',
+    }),
+    soldLot({ tradeId: 4, shares: 50, netAmount: '-375.16' }),
+  ],
+})
+const S3 = stockSale({
+  id: 3,
+  symbol: 'QRTV',
+  tradedAt: '2026-11-01T03:30:00Z',
+  tradedAtLocal: '2026-10-31T23:30:00',
+  shares: 1000,
+  openingNetTotal: '-400.00',
+  costPerShare: '0.4000',
+  closeNetAmount: '380.00',
+  pricePerShare: '0.3800',
+  realizedPnl: '-20.00',
+  note: '盘后',
+})
+const O2 = closed({
+  id: 2,
+  symbol: 'IXQZ',
+  expirationDate: '2026-11-20',
+  strike: '7',
+  tradedAt: '2026-10-30T14:00:00Z',
+  tradedAtLocal: '2026-10-30T10:00:00',
+  openingNetTotal: '45.00',
+  openingNetPerContract: '45.00',
+  closeNetAmount: '-10.00',
+  closeNetPerContract: '-10.00',
+  realizedPnl: '35.00',
+  coveredLots: [lot({ tradeId: 1, netAmount: '45.00' })],
+})
+const SCENARIO_M: ClosedTrade[] = [O4, S7, S6, S3, O2]
+
+function recordKeys(): string[] {
+  return screen
+    .queryAllByTestId('closed-row')
+    .map(
+      (row) =>
+        `${row.getAttribute('data-record-type') ?? ''}:${row.getAttribute('data-trade-id') ?? ''}`,
+    )
+}
+
+async function expectRecords(keys: string[]) {
+  await waitFor(() => {
+    expect(recordKeys()).toEqual(keys)
+  })
+}
+
+const ALL_M = ['OPTION:4', 'STOCK:7', 'STOCK:6', 'STOCK:3', 'OPTION:2']
+const OPTION_ONLY_TEST_IDS = [
+  'closed-filter-expiration',
+  'closed-filter-strike',
+  'closed-filter-type-call',
+  'closed-filter-action-btc',
+]
+
+function stockRowCells(row: HTMLElement): (string | null)[] {
+  const cell = (id: string) => within(row).getByTestId(id).textContent
+  return [
+    cell('closed-cell-time'),
+    cell('closed-cell-type'),
+    cell('closed-cell-contract'),
+    cell('closed-cell-action'),
+    cell('closed-cell-contracts'),
+    cell('closed-cell-opening-net'),
+    cell('closed-cell-opening-net-per'),
+    cell('closed-cell-close-net'),
+    cell('closed-cell-close-net-per'),
+    cell('closed-cell-pnl'),
+  ]
+}
+
+const rowAt = (index: number) => screen.getAllByTestId('closed-row')[index] as HTMLElement
+
+describe('ClosedTradesPage with stock sales (FEAT-040)', () => {
+  it('shows option and stock rows together with type-specific cells (AC 1)', async () => {
+    startFakeServer({ closed: SCENARIO_M })
+    renderPage()
+    await expectRecords(ALL_M)
+    await expectSummary('共 5 笔平仓', '+141.51')
+
+    expect(within(rowAt(0)).getByTestId('closed-cell-type')).toHaveTextContent('期权')
+    expect(within(rowAt(0)).getByTestId('closed-cell-direction')).toHaveTextContent('空头')
+    expect(stockRowCells(rowAt(2))).toEqual([
+      '2026-11-05 10:00',
+      '股票',
+      'IXQZ',
+      '卖出',
+      '150 股',
+      '−1,125.16',
+      '每股 7.5011',
+      '+1,200.00',
+      '每股 8.0000',
+      '+74.84',
+    ])
+    const s3 = rowAt(3)
+    expect(within(s3).getByTestId('closed-cell-contracts')).toHaveTextContent('1,000 股')
+    expect(within(s3).getByTestId('closed-cell-pnl')).toHaveStyle({ color: '#cf1322' })
+    expect(within(s3).getByTestId('closed-cell-note')).toHaveTextContent('盘后')
+    expect(within(s3).getByTestId('closed-cell-time')).toHaveTextContent('2026-10-31 23:30')
+    for (const index of [1, 2, 3]) {
+      const row = rowAt(index)
+      expect(within(row).queryByTestId('closed-cell-direction')).not.toBeInTheDocument()
+      expect(within(row).getByTestId('closed-cell-contracts').textContent).not.toContain(
+        'multiplier',
+      )
+    }
+    expect(screen.queryByTestId('closed-history')).not.toBeInTheDocument()
+    const headers = [...document.querySelectorAll('th')].map((th) => th.textContent)
+    for (const header of [
+      '类型',
+      '合约 / 标的',
+      '张数 / 股数',
+      '开仓净额合计 / 成本',
+      '平仓净额 / 卖出实收',
+    ]) {
+      expect(headers).toContain(header)
+    }
+    expect(byTestId('closed-stock-note')).toHaveTextContent(
+      '股票卖出：成本为按 FIFO 被卖出批次的成本（部分卖出按比例四舍五入到分），每股数字保留 4 位小数，仅供参考；股票转入和买入没有已实现盈亏。',
+    )
+  })
+
+  it('expands sold lots of a stock sale (AC 2)', async () => {
+    startFakeServer({ closed: SCENARIO_M })
+    renderPage()
+    await expectRecords(ALL_M)
+
+    const s6 = rowAt(2)
+    await userEvent.click(within(s6).getByTestId('closed-expand'))
+    const lots = await within(s6.nextElementSibling as HTMLElement).findAllByTestId(
+      'closed-sold-lot-row',
+    )
+    expect(
+      lots.map((row) => [
+        within(row).getByTestId('closed-sold-lot-time').textContent,
+        within(row).getByTestId('closed-sold-lot-source').textContent,
+        within(row).getByTestId('closed-sold-lot-shares').textContent,
+        within(row).getByTestId('closed-sold-lot-cost').textContent,
+      ]),
+    ).toEqual([
+      ['2026-10-01', '转入', '100 股', '−750.00'],
+      ['2026-11-03 10:00', '买入', '50 股', '−375.16'],
+    ])
+
+    const o2 = rowAt(4)
+    await userEvent.click(within(o2).getByTestId('closed-expand'))
+    const optionLots = await within(o2.nextElementSibling as HTMLElement).findAllByTestId(
+      'closed-lot-row',
+    )
+    expect(optionLots).toHaveLength(1)
+  })
+
+  it('filters by record type in the URL and goes back (AC 3)', async () => {
+    const queries = startFakeServer({ closed: SCENARIO_M })
+    renderPage()
+    await expectRecords(ALL_M)
+
+    await userEvent.click(byTestId('closed-filter-record-type-stock'))
+    await submitFilters()
+    await expectRecords(['STOCK:7', 'STOCK:6', 'STOCK:3'])
+    await expectSummary('共 3 笔平仓', '+121.51')
+    expect(queries.at(-1)?.get('type')).toBe('STOCK')
+    expect(byTestId('location')).toHaveTextContent('/closed?type=STOCK')
+
+    await userEvent.click(screen.getByText('browser-back'))
+    await expectRecords(ALL_M)
+    expect(queries.at(-1)?.get('type')).toBeNull()
+  })
+
+  it('restores 期权 from the URL and combines with symbol (AC 3)', async () => {
+    startFakeServer({ closed: SCENARIO_M })
+    renderPage('/closed?type=OPTION')
+    await expectRecords(['OPTION:4', 'OPTION:2'])
+    await expectSummary('共 2 笔平仓', '+20.00')
+    expect(byTestId('closed-filter-record-type-option')).toBeChecked()
+
+    setText('closed-filter-symbol', 'ixqz')
+    await userEvent.click(byTestId('closed-filter-record-type-any'))
+    await submitFilters()
+    await expectRecords(['STOCK:6', 'OPTION:2'])
+    await expectSummary('共 2 笔平仓', '+109.84')
+  })
+
+  it('rejects an invalid record type in the URL without querying (AC 3)', async () => {
+    const queries = startFakeServer({ closed: SCENARIO_M })
+    renderPage('/closed?type=FUTURE')
+    await waitFor(() => {
+      expect(
+        within(formItemOf(byTestId('closed-filter-record-type'))).getByText(
+          '类型只能是 OPTION 或 STOCK',
+        ),
+      ).toBeInTheDocument()
+    })
+    expect(byTestId('closed-invalid')).toBeInTheDocument()
+    expect(queries).toHaveLength(0)
+  })
+
+  it('shows a backend type error under the record type filter', async () => {
+    startFakeServer({
+      closed: SCENARIO_M,
+      onList: () =>
+        jsonResponse(
+          {
+            code: 'BAD_REQUEST',
+            message: 'Invalid parameter value',
+            status: 400,
+            path: '/api/closed-trades',
+            timestamp: '2026-11-13T15:00:00Z',
+            details: [{ field: 'type', message: '类型只能是 OPTION 或 STOCK' }],
+          },
+          400,
+        ),
+    })
+    renderPage('/closed?type=STOCK')
+    await waitFor(() => {
+      expect(
+        within(formItemOf(byTestId('closed-filter-record-type'))).getByText(
+          '类型只能是 OPTION 或 STOCK',
+        ),
+      ).toBeInTheDocument()
+    })
+  })
+
+  it('hints that option-only filters show only options (AC 4, Q90)', async () => {
+    startFakeServer({ closed: SCENARIO_M })
+    renderPage()
+    await expectRecords(ALL_M)
+    expect(screen.queryByTestId('closed-filter-option-only-hint')).not.toBeInTheDocument()
+
+    await userEvent.click(byTestId('closed-filter-action-btc'))
+    expect(await screen.findByTestId('closed-filter-option-only-hint')).toHaveTextContent(
+      '按到期日 / 行权价 / Call·Put / 方向筛选时只显示期权',
+    )
+    await submitFilters()
+    await expectRecords(['OPTION:4', 'OPTION:2'])
+    await expectSummary('共 2 笔平仓', '+20.00')
+    expect(await screen.findByTestId('closed-filter-option-only-hint')).toBeInTheDocument()
+
+    // 期权 is not 不限: no hint.
+    await userEvent.click(byTestId('closed-filter-record-type-option'))
+    await waitFor(() => {
+      expect(screen.queryByTestId('closed-filter-option-only-hint')).not.toBeInTheDocument()
+    })
+  })
+
+  it('disables and empties the option-only filters for 股票, re-enables empty (AC 4, Q90)', async () => {
+    const queries = startFakeServer({ closed: SCENARIO_M })
+    renderPage()
+    await expectRecords(ALL_M)
+
+    await userEvent.click(byTestId('closed-filter-action-btc'))
+    setText('closed-filter-expiration', '2026-11-20')
+    await userEvent.click(byTestId('closed-filter-record-type-stock'))
+
+    await waitFor(() => {
+      expect(byTestId('closed-filter-action-btc')).not.toBeChecked()
+    })
+    expect(byTestId('closed-filter-expiration')).toHaveValue('')
+    for (const id of OPTION_ONLY_TEST_IDS) expect(byTestId(id)).toBeDisabled()
+    expect(screen.queryByTestId('closed-filter-option-only-hint')).not.toBeInTheDocument()
+
+    await submitFilters()
+    await expectRecords(['STOCK:7', 'STOCK:6', 'STOCK:3'])
+    await expectSummary('共 3 笔平仓', '+121.51')
+    const last = queries.at(-1)
+    expect(last?.get('type')).toBe('STOCK')
+    expect(last?.getAll('action')).toEqual([])
+    expect(last?.get('expirationDate')).toBeNull()
+    expect(byTestId('location')).toHaveTextContent('/closed?type=STOCK')
+
+    await userEvent.click(byTestId('closed-filter-record-type-any'))
+    await waitFor(() => {
+      for (const id of OPTION_ONLY_TEST_IDS) expect(byTestId(id)).toBeEnabled()
+    })
+    expect(byTestId('closed-filter-expiration')).toHaveValue('')
+    expect(byTestId('closed-filter-action-btc')).not.toBeChecked()
+  })
+
+  it('keeps 股票 + option filters from a URL, disabled, and shows the empty result (AC 4)', async () => {
+    const queries = startFakeServer({ closed: SCENARIO_M })
+    renderPage('/closed?type=STOCK&action=BTC')
+    expect(await screen.findByTestId('closed-no-match')).toHaveTextContent('没有符合条件的平仓记录')
+    await expectSummary('共 0 笔平仓', '0.00')
+    expect(queries.at(-1)?.get('type')).toBe('STOCK')
+    expect(queries.at(-1)?.getAll('action')).toEqual(['BTC'])
+    expect(byTestId('closed-filter-action-btc')).toBeChecked()
+    expect(byTestId('closed-filter-action-btc')).toBeDisabled()
+  })
+
+  it('links stock symbols to the 股票 page and 历史 by record type (AC 8)', async () => {
+    const edited: ClosedTrade[] = [
+      O4,
+      S7,
+      { ...S6, hasAuditLog: true },
+      S3,
+      { ...O2, hasAuditLog: true },
+    ]
+    startFakeServer({ closed: edited })
+    renderPage()
+    await expectRecords(ALL_M)
+
+    expect(within(rowAt(2)).getByTestId('closed-history')).toHaveAttribute(
+      'href',
+      '/audit?objectType=STOCK_TRADE&objectId=6',
+    )
+    expect(within(rowAt(4)).getByTestId('closed-history')).toHaveAttribute(
+      'href',
+      '/audit?objectType=OPTION_TRADE&objectId=2',
+    )
+    for (const index of [0, 1, 3]) {
+      expect(within(rowAt(index)).queryByTestId('closed-history')).not.toBeInTheDocument()
+    }
+    expect(within(rowAt(2)).getByTestId('closed-cell-contract')).toHaveAttribute(
+      'href',
+      '/stocks?symbol=IXQZ',
+    )
+    expect(within(rowAt(4)).getByTestId('closed-cell-contract')).toHaveAttribute(
+      'href',
+      '/trades?symbol=IXQZ&expirationDate=2026-11-20&strike=7&optionType=PUT',
+    )
+  })
+
+  it('renders an option and a stock row with the same id (type + id keys)', async () => {
+    const sameId = stockSale({ id: 4, symbol: 'XYZ', realizedPnl: '1.00' })
+    startFakeServer({ closed: [sameId, O4] })
+    renderPage()
+    await expectRecords(['STOCK:4', 'OPTION:4'])
+    expect(within(rowAt(0)).getByTestId('closed-cell-contract')).toHaveTextContent('XYZ')
+    expect(within(rowAt(1)).getByTestId('closed-cell-contract')).toHaveTextContent(
+      'XYZ 2026-12-18 3 C',
+    )
   })
 })

@@ -1088,7 +1088,7 @@ class Feat011StockTradesSystemTest extends OptionTradeSystemTestBase {
     // ------------------------------------------------------------------ AC 13
 
     @Test
-    @DisplayName("AC13 与期权互不影响：STO call 不检查覆盖、股票不锁定；已平仓/盈亏汇总/首页不含股票")
+    @DisplayName("AC13 与期权互不影响：STO call 不检查覆盖、股票不锁定；FEAT-040（AC15）起已平仓/盈亏汇总/首页包含股票卖出")
     void ac13NoOptionInteraction() {
         scenarioS();
         JsonNode call = okTrade(trade("STO", 5, "IXQZ", "2026-12-18", "9", "CALL", "150.00", "2026-11-12T10:00", 100));
@@ -1098,25 +1098,40 @@ class Feat011StockTradesSystemTest extends OptionTradeSystemTestBase {
         assertThat(opt.get("positionCount").asInt()).isEqualTo(1);
         assertThat(opt.get("positions").get(0).get("frozenCash").asText()).isEqualTo("0.00");
 
+        // FEAT-040 AC15 (replaces the old "不含股票" numbers): S4 +74.84, S5 +66.67
+        assertThat(closedRows()).containsExactly("STOCK S5 66.67", "STOCK S4 74.84");
+        JsonNode closed = get("/api/closed-trades").body();
+        assertThat(closed.get("totalItems").asInt()).isEqualTo(2);
+        assertThat(closed.get("filteredRealizedPnlTotal").asText()).isEqualTo("141.51");
+        JsonNode pnl = get("/api/pnl-summary").body();
+        assertThat(pnl.get("closedCount").asInt()).isEqualTo(2);
+        assertThat(pnl.get("realizedPnlTotal").asText()).isEqualTo("141.51");
+        assertThat(pnl.get("option").get("closedCount").asInt()).isZero();
+        assertThat(pnl.get("option").get("realizedPnl").asText()).isEqualTo("0.00");
+        assertThat(pnl.get("stock").get("closedCount").asInt()).isEqualTo(2);
+        assertThat(pnl.get("stock").get("realizedPnl").asText()).isEqualTo("141.51");
+        JsonNode dash = get("/api/dashboard").body();
+        assertThat(dash.get("realizedPnl").get("closedCount").asInt()).isEqualTo(2);
+        assertThat(dash.get("realizedPnl").get("total").asText()).isEqualTo("141.51");
+        assertThat(dash.get("currentMonthRealizedPnl").get("closedCount").asInt()).isEqualTo(2);
+        assertThat(dash.get("currentMonthRealizedPnl").get("total").asText()).isEqualTo("141.51");
+        assertThat(dash.get("positions").get("positionCount").asInt()).isEqualTo(1);
+        assertThat(dash.get("stockPositions").get("positionCount").asInt()).isEqualTo(2);
+
         sell("S6", "IXQZ", 150, "1300.00", "2026-11-12T11:00");
         assertThat(position("IXQZ")).isNull();
-
-        JsonNode closed = get("/api/closed-trades").body();
-        assertThat(closed.get("totalItems").asInt()).isZero();
-        assertThat(closed.get("items")).isEmpty();
-        JsonNode pnl = get("/api/pnl-summary").body();
-        assertThat(pnl.get("closedCount").asInt()).isZero();
-        assertThat(pnl.get("realizedPnlTotal").asText()).isEqualTo("0.00");
-        assertThat(pnl.get("bySymbol")).isEmpty();
-        assertThat(pnl.get("byMonth")).isEmpty();
-        JsonNode dash = get("/api/dashboard").body();
-        assertThat(dash.get("realizedPnl").get("closedCount").asInt()).isZero();
-        assertThat(dash.get("realizedPnl").get("total").asText()).isEqualTo("0.00");
-        assertThat(dash.get("currentMonthRealizedPnl").get("closedCount").asInt()).isZero();
-        assertThat(dash.get("currentMonthRealizedPnl").get("total").asText()).isEqualTo("0.00");
+        // S6 sells the remaining S2 lot (150 sh, cost 1,125.49): +174.51
+        assertThat(closedRows()).containsExactly("STOCK S6 174.51", "STOCK S5 66.67", "STOCK S4 74.84");
+        assertThat(get("/api/closed-trades").body().get("filteredRealizedPnlTotal").asText()).isEqualTo("316.02");
+        dash = get("/api/dashboard").body();
+        assertThat(dash.get("realizedPnl").get("closedCount").asInt()).isEqualTo(3);
+        assertThat(dash.get("realizedPnl").get("total").asText()).isEqualTo("316.02");
         assertThat(dash.get("positions").get("positionCount").asInt()).isEqualTo(1);
+        assertThat(dash.get("stockPositions").get("positionCount").asInt()).isEqualTo(1);
         // cash in the dashboard includes stock cash (shared balance)
         assertThat(dash.get("cash").get("totalCash").asText()).isEqualTo("10549.35");
+        // the option side is still option-only
+        assertThat(get("/api/closed-trades?type=OPTION").body().get("totalItems").asInt()).isZero();
 
         JsonNode optList = get("/api/option-trades?size=100").body();
         assertThat(optList.get("totalItems").asInt()).isEqualTo(1);
@@ -1126,8 +1141,17 @@ class Feat011StockTradesSystemTest extends OptionTradeSystemTestBase {
         }
     }
 
+    /** "TYPE label realizedPnl" per /api/closed-trades row (stock labels from this class; options by id). */
+    List<String> closedRows() {
+        List<String> out = new ArrayList<>();
+        get("/api/closed-trades?size=100").body().get("items").forEach(i -> out.add(i.get("type").asText() + " "
+                + (i.get("type").asText().equals("STOCK") ? labels.get(i.get("id").asLong()) : "#" + i.get("id"))
+                + " " + i.get("realizedPnl").asText()));
+        return out;
+    }
+
     @Test
-    @DisplayName("期权已实现盈亏的数字在加入股票记录后不变")
+    @DisplayName("期权已实现盈亏的数字（期权行 / option 拆分）在加入股票记录后不变；FEAT-040 起合计包含股票卖出")
     void optionNumbersUnchangedByStocks() {
         deposit("10000.00", "2026-11-02T10:00");
         okTrade(trade("BTO", 1, "IXQZ", "2026-12-18", "9", "CALL", "100.00", "2026-11-03T10:00", 100));
@@ -1143,7 +1167,9 @@ class Feat011StockTradesSystemTest extends OptionTradeSystemTestBase {
         assertThat(postRaw("/api/option-trades/closes", c.toString(), MediaType.APPLICATION_JSON).status())
                 .isEqualTo(201);
         String closedBefore = get("/api/closed-trades").body().toString();
-        String pnlBefore = get("/api/pnl-summary").body().toString();
+        String optionRowsBefore = get("/api/closed-trades?type=OPTION").body().toString();
+        assertThat(optionRowsBefore).isEqualTo(closedBefore);
+        JsonNode pnlBefore = get("/api/pnl-summary").body();
         JsonNode dashBefore = get("/api/dashboard").body();
         String optPosBefore = get("/api/option-positions").body().toString();
         String optListBefore = get("/api/option-trades?size=100").body().toString();
@@ -1152,15 +1178,33 @@ class Feat011StockTradesSystemTest extends OptionTradeSystemTestBase {
         buy("B", "IXQZ", 100, "800.00", "2026-11-05T10:00");
         sell("S", "IXQZ", 150, "1300.00", "2026-11-06T10:00");
 
-        assertThat(get("/api/closed-trades").body().toString()).isEqualTo(closedBefore);
-        assertThat(get("/api/pnl-summary").body().toString()).isEqualTo(pnlBefore);
+        // option-only views are unchanged
+        assertThat(get("/api/closed-trades?type=OPTION").body().toString()).isEqualTo(optionRowsBefore);
+        JsonNode pnlAfter = get("/api/pnl-summary").body();
+        assertThat(pnlAfter.get("option")).isEqualTo(pnlBefore.get("option"));
+        assertThat(pnlAfter.get("option").get("realizedPnl").asText()).isEqualTo("50.00");
+        assertThat(pnlAfter.get("bySymbol").get(0).get("option"))
+                .isEqualTo(pnlBefore.get("bySymbol").get(0).get("option"));
+        assertThat(pnlAfter.get("byMonth").get(0).get("option"))
+                .isEqualTo(pnlBefore.get("byMonth").get(0).get("option"));
         JsonNode dashAfter = get("/api/dashboard").body();
-        assertThat(dashAfter.get("realizedPnl")).isEqualTo(dashBefore.get("realizedPnl"));
-        assertThat(dashAfter.get("currentMonthRealizedPnl")).isEqualTo(dashBefore.get("currentMonthRealizedPnl"));
         assertThat(dashAfter.get("positions")).isEqualTo(dashBefore.get("positions"));
-        assertThat(dashAfter.get("realizedPnl").get("total").asText()).isEqualTo("50.00");
         assertThat(get("/api/option-positions").body().toString()).isEqualTo(optPosBefore);
         assertThat(get("/api/option-trades?size=100").body().toString()).isEqualTo(optListBefore);
+
+        // FEAT-040: totals now include the stock sale (cost 750.00 + 400.00 = 1,150.00 → +150.00)
+        JsonNode closedAfter = get("/api/closed-trades").body();
+        assertThat(closedAfter.get("filteredCount").asInt()).isEqualTo(2);
+        assertThat(closedAfter.get("filteredRealizedPnlTotal").asText()).isEqualTo("200.00");
+        assertThat(closedAfter.get("items").get(0).get("type").asText()).isEqualTo("STOCK");
+        assertThat(closedAfter.get("items").get(0).get("realizedPnl").asText()).isEqualTo("150.00");
+        assertThat(pnlAfter.get("realizedPnlTotal").asText()).isEqualTo("200.00");
+        assertThat(pnlAfter.get("stock").get("realizedPnl").asText()).isEqualTo("150.00");
+        assertThat(pnlAfter.get("bySymbol").get(0).get("realizedPnl").asText()).isEqualTo("200.00");
+        assertThat(dashAfter.get("realizedPnl").get("total").asText()).isEqualTo("200.00");
+        assertThat(dashAfter.get("realizedPnl").get("closedCount").asInt()).isEqualTo(2);
+        assertThat(dashAfter.get("currentMonthRealizedPnl").get("total").asText()).isEqualTo("200.00");
+        assertThat(dashBefore.get("realizedPnl").get("total").asText()).isEqualTo("50.00");
     }
 
     @Test

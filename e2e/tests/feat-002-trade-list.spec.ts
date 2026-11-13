@@ -170,8 +170,14 @@ test.describe('FEAT-002 交易列表与筛选', () => {
     await list.symbol.fill('aapl')
     await list.query()
     await list.expectLabels(['T4', 'T2', 'T1'], 3)
+    const before = page.url()
     await list.symbol.fill(' AAPL ')
     await list.query()
+    // Same rows as before, so wait for the URL change (the filter form is re-keyed by it) before typing again;
+    // otherwise a late remount can reset the next input to the URL value.
+    await expect.poll(() => page.url()).not.toBe(before)
+    // the re-keyed form shows the applied (normalized) value from the URL once it has remounted
+    await expect(list.symbol).toHaveValue('AAPL')
     await list.expectLabels(['T4', 'T2', 'T1'], 3)
 
     await list.symbol.fill('AAP')

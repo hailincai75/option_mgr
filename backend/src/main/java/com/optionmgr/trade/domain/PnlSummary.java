@@ -9,16 +9,22 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.TreeMap;
 
 /**
- * FEAT-008: realized P&amp;L of a set of closes, in total, by symbol (ascending, character order as in Q35) and by
- * New York calendar month of the close (newest first; months without closes do not appear, Q49). Pure Java.
+ * FEAT-008: realized P&amp;L of a set of closed records, in total, by symbol (ascending, character order as in Q35) and
+ * by New York calendar month of the close / sale (newest first; months without records do not appear, Q49). FEAT-040:
+ * records are option closes / expiries and stock sales; options and stocks of one symbol share a row, and every
+ * total and row also gives the option / stock split (Q91). Pure Java.
  */
-public record PnlSummary(Group total, List<SymbolGroup> bySymbol, List<MonthGroup> byMonth) {
+public record PnlSummary(Breakdown total, List<SymbolGroup> bySymbol, List<MonthGroup> byMonth) {
 
-    /** One close: its symbol, close time and realized P&amp;L. */
-    public record Entry(String symbol, Instant closedAt, BigDecimal realizedPnl) {
+    /** One closed record: its type, symbol, close / sale time and realized P&amp;L. */
+    public record Entry(ClosedRecordType type, String symbol, Instant closedAt, BigDecimal realizedPnl) {
+        public Entry {
+            Objects.requireNonNull(type, "type");
+        }
     }
 
     public record Group(int closedCount, BigDecimal realizedPnl) {
@@ -29,36 +35,40 @@ public record PnlSummary(Group total, List<SymbolGroup> bySymbol, List<MonthGrou
         }
     }
 
-    public record SymbolGroup(String symbol, int closedCount, BigDecimal realizedPnl) {
+    /** A total and its option / stock parts (all = option + stock). */
+    public record Breakdown(Group all, Group option, Group stock) {
+        public static final Breakdown EMPTY = new Breakdown(Group.EMPTY, Group.EMPTY, Group.EMPTY);
+
+        Breakdown plus(Entry e) {
+            return new Breakdown(all.plus(e.realizedPnl()),
+                    e.type() == ClosedRecordType.OPTION ? option.plus(e.realizedPnl()) : option,
+                    e.type() == ClosedRecordType.STOCK ? stock.plus(e.realizedPnl()) : stock);
+        }
     }
 
-    public record MonthGroup(YearMonth month, int closedCount, BigDecimal realizedPnl) {
+    public record SymbolGroup(String symbol, Breakdown breakdown) {
     }
 
-    public static PnlSummary of(Collection<Entry> closes) {
-        Group total = Group.EMPTY;
-        Map<String, Group> symbols = new TreeMap<>();
-        Map<YearMonth, Group> months = new TreeMap<>(Comparator.reverseOrder());
-        for (Entry e : closes) {
-            total = total.plus(e.realizedPnl());
-            symbols.merge(e.symbol(), Group.EMPTY.plus(e.realizedPnl()), PnlSummary::merge);
-            months.merge(monthOf(e.closedAt()), Group.EMPTY.plus(e.realizedPnl()), PnlSummary::merge);
+    public record MonthGroup(YearMonth month, Breakdown breakdown) {
+    }
+
+    public static PnlSummary of(Collection<Entry> records) {
+        Breakdown total = Breakdown.EMPTY;
+        Map<String, Breakdown> symbols = new TreeMap<>();
+        Map<YearMonth, Breakdown> months = new TreeMap<>(Comparator.reverseOrder());
+        for (Entry e : records) {
+            total = total.plus(e);
+            symbols.put(e.symbol(), symbols.getOrDefault(e.symbol(), Breakdown.EMPTY).plus(e));
+            YearMonth month = monthOf(e.closedAt());
+            months.put(month, months.getOrDefault(month, Breakdown.EMPTY).plus(e));
         }
         return new PnlSummary(total,
-                symbols.entrySet().stream()
-                        .map(s -> new SymbolGroup(s.getKey(), s.getValue().closedCount(), s.getValue().realizedPnl()))
-                        .toList(),
-                months.entrySet().stream()
-                        .map(m -> new MonthGroup(m.getKey(), m.getValue().closedCount(), m.getValue().realizedPnl()))
-                        .toList());
+                symbols.entrySet().stream().map(s -> new SymbolGroup(s.getKey(), s.getValue())).toList(),
+                months.entrySet().stream().map(m -> new MonthGroup(m.getKey(), m.getValue())).toList());
     }
 
-    /** The New York calendar month a close belongs to. */
+    /** The New York calendar month a close / sale belongs to. */
     public static YearMonth monthOf(Instant closedAt) {
         return YearMonth.from(MarketTime.toLocal(closedAt));
-    }
-
-    private static Group merge(Group a, Group b) {
-        return new Group(a.closedCount() + b.closedCount(), a.realizedPnl().add(b.realizedPnl()));
     }
 }

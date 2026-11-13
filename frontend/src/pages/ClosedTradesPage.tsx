@@ -4,37 +4,39 @@ import { useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { closedTradeQueryKeys, listClosedTrades } from '../api/closedTrades'
 import { ApiError } from '../api/client'
-import type { TradeAction } from '../api/types'
 import { ClosedTradeTable } from '../components/closed/ClosedTradeTable'
+import {
+  EMPTY_CLOSED_FILTERS,
+  hasActiveClosedFilters,
+  isClosedFilterField,
+  OPTION_ONLY_HINT,
+  parseClosedListSearch,
+  toClosedListParams,
+  toClosedListSearch,
+  validateClosedFilters,
+  CLOSE_ACTIONS,
+  type ClosedFilterField,
+  type ClosedFilterValues,
+  type ClosedListUrlState,
+} from '../components/closed/closedListFilters'
 import { QueryError } from '../components/QueryError'
 import { TradeFilterForm } from '../components/trade/TradeFilterForm'
 import { SIGNED_MONEY_COLORS } from '../components/trade/tradeLabels'
-import {
-  EMPTY_TRADE_FILTERS,
-  hasActiveFilters,
-  isTradeFilterField,
-  parseTradeListSearch,
-  toTradeListParams,
-  toTradeListSearch,
-  TRADE_PAGE_SIZES,
-  validateTradeFilters,
-  type TradeFilterField,
-  type TradeFilterValues,
-  type TradeListUrlState,
-} from '../components/trade/tradeListFilters'
+import { TRADE_PAGE_SIZES } from '../components/trade/tradeListFilters'
 import { decimalSign, formatMoney } from '../utils/format'
-
-/** FEAT-006: the closed-trade list only accepts closing directions (FEAT-012 adds EXP). */
-const CLOSE_ACTIONS: readonly TradeAction[] = ['BTC', 'STC', 'EXP']
 
 const EXPIRY_NOTE = '到期作废的平仓净额为 0.00，记在到期日 16:00（美东）。'
 
-function serverFilterErrors(error: Error | null): Partial<Record<TradeFilterField, string>> {
-  const errors: Partial<Record<TradeFilterField, string>> = {}
+/** FEAT-040: page note sentence about stock sales (requirement wording). */
+const STOCK_NOTE =
+  '股票卖出：成本为按 FIFO 被卖出批次的成本（部分卖出按比例四舍五入到分），每股数字保留 4 位小数，仅供参考；股票转入和买入没有已实现盈亏。'
+
+function serverFilterErrors(error: Error | null): Partial<Record<ClosedFilterField, string>> {
+  const errors: Partial<Record<ClosedFilterField, string>> = {}
   if (!(error instanceof ApiError)) return errors
   if (error.code !== 'VALIDATION_ERROR' && error.code !== 'BAD_REQUEST') return errors
   for (const detail of error.details) {
-    if (isTradeFilterField(detail.field) && errors[detail.field] === undefined) {
+    if (isClosedFilterField(detail.field) && errors[detail.field] === undefined) {
       errors[detail.field] = detail.message
     }
   }
@@ -42,17 +44,18 @@ function serverFilterErrors(error: Error | null): Partial<Record<TradeFilterFiel
 }
 
 /**
- * 已平仓 page (FEAT-006): read-only closed trades (BTC / STC, FEAT-012 EXP), newest first, with the count and
- * realized P&L total over ALL filtered results (Q46). Filters, page and size live in the URL with
- * the same parameter names and rules as the trade list (FEAT-002). Every number is the backend's.
+ * 已平仓 page (FEAT-006): read-only closed trades (BTC / STC, FEAT-012 EXP) and (FEAT-040) stock
+ * sales, newest first, with the count and realized P&L total over ALL filtered results (Q46).
+ * Filters, page and size live in the URL with the same parameter names and rules as the trade
+ * list (FEAT-002) plus the record `type` (OPTION / STOCK). Every number is the backend's.
  */
 export function ClosedTradesPage() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const state = parseTradeListSearch(searchParams)
-  const clientErrors = validateTradeFilters(state.filters, CLOSE_ACTIONS)
+  const state = parseClosedListSearch(searchParams)
+  const clientErrors = validateClosedFilters(state.filters)
   const filtersValid = Object.keys(clientErrors).length === 0
-  const params = toTradeListParams(state)
-  const activeFilters = hasActiveFilters(state.filters)
+  const params = toClosedListParams(state)
+  const activeFilters = hasActiveClosedFilters(state.filters)
 
   const { data, error, isPending, isFetching, isPlaceholderData, refetch } = useAccountQuery({
     // FEAT-033: per-account key; runs only once the current account is known.
@@ -65,14 +68,14 @@ export function ClosedTradesPage() {
   const fieldErrors = { ...serverFilterErrors(error), ...clientErrors }
   const hasFieldErrors = Object.keys(fieldErrors).length > 0
 
-  const go = (next: TradeListUrlState, options?: { replace?: boolean }) => {
-    setSearchParams(toTradeListSearch(next), options)
+  const go = (next: ClosedListUrlState, options?: { replace?: boolean }) => {
+    setSearchParams(toClosedListSearch(next), options)
   }
-  const applyFilters = (filters: TradeFilterValues) => {
+  const applyFilters = (filters: ClosedFilterValues) => {
     go({ filters, page: 1, size: state.size })
   }
   const clearFilters = () => {
-    applyFilters(EMPTY_TRADE_FILTERS)
+    applyFilters(EMPTY_CLOSED_FILTERS)
   }
 
   const lastPage = data?.totalPages ?? 0
@@ -80,7 +83,7 @@ export function ClosedTradesPage() {
     data !== undefined && !isPlaceholderData && data.items.length === 0 && lastPage > 0
   useEffect(() => {
     if (pastLastPage && state.page > lastPage) {
-      setSearchParams(toTradeListSearch({ ...state, page: lastPage }), { replace: true })
+      setSearchParams(toClosedListSearch({ ...state, page: lastPage }), { replace: true })
     }
   }, [pastLastPage, lastPage, state, setSearchParams])
 
@@ -147,6 +150,7 @@ export function ClosedTradesPage() {
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           净额均已含手续费；空头开仓为实收、多头开仓为实付；每张平均四舍五入到分，仅供参考。展开行查看被平掉的开仓批次（FIFO）。
           <span data-testid="closed-expiry-note">{EXPIRY_NOTE}</span>
+          <span data-testid="closed-stock-note">{STOCK_NOTE}</span>
         </Typography.Text>
         <ClosedTradeTable
           trades={data?.items ?? []}
@@ -202,13 +206,17 @@ export function ClosedTradesPage() {
         key={JSON.stringify(state.filters)}
         initialValues={state.filters}
         errors={fieldErrors}
-        onApply={applyFilters}
+        onApply={(filters) => {
+          applyFilters({ ...filters, type: filters.type ?? '' })
+        }}
         onClear={clearFilters}
         actions={CLOSE_ACTIONS}
-        dateLabelPrefix="平仓"
+        dateLabelPrefix="平仓 / 卖出"
+        optionTypeLabel="Call / Put"
+        recordType={{ optionOnlyHint: OPTION_ONLY_HINT }}
         testIdPrefix="closed-filter"
       />
-      <Card title="已平仓记录（按平仓时间倒序）" data-testid="closed-list">
+      <Card title="已平仓记录（按平仓 / 卖出时间倒序）" data-testid="closed-list">
         {content}
       </Card>
     </Space>

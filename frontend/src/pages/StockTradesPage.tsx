@@ -39,7 +39,7 @@ function serverFilterErrors(error: Error | null): Partial<Record<StockFilterFiel
 }
 
 const PAGE_NOTE =
-  '金额均已含手续费；每股价格 = 金额 ÷ 股数，仅供参考；股票已实现盈亏暂未计入已平仓页、盈亏汇总和首页（FEAT-040）'
+  '金额均已含手续费；每股价格 = 金额 ÷ 股数，仅供参考；股票已实现盈亏同时计入已平仓页、盈亏汇总和首页'
 
 /**
  * 股票 page (FEAT-011): newest-first stock records with filters (symbol, type, NY date range),

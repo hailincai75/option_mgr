@@ -456,13 +456,32 @@ export interface AuditLogParams {
 // FEAT-006 已平仓记录 / 已实现盈亏
 // ---------------------------------------------------------------------------
 
-/** Contract: `GET /api/closed-trades` → `items[]`. Every amount is signed by cash direction. */
-export interface ClosedTrade {
-  /** Closing trade id (audit filter: OPTION_TRADE + id). */
-  id: number
+/**
+ * FEAT-040: record type of a closed-trades row. Option trade ids and stock record ids are separate
+ * sequences, so a row is identified by `type` + `id` (row keys, 历史 links).
+ */
+export type ClosedRecordType = 'OPTION' | 'STOCK'
+
+/** Fields shared by both row types of `GET /api/closed-trades` → `items[]`. */
+interface ClosedRecordBase {
   tradedAt: InstantString
   tradedAtLocal: LocalDateTimeString
   symbol: string
+  /** Signed by cash direction (stock rows: −sold cost). */
+  openingNetTotal: MoneyString
+  /** Signed by cash direction (stock rows: +proceeds). */
+  closeNetAmount: MoneyString
+  realizedPnl: MoneyString
+  note: string | null
+  /** True when the closing trade / sell record itself has audit records (shows 历史). */
+  hasAuditLog: boolean
+}
+
+/** Contract: `GET /api/closed-trades` → `items[]` with `type: "OPTION"` (FEAT-006 / FEAT-012). */
+export interface ClosedOptionRecord extends ClosedRecordBase {
+  type: 'OPTION'
+  /** Closing trade id (audit filter: OPTION_TRADE + id). */
+  id: number
   expirationDate: LocalDateString
   strike: string
   optionType: OptionType
@@ -473,17 +492,66 @@ export interface ClosedTrade {
   closedDirection: PositionDirection
   contracts: number
   multiplier: number
-  openingNetTotal: MoneyString
+  shares: null
   /** HALF_UP to the cent, display only. */
   openingNetPerContract: MoneyString
-  closeNetAmount: MoneyString
+  costPerShare: null
   /** HALF_UP to the cent, display only. */
   closeNetPerContract: MoneyString
-  realizedPnl: MoneyString
-  note: string | null
+  pricePerShare: null
   coveredLots: CoveredLot[]
-  /** True when the closing trade itself (OPTION_TRADE + id) has audit records (shows 历史). */
-  hasAuditLog: boolean
+  soldLots: null
+}
+
+/** Contract (FEAT-040): `GET /api/closed-trades` → `items[].soldLots[]` (FIFO, earliest first). */
+export interface ClosedSoldLot {
+  /** Source stock record id (BUY or TRANSFER_IN). */
+  tradeId: number
+  type: StockTradeType | (string & {})
+  tradedAt: InstantString
+  /** TRANSFER_IN: that date 00:00 New York. */
+  tradedAtLocal: LocalDateTimeString
+  /** Only TRANSFER_IN lots. */
+  tradeDate: LocalDateString | null
+  shares: number
+  /** Signed by cash direction (negative = −cost of this part), scale 2. */
+  netAmount: MoneyString
+}
+
+/** Contract (FEAT-040): `GET /api/closed-trades` → `items[]` with `type: "STOCK"` (a stock sale). */
+export interface ClosedStockRecord extends ClosedRecordBase {
+  type: 'STOCK'
+  /** Stock record id (audit filter: STOCK_TRADE + id). */
+  id: number
+  expirationDate: null
+  strike: null
+  optionType: null
+  contractLabel: null
+  action: 'SELL'
+  closedDirection: null
+  contracts: null
+  multiplier: null
+  /** Shares sold. */
+  shares: number
+  openingNetPerContract: null
+  /** Sold cost ÷ shares, HALF_UP to 4 decimals, positive, display only (Q88). */
+  costPerShare: PriceString
+  closeNetPerContract: null
+  /** Proceeds ÷ shares, HALF_UP to 4 decimals, positive, display only. */
+  pricePerShare: PriceString
+  coveredLots: null
+  soldLots: ClosedSoldLot[]
+}
+
+/** Contract: `GET /api/closed-trades` → `items[]`. Every amount is signed by cash direction. */
+export type ClosedTrade = ClosedOptionRecord | ClosedStockRecord
+
+/**
+ * Contract: `GET /api/closed-trades` query parameters = the trade list's (FEAT-002) plus the
+ * FEAT-040 record `type` (omitted = both).
+ */
+export interface ClosedTradeListParams extends OptionTradeListParams {
+  type?: ClosedRecordType
 }
 
 /** Contract: `GET /api/closed-trades` → 200. Totals cover ALL filtered results (Q46). */
@@ -501,6 +569,7 @@ export interface ClosedTradePage {
 // FEAT-008 首页概览 / 盈亏汇总
 // ---------------------------------------------------------------------------
 
+/** FEAT-008 / FEAT-040: realized P&L figures include stock sales. */
 export interface RealizedPnlFigure {
   closedCount: number
   /** Signed, scale 2. */
@@ -524,12 +593,25 @@ export interface Dashboard {
     /** DTE < 0. */
     expiredUnprocessedCount: number
   }
+  /** FEAT-040 (Q89): symbols with shares held > 0 (= `GET /api/stock-positions` positionCount). */
+  stockPositions: {
+    positionCount: number
+  }
+}
+
+/** FEAT-040 (Q91): one record type's part of a P&L figure; 0 records = 0 / "0.00" (never null). */
+export interface PnlBreakdown {
+  closedCount: number
+  realizedPnl: MoneyString
 }
 
 export interface PnlSymbolRow {
   symbol: string
+  /** FEAT-040: options + stocks. */
   closedCount: number
   realizedPnl: MoneyString
+  option: PnlBreakdown
+  stock: PnlBreakdown
 }
 
 export interface PnlMonthRow {
@@ -537,14 +619,21 @@ export interface PnlMonthRow {
   month: string
   closedCount: number
   realizedPnl: MoneyString
+  option: PnlBreakdown
+  stock: PnlBreakdown
 }
 
 /** Contract: `GET /api/pnl-summary?startDate=&endDate=` → 200. Totals row = the response totals. */
 export interface PnlSummary {
   startDate: LocalDateString | null
   endDate: LocalDateString | null
+  /** FEAT-040: options + stocks. */
   closedCount: number
   realizedPnlTotal: MoneyString
+  /** FEAT-040 (Q91): option part of the totals. */
+  option: PnlBreakdown
+  /** FEAT-040 (Q91): stock part of the totals. */
+  stock: PnlBreakdown
   /** Alphabetical. */
   bySymbol: PnlSymbolRow[]
   /** Newest month first; months without closes omitted. */

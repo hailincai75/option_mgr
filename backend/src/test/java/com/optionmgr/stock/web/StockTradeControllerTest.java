@@ -724,13 +724,16 @@ class StockTradeControllerTest {
         assertThat(summary()).containsExactly("9249.35", "0.00", "9249.35");
         create("SELL", "IXQZ", 150, "1300.00", "2026-11-12T11:00");
 
-        assertThat(getJson("/api/closed-trades").get("filteredCount").asInt()).isZero();
-        assertThat(getJson("/api/closed-trades").get("filteredRealizedPnlTotal").asText()).isEqualTo("0.00");
-        assertThat(getJson("/api/pnl-summary").get("closedCount").asInt()).isZero();
+        // FEAT-040 superseded "closed trades / summary / dashboard exclude stocks": the three sales are included
+        // (S4 +74.84, S5 +66.67, this sale of the remaining 150 IXQZ at cost 1,125.49 → +174.51).
+        assertThat(getJson("/api/closed-trades").get("filteredCount").asInt()).isEqualTo(3);
+        assertThat(getJson("/api/closed-trades").get("filteredRealizedPnlTotal").asText()).isEqualTo("316.02");
+        assertThat(getJson("/api/pnl-summary").get("closedCount").asInt()).isEqualTo(3);
         JsonNode dashboard = getJson("/api/dashboard");
-        assertThat(dashboard.get("realizedPnl").get("total").asText()).isEqualTo("0.00");
-        assertThat(dashboard.get("realizedPnl").get("closedCount").asInt()).isZero();
+        assertThat(dashboard.get("realizedPnl").get("total").asText()).isEqualTo("316.02");
+        assertThat(dashboard.get("realizedPnl").get("closedCount").asInt()).isEqualTo(3);
         assertThat(dashboard.get("positions").get("positionCount").asInt()).isEqualTo(1);
+        assertThat(dashboard.get("stockPositions").get("positionCount").asInt()).isEqualTo(1);
         assertThat(getJson("/api/option-trades").get("totalItems").asInt()).isEqualTo(1);
         assertThat(getJson("/api/stock-trades").get("totalItems").asInt()).isEqualTo(6);
     }
