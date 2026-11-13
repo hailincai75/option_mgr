@@ -97,7 +97,7 @@ describe('tradeListFilters', () => {
       expirationDate: '日期格式不正确（YYYY-MM-DD）',
       strike: '行权价最多 3 位小数',
       optionType: '类型只能是 CALL 或 PUT',
-      action: '方向只能是 BTO、STO、BTC、STC',
+      action: '方向只能是 BTO、STO、BTC、STC、EXP',
       endDate: '开始日期不能晚于结束日期',
     })
   })

@@ -4,6 +4,7 @@ import com.optionmgr.account.web.AccountRef;
 import com.optionmgr.common.time.MarketTime;
 import com.optionmgr.trade.domain.ContractKey;
 import com.optionmgr.trade.domain.ExpirationStatus;
+import com.optionmgr.trade.domain.ExpirationTimes;
 import com.optionmgr.trade.domain.OptionPosition;
 import com.optionmgr.trade.domain.OptionType;
 import com.optionmgr.trade.domain.PositionDirection;
@@ -42,7 +43,15 @@ public class OptionPositionController {
                                    BigDecimal frozenCash, long dte, ExpirationStatus expirationStatus,
                                    long daysPastExpiration, int lotCount, List<LotResponse> lots,
                                    TradeAction closeAction, List<Integer> allowedCloseContracts,
-                                   boolean closable) {
+                                   /* FEAT-012: now < 16:00 New York on the expiration date */
+                                   boolean closable,
+                                   /* FEAT-012: 16:00 <= now < 17:30 on the expiration date ("到期待确认") */
+                                   boolean expiryPending,
+                                   /* FEAT-012: now >= 17:30 New York on the expiration date */
+                                   boolean expirable,
+                                   /* FEAT-012: contracts at the cutoff = the expiry size to send back */
+                                   int expiryContracts,
+                                   Instant expiryAt, String expiryAtLocal) {
     }
 
     public record LotResponse(long tradeId, TradeAction action, Instant tradedAt, String tradedAtLocal,
@@ -54,18 +63,22 @@ public class OptionPositionController {
     @GetMapping
     public PositionsResponse positions(AccountRef account) {
         OptionPositionService.PositionSummary s = service.currentPositions(account.id());
-        List<PositionResponse> positions = s.positions().stream().map(p -> toResponse(p, s.asOfDate())).toList();
+        List<PositionResponse> positions = s.positions().stream().map(p -> toResponse(p, s)).toList();
         return new PositionsResponse(s.asOfDate(), positions.size(), s.frozenTotal(), positions);
     }
 
-    private static PositionResponse toResponse(OptionPosition p, LocalDate today) {
+    private static PositionResponse toResponse(OptionPosition p, OptionPositionService.PositionSummary s) {
         ContractKey c = p.contract();
+        LocalDate today = s.asOfDate();
+        Instant now = s.now();
         long dte = p.dte(today);
+        Instant cutoff = ExpirationTimes.tradingCutoff(c.expirationDate());
         return new PositionResponse(c.symbol(), c.expirationDate(), ContractKey.strikeText(c.strike()),
                 c.optionType(), c.label(), p.direction(), p.contracts(), p.multiplier(), p.openingNetTotal(),
                 p.averageNetPerContract(), p.frozenCash(), dte, p.expirationStatus(today), Math.max(0, -dte),
                 p.lots().size(), p.lots().stream().map(OptionPositionController::toResponse).toList(),
-                p.closeAction(), p.allowedCloseContracts(), p.closable(today));
+                p.closeAction(), p.allowedCloseContracts(), p.closable(now), p.expiryPending(now), p.expirable(now),
+                s.expiryContracts(p), cutoff, LOCAL_SECONDS.format(MarketTime.toLocal(cutoff)));
     }
 
     private static LotResponse toResponse(PositionLot l) {

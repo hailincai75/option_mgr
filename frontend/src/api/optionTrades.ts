@@ -1,6 +1,7 @@
 import { apiRequest } from './client'
 import type {
   CreateCloseTradeRequest,
+  CreateExpirationRequest,
   CreateOptionTradeRequest,
   OptionTrade,
   OptionTradeListParams,
@@ -27,6 +28,17 @@ export function createOptionTrade(request: CreateOptionTradeRequest): Promise<Op
 /** `POST /api/option-trades/closes` → 201 (closing trade, BTC / STC; FEAT-004). */
 export function createCloseTrade(request: CreateCloseTradeRequest): Promise<OptionTrade> {
   return apiRequest<OptionTrade>('/api/option-trades/closes', { method: 'POST', body: request })
+}
+
+/**
+ * `POST /api/option-trades/expirations` → 201 (FEAT-012 到期作废: every remaining lot of the
+ * contract at the expiration date 16:00 NY; returns the EXP record).
+ */
+export function createExpiration(request: CreateExpirationRequest): Promise<OptionTrade> {
+  return apiRequest<OptionTrade>('/api/option-trades/expirations', {
+    method: 'POST',
+    body: request,
+  })
 }
 
 /** `GET /api/option-trades/{id}` → 200. */

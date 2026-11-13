@@ -186,18 +186,17 @@ class HasAuditLogSystemTest extends OptionTradeSystemTestBase {
     @DisplayName("object type matters: an edited trade does not mark a cash transfer with the same id, and vice versa")
     void sameIdDifferentObjectType() {
         deposit("80000.00", "2026-11-02T10:00");
-        // Align a transfer id and a trade id (independent sequences): create whichever is behind until equal.
+        // Align a transfer id and a trade id (independent sequences). The shared in-memory DB's sequences drift apart
+        // by however many records other test classes created, so restart both identities at a common next value
+        // (both tables are empty apart from the deposit above; in-memory test DB only).
+        long next = Math.max(
+                okTrade(zzqx("BTO", 1, "50", "CALL", "100.00", "2026-11-03T10:00")).get("id").asLong(),
+                deposit("10.00", "2026-11-02T10:05").get("id").asLong()) + 1;
+        jdbc.execute("ALTER TABLE option_trade ALTER COLUMN id RESTART WITH " + next);
+        jdbc.execute("ALTER TABLE cash_transfer ALTER COLUMN id RESTART WITH " + next);
         long tradeId = okTrade(zzqx("BTO", 1, "50", "CALL", "100.00", "2026-11-03T10:00")).get("id").asLong();
         long transferId = deposit("10.00", "2026-11-02T10:05").get("id").asLong();
-        int guard = 0;
-        while (tradeId != transferId) {
-            assertThat(++guard).as("could not align ids").isLessThan(500);
-            if (tradeId < transferId) {
-                tradeId = okTrade(zzqx("BTO", 1, "50", "CALL", "100.00", "2026-11-03T10:00")).get("id").asLong();
-            } else {
-                transferId = deposit("10.00", "2026-11-02T10:05").get("id").asLong();
-            }
-        }
+        assertThat(transferId).as("aligned ids").isEqualTo(tradeId);
         long same = tradeId;
 
         Resp putT = putTrade(same, 1, "101.00", "2026-11-03T10:00", null);

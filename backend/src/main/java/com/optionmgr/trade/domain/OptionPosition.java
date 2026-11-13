@@ -3,6 +3,7 @@ package com.optionmgr.trade.domain;
 import com.optionmgr.common.money.Money;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
@@ -64,9 +65,19 @@ public record OptionPosition(ContractKey contract, PositionDirection direction, 
         return ExpirationStatus.of(dte(today));
     }
 
-    /** FEAT-004: a position can be closed on or before its expiration date (Q36). */
-    public boolean closable(LocalDate today) {
-        return dte(today) >= 0;
+    /** FEAT-004, tightened by FEAT-012 (Q83): a position can be closed before 16:00 New York on its expiration date. */
+    public boolean closable(Instant now) {
+        return ExpirationTimes.closable(contract.expirationDate(), now);
+    }
+
+    /** FEAT-012 (Q10): "到期待确认" between 16:00 and 17:30 New York on the expiration date. */
+    public boolean expiryPending(Instant now) {
+        return ExpirationTimes.expiryPending(contract.expirationDate(), now);
+    }
+
+    /** FEAT-012 (Q10): the position can be expired from 17:30 New York on its expiration date. */
+    public boolean expirable(Instant now) {
+        return ExpirationTimes.expirable(contract.expirationDate(), now);
     }
 
     /** FEAT-004: BTC closes a short position, STC a long one. */

@@ -31,7 +31,7 @@ export interface TradeEntryFormValues {
   expirationDate: string
   strike: string
   optionType?: OptionType
-  action?: TradeAction
+  action?: EntryAction
   contracts: string
   netAmount: string
   tradedAtLocal: string
@@ -52,7 +52,10 @@ const FIELD_NAMES: readonly (keyof TradeEntryFormValues)[] = [
   'note',
 ]
 
-const ACTION_OPTIONS: { value: TradeAction; label: string }[] = [
+/** Directions recorded on this page (EXP = 到期作废 only comes from the positions page, FEAT-012). */
+type EntryAction = Exclude<TradeAction, 'EXP'>
+
+const ACTION_OPTIONS: { value: EntryAction; label: string }[] = [
   { value: 'STO', label: 'STO 卖出开仓' },
   { value: 'BTO', label: 'BTO 买入开仓' },
   { value: 'BTC', label: 'BTC 买入平仓' },

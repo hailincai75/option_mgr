@@ -24,6 +24,7 @@ import com.optionmgr.trade.domain.ContractReplay;
 import com.optionmgr.trade.domain.LotTrade;
 import com.optionmgr.trade.domain.OpenTradeTerms;
 import com.optionmgr.trade.domain.ReplayedTrade;
+import com.optionmgr.trade.domain.TradeAction;
 import com.optionmgr.trade.domain.TradeRejectionMessages;
 import com.optionmgr.trade.domain.ViolationKind;
 import com.optionmgr.trade.repository.OptionTradeEntity;
@@ -55,6 +56,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class OptionTradeEditService {
 
     public static final String NO_CHANGES_MESSAGE = "没有修改";
+    public static final String EXPIRY_NOT_EDITABLE_MESSAGE = "到期作废不能修改，记错请删除后重新作废";
 
     private static final DateTimeFormatter LOCAL_SECONDS = DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss");
 
@@ -93,6 +95,9 @@ public class OptionTradeEditService {
     public OptionTradeService.TradeView update(long accountId, long id, EditCommand cmd) {
         ledger.lockAccount(accountId);
         OptionTradeEntity trade = find(accountId, id);
+        if (trade.getAction() == TradeAction.EXP) {
+            throw new ApiException(ErrorCode.EXPIRY_NOT_EDITABLE, EXPIRY_NOT_EDITABLE_MESSAGE);
+        }
         ContractKey contract = trade.contract();
         boolean opening = trade.getAction().isOpening();
 
@@ -104,6 +109,9 @@ public class OptionTradeEditService {
             errors.add(new ErrorResponse.FieldError("tradedAtLocal", opening
                     ? "成交日不能晚于到期日（" + contract.expirationDate() + "）"
                     : "到期日（" + contract.expirationDate() + "）之后不能平仓"));
+        } else if (!tradedAt.equals(trade.getTradedAt())) {
+            // Q83 / Q85: only a changed trade time is checked against 16:00 (stored late trades are not re-checked)
+            OptionTradeService.checkNotAfterCutoff(contract, tradedAt, errors);
         }
         if (tradedAt.isAfter(clock.instant())) {
             errors.add(new ErrorResponse.FieldError("tradedAtLocal", OptionTradeService.FUTURE_TIME_MESSAGE));
@@ -137,7 +145,7 @@ public class OptionTradeEditService {
             throw new ApiException(OptionTradeService.errorCode(kind),
                     TradeRejectionMessages.of(contract, step, kind, true));
         }
-        rejectFirstViolation(contract, history, "修改");
+        rejectFirstViolation(contract, history, "修改", expiryCovering(existing, id));
 
         int effectiveMultiplier = step.effectiveMultiplier();
         BigDecimal frozenChange = opening
@@ -182,6 +190,7 @@ public class OptionTradeEditService {
         OptionTradeEntity trade = find(accountId, id);
         ContractKey contract = trade.contract();
         OptionTradeService.ContractTrades existing = tradeService.load(accountId, contract);
+        // null only for an expiry that released nothing (FEAT-012)
         CashLedgerEntryEntity entry = existing.ledgerByTrade().get(id);
 
         ContractHistory history = ContractReplay.replay(
@@ -190,19 +199,30 @@ public class OptionTradeEditService {
         if (violation.isPresent()) {
             ReplayedTrade v = violation.get();
             ViolationKind kind = ContractHistory.primaryViolation(v, k -> true);
-            String message = coveredBy(existing, id).filter(closeId -> closeId == v.trade().tradeId()).isPresent()
-                    ? TradeRejectionMessages.deletedOpenStillClosed(v, kind)
-                    : TradeRejectionMessages.of(contract, v, kind, false, "删除");
+            boolean coveringRecord = coveredBy(existing, id).filter(closeId -> closeId == v.trade().tradeId()).isPresent();
+            String message;
+            if (coveringRecord && v.trade().action() == TradeAction.EXP) {
+                message = TradeRejectionMessages.expiredOpenChanged(v, kind, "删除");
+            } else if (coveringRecord) {
+                message = TradeRejectionMessages.deletedOpenStillClosed(v, kind);
+            } else {
+                message = TradeRejectionMessages.of(contract, v, kind, false, "删除");
+            }
             throw new ApiException(OptionTradeService.errorCode(kind), message);
         }
 
         Map<Long, BigDecimal> corrections = OptionTradeService.frozenCorrections(existing, history, id);
-        rejectNegativeCash(ledger.replayWithChanges(accountId, movements(existing, corrections), Set.of(entry.getId())), "删除");
+        rejectNegativeCash(ledger.replayWithChanges(accountId, movements(existing, corrections),
+                entry == null ? Set.of() : Set.of(entry.getId())), "删除");
 
-        Map<String, Object> before = snapshot(trade, entry.getAmount(), entry.getFrozenChange());
+        BigDecimal cashChange = entry == null ? Money.ZERO : entry.getAmount();
+        BigDecimal frozenChange = entry == null ? Money.ZERO : entry.getFrozenChange();
+        Map<String, Object> before = snapshot(trade, cashChange, frozenChange);
         List<SideEffect> effects = sideEffects(existing, corrections);
         String summary = summary(trade);
-        ledger.deleteEntry(accountId, entry.getId());
+        if (entry != null) {
+            ledger.deleteEntry(accountId, entry.getId());
+        }
         trades.delete(trade);
         ledger.correctFrozenChanges(accountId, corrections);
         audit.record(new AuditService.NewAuditRecord(accountId, AuditOperation.DELETE, AuditObjectType.OPTION_TRADE, id,
@@ -230,13 +250,26 @@ public class OptionTradeEditService {
         return Optional.empty();
     }
 
-    /** Any trade of the contract invalid after the change (the history before the change was valid). */
-    private static void rejectFirstViolation(ContractKey contract, ContractHistory history, String verb) {
+    /** The expiry (EXP) that covers the open {@code openId} in the current (unchanged) history, if any. */
+    private static Optional<Long> expiryCovering(OptionTradeService.ContractTrades existing, long openId) {
+        Optional<Long> record = coveredBy(existing, openId);
+        return record.filter(rid -> existing.trades().stream()
+                .anyMatch(t -> t.tradeId() == rid && t.action() == TradeAction.EXP));
+    }
+
+    /**
+     * Any trade of the contract invalid after the change (the history before the change was valid). When the
+     * invalid record is the expiry that covered the edited open (FEAT-012), the message names that expiry.
+     */
+    private static void rejectFirstViolation(ContractKey contract, ContractHistory history, String verb,
+                                             Optional<Long> coveringExpiry) {
         for (ReplayedTrade s : history.steps()) {
             if (!s.isValid()) {
                 ViolationKind kind = ContractHistory.primaryViolation(s, k -> true);
-                throw new ApiException(OptionTradeService.errorCode(kind),
-                        TradeRejectionMessages.of(contract, s, kind, false, verb));
+                boolean covering = coveringExpiry.filter(eid -> eid == s.trade().tradeId()).isPresent();
+                throw new ApiException(OptionTradeService.errorCode(kind), covering
+                        ? TradeRejectionMessages.expiredOpenChanged(s, kind, verb)
+                        : TradeRejectionMessages.of(contract, s, kind, false, verb));
             }
         }
     }
@@ -294,7 +327,11 @@ public class OptionTradeEditService {
         return m;
     }
 
+    /** "STO AAPL 2026-12-18 200 P"; an expiry: "到期作废 XYZ 2026-11-20 45 P 3 张". */
     private static String summary(OptionTradeEntity t) {
+        if (t.getAction() == TradeAction.EXP) {
+            return t.getAction().displayName() + " " + t.contract().label() + " " + t.getContracts() + " 张";
+        }
         return t.getAction().name() + " " + t.contract().label();
     }
 

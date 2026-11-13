@@ -418,7 +418,7 @@ test.describe('FEAT-006 已平仓', () => {
     await expect(page.getByTestId('trade-list-total')).toHaveText('共 9 条')
   })
 
-  test('非法地址参数：action=STO 报"方向只能是 BTC、STC"且不发请求；不存在的日期显示后端错误', async ({ page }) => {
+  test('非法地址参数：action=STO 报"方向只能是 BTC、STC、EXP"（FEAT-012 加 EXP）且不发请求；不存在的日期显示后端错误', async ({ page }) => {
     await scenarioP()
     const reqs: string[] = []
     page.on('request', (r) => {
@@ -427,7 +427,7 @@ test.describe('FEAT-006 已平仓', () => {
     const c = new Closed(page)
     await c.open('?action=STO')
     await expect(page.getByTestId('closed-invalid')).toBeVisible()
-    await expect(page.getByTestId('closed-page')).toContainText('方向只能是 BTC、STC')
+    await expect(page.getByTestId('closed-page')).toContainText('方向只能是 BTC、STC、EXP')
     await page.waitForTimeout(300)
     expect(reqs).toHaveLength(0)
     await c.open('?expirationDate=2026-02-30')

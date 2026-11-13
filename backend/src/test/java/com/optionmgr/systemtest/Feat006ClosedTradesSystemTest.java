@@ -205,13 +205,13 @@ class Feat006ClosedTradesSystemTest extends OptionTradeSystemTestBase {
         assertThat(labelsOf("symbol=AAPL&action=STC", 1, "-360.00")).containsExactly("C4");
     }
 
-    @ParameterizedTest(name = "方向 {0} → BAD_REQUEST 方向只能是 BTC、STC")
+    @ParameterizedTest(name = "方向 {0} → BAD_REQUEST 方向只能是 BTC、STC、EXP（FEAT-012 加 EXP）")
     @ValueSource(strings = {"BTO", "STO", "BTC,STO", "btc", "XYZ"})
     void openingActionsRejected(String action) {
         Resp r = get(CLOSED + "?action=" + action);
         assertErrorShape(r, 400, "BAD_REQUEST", CLOSED);
         assertThat(r.body().get("details").get(0).get("field").asText()).isEqualTo("action");
-        assertThat(r.body().get("details").get(0).get("message").asText()).isEqualTo("方向只能是 BTC、STC");
+        assertThat(r.body().get("details").get(0).get("message").asText()).isEqualTo("方向只能是 BTC、STC、EXP");
     }
 
     @Test

@@ -82,6 +82,21 @@ class Feat033MigrationSystemTest {
         Flyway.configure().dataSource(url, "sa", "").locations("classpath:db/migration").target("4").load().migrate();
     }
 
+    /** Highest version among the application's classpath:db/migration/V{n}__*.sql files. */
+    private static long latestMigrationVersion() throws Exception {
+        long max = 0;
+        var resolver = new org.springframework.core.io.support.PathMatchingResourcePatternResolver();
+        var pattern = java.util.regex.Pattern.compile("^V(\\d+)__.*\\.sql$");
+        for (var res : resolver.getResources("classpath*:db/migration/V*__*.sql")) {
+            var m = pattern.matcher(String.valueOf(res.getFilename()));
+            if (m.matches()) {
+                max = Math.max(max, Long.parseLong(m.group(1)));
+            }
+        }
+        assertThat(max).as("migration files found on the classpath").isGreaterThanOrEqualTo(7);
+        return max;
+    }
+
     private static void exec(String url, String... sql) throws Exception {
         try (Connection con = DriverManager.getConnection(url, "sa", ""); Statement st = con.createStatement()) {
             for (String s : sql) {
@@ -210,6 +225,9 @@ class Feat033MigrationSystemTest {
             assertThat(call(m, get("/api/accounts"), null, 200)).hasSize(2);
         }
         assertThat(backups("cashdb")).hasSize(1);
-        assertThat(count(url, "SELECT MAX(version) FROM \"flyway_schema_history\" WHERE success")).isEqualTo(6); // latest migration (V6 has_audit_log)
+        // all migrations applied: the highest version equals the highest V<n>__*.sql shipped in db/migration
+        // (derived from the files so a new migration, e.g. FEAT-012's V7, does not require editing this test)
+        assertThat(count(url, "SELECT MAX(version) FROM \"flyway_schema_history\" WHERE success"))
+                .isEqualTo(latestMigrationVersion());
     }
 }

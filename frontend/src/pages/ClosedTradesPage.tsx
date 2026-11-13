@@ -24,8 +24,10 @@ import {
 } from '../components/trade/tradeListFilters'
 import { decimalSign, formatMoney } from '../utils/format'
 
-/** FEAT-006: the closed-trade list only accepts closing directions. */
-const CLOSE_ACTIONS: readonly TradeAction[] = ['BTC', 'STC']
+/** FEAT-006: the closed-trade list only accepts closing directions (FEAT-012 adds EXP). */
+const CLOSE_ACTIONS: readonly TradeAction[] = ['BTC', 'STC', 'EXP']
+
+const EXPIRY_NOTE = '到期作废的平仓净额为 0.00，记在到期日 16:00（美东）。'
 
 function serverFilterErrors(error: Error | null): Partial<Record<TradeFilterField, string>> {
   const errors: Partial<Record<TradeFilterField, string>> = {}
@@ -40,7 +42,7 @@ function serverFilterErrors(error: Error | null): Partial<Record<TradeFilterFiel
 }
 
 /**
- * 已平仓 page (FEAT-006): read-only closed trades (BTC / STC), newest first, with the count and
+ * 已平仓 page (FEAT-006): read-only closed trades (BTC / STC, FEAT-012 EXP), newest first, with the count and
  * realized P&L total over ALL filtered results (Q46). Filters, page and size live in the URL with
  * the same parameter names and rules as the trade list (FEAT-002). Every number is the backend's.
  */
@@ -144,6 +146,7 @@ export function ClosedTradesPage() {
         )}
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           净额均已含手续费；空头开仓为实收、多头开仓为实付；每张平均四舍五入到分，仅供参考。展开行查看被平掉的开仓批次（FIFO）。
+          <span data-testid="closed-expiry-note">{EXPIRY_NOTE}</span>
         </Typography.Text>
         <ClosedTradeTable
           trades={data?.items ?? []}

@@ -6,7 +6,7 @@ import type { ClosedTrade, CoveredLot } from '../../api/types'
 import { decimalSign, EMPTY_VALUE, formatDateTimeNY, formatMoney } from '../../utils/format'
 import { auditUrl } from '../audit/auditLinks'
 import { tradesUrlForContract } from '../position/positionLinks'
-import { SIGNED_MONEY_COLORS, tradeActionLabel } from '../trade/tradeLabels'
+import { isExpiryAction, SIGNED_MONEY_COLORS, tradeActionLabel } from '../trade/tradeLabels'
 
 const DIRECTION_TAGS: Record<string, { label: string; color: string }> = {
   SHORT: { label: '空头', color: 'orange' },
@@ -122,7 +122,14 @@ const columns: ColumnsType<ClosedTrade> = [
       const tag = DIRECTION_TAGS[trade.closedDirection]
       return (
         <Space size={4} style={{ whiteSpace: 'nowrap' }}>
-          <span data-testid="closed-cell-action">{tradeActionLabel(trade.action)}</span>
+          {isExpiryAction(trade.action) ? (
+            // FEAT-012: 到期作废 (close net 0.00, recorded at the expiration date 16:00 NY).
+            <Tag color="purple" data-testid="closed-cell-action" style={{ marginInlineEnd: 0 }}>
+              {tradeActionLabel(trade.action)}
+            </Tag>
+          ) : (
+            <span data-testid="closed-cell-action">{tradeActionLabel(trade.action)}</span>
+          )}
           <Tag color={tag?.color} data-testid="closed-cell-direction">
             {tag?.label ?? trade.closedDirection}
           </Tag>

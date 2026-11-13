@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getOptionPositions, optionPositionQueryKeys } from '../api/optionPositions'
 import { ClosePositionModal } from '../components/position/ClosePositionModal'
+import { ExpirePositionModal } from '../components/position/ExpirePositionModal'
 import { PositionTable } from '../components/position/PositionTable'
 import { QueryError } from '../components/QueryError'
 import type { OptionPosition } from '../api/types'
@@ -11,11 +12,12 @@ import { formatMoney } from '../utils/format'
 
 /**
  * 持仓 page (FEAT-003): every current option position from `GET /api/option-positions`,
- * in backend order, with expandable FIFO lots and a 平仓 button (FEAT-004) on closable rows.
- * Every number comes from the backend.
+ * in backend order, with expandable FIFO lots, a 平仓 button (FEAT-004) on closable rows and a
+ * 作废 button (FEAT-012) on expirable rows. Every number comes from the backend.
  */
 export function PositionsPage() {
   const [closing, setClosing] = useState<OptionPosition | null>(null)
+  const [expiring, setExpiring] = useState<OptionPosition | null>(null)
   const { data, error, isPending, isFetching, refetch } = useAccountQuery({
     // FEAT-033: per-account key; runs only once the current account is known.
     queryKey: optionPositionQueryKeys.all,
@@ -60,6 +62,7 @@ export function PositionsPage() {
           positions={data.positions}
           loading={isFetching}
           onClosePosition={setClosing}
+          onExpirePosition={setExpiring}
           empty={
             <Space orientation="vertical" data-testid="positions-empty">
               <span>暂无持仓</span>
@@ -82,6 +85,15 @@ export function PositionsPage() {
           position={closing}
           onDone={() => {
             setClosing(null)
+          }}
+        />
+      )}
+      {expiring !== null && (
+        <ExpirePositionModal
+          key={expiring.contractLabel}
+          position={expiring}
+          onDone={() => {
+            setExpiring(null)
           }}
         />
       )}

@@ -3,6 +3,7 @@ import {
   EMPTY_VALUE,
   formatDateTimeNY,
   formatInstantNY,
+  formatLocalDateTime,
   formatMoney,
   nowLocalDateTimeNY,
 } from './format'
@@ -100,5 +101,20 @@ describe('nowLocalDateTimeNY', () => {
     expect(nowLocalDateTimeNY(new Date('2026-11-10T14:45:00Z'))).toBe('2026-11-10T09:45')
     expect(nowLocalDateTimeNY(new Date('2026-07-15T14:30:59Z'))).toBe('2026-07-15T10:30')
     expect(nowLocalDateTimeNY(new Date('2026-11-11T03:00:00Z'))).toBe('2026-11-10T22:00')
+  })
+})
+
+describe('formatLocalDateTime', () => {
+  it('shows a New York local date-time as-is, to the minute', () => {
+    expect(formatLocalDateTime('2026-11-20T16:00:00')).toBe('2026-11-20 16:00')
+    expect(formatLocalDateTime('2027-03-19T16:00')).toBe('2027-03-19 16:00')
+  })
+
+  it('keeps non-zero seconds', () => {
+    expect(formatLocalDateTime('2026-11-20T15:59:05')).toBe('2026-11-20 15:59:05')
+  })
+
+  it.each([null, undefined, '', '2026-11-20', 'nope'])('returns the placeholder for %s', (input) => {
+    expect(formatLocalDateTime(input)).toBe(EMPTY_VALUE)
   })
 })

@@ -15,9 +15,9 @@ import com.optionmgr.trade.domain.CloseMatch;
 import com.optionmgr.trade.domain.ContractHistory;
 import com.optionmgr.trade.domain.ContractKey;
 import com.optionmgr.trade.domain.ContractReplay;
+import com.optionmgr.trade.domain.ExpirationTimes;
 import com.optionmgr.trade.domain.LotTrade;
 import com.optionmgr.trade.domain.OpenTradeTerms;
-
 import com.optionmgr.trade.domain.ReplayedTrade;
 import com.optionmgr.trade.domain.TradeAction;
 import com.optionmgr.trade.domain.TradeFilter;
@@ -60,8 +60,9 @@ public class OptionTradeService {
 
     public static final String FUTURE_TIME_MESSAGE = "成交时间不能晚于当前时间";
 
-    /** Ledger source types written for option trades; all reference option_trade.id. */
-    static final Set<CashSourceType> TRADE_SOURCE_TYPES = Set.of(CashSourceType.OPTION_OPEN, CashSourceType.OPTION_CLOSE);
+    /** Ledger source types written for option trades and expiries; all reference option_trade.id. */
+    static final Set<CashSourceType> TRADE_SOURCE_TYPES = Set.of(CashSourceType.OPTION_OPEN, CashSourceType.OPTION_CLOSE,
+            CashSourceType.OPTION_EXPIRE);
 
     /** Trade list order: newest first, same instant: later entered (higher id) first. */
     static final Sort LIST_ORDER = Sort.by(Sort.Order.desc("tradedAt"), Sort.Order.desc("id"));
@@ -115,13 +116,29 @@ public class OptionTradeService {
     }
 
     /**
-     * A stored trade with the ledger entry it produced (its cash and frozen-cash effect) and, for a close, the lots
-     * it currently covers (FIFO) with its realized P&amp;L.
+     * A stored trade with the ledger entry it produced (its cash and frozen-cash effect) and, for a close or an
+     * expiry, the lots it currently covers (FIFO) with its realized P&amp;L. {@code ledgerEntry} is null only for an
+     * expiry (EXP) that releases no frozen cash (FEAT-012).
      */
     public record TradeView(OptionTradeEntity trade, CashLedgerEntryEntity ledgerEntry, Optional<CloseMatch> closeMatch) {
+
+        public BigDecimal cashChange() {
+            return ledgerEntry == null ? Money.ZERO : ledgerEntry.getAmount();
+        }
+
+        public BigDecimal frozenChange() {
+            return ledgerEntry == null ? Money.ZERO : ledgerEntry.getFrozenChange();
+        }
+
+        public Long ledgerEntryId() {
+            return ledgerEntry == null ? null : ledgerEntry.getId();
+        }
     }
 
-    /** All stored trades of one contract with their ledger entries, as replay input. */
+    /**
+     * All stored trades of one contract with their ledger entries, as replay input. An expiry without a ledger entry
+     * (nothing released) is absent from {@code ledgerByTrade}.
+     */
     record ContractTrades(List<LotTrade> trades, Map<Long, CashLedgerEntryEntity> ledgerByTrade) {
     }
 
@@ -139,6 +156,8 @@ public class OptionTradeService {
         List<ErrorResponse.FieldError> errors = new ArrayList<>();
         if (cmd.contract().expirationDate().isBefore(tradeDate)) {
             errors.add(new ErrorResponse.FieldError("expirationDate", "到期日不能早于成交日（" + tradeDate + "）"));
+        } else {
+            checkNotAfterCutoff(cmd.contract(), tradedAt, errors);
         }
         checkNotFuture(tradedAt, errors);
         OpenTradeTerms terms = new OpenTradeTerms(cmd.contract(), cmd.action(), cmd.contracts(), cmd.multiplier(),
@@ -187,6 +206,8 @@ public class OptionTradeService {
         if (tradeDate.isAfter(contract.expirationDate())) {
             errors.add(new ErrorResponse.FieldError("tradedAtLocal",
                     "到期日（" + contract.expirationDate() + "）之后不能平仓"));
+        } else {
+            checkNotAfterCutoff(contract, tradedAt, errors);
         }
         checkNotFuture(tradedAt, errors);
         BigDecimal net = Money.of(cmd.netAmount());
@@ -263,10 +284,7 @@ public class OptionTradeService {
         Map<ContractKey, ContractHistory> histories = new HashMap<>();
         List<TradeView> out = new ArrayList<>(page.size());
         for (OptionTradeEntity t : page) {
-            CashLedgerEntryEntity e = entries.get(t.getId());
-            if (e == null) {
-                throw new IllegalStateException("ledger entry missing for option trade " + t.getId());
-            }
+            CashLedgerEntryEntity e = entry(t, entries);
             Optional<CloseMatch> match = Optional.empty();
             if (!t.getAction().isOpening()) {
                 ContractHistory h = histories.computeIfAbsent(t.contract(),
@@ -289,29 +307,44 @@ public class OptionTradeService {
         Map<Long, CashLedgerEntryEntity> byTrade = new LinkedHashMap<>();
         List<LotTrade> lotTrades = new ArrayList<>(entities.size());
         for (OptionTradeEntity t : entities) {
-            CashLedgerEntryEntity e = entries.get(t.getId());
-            if (e == null) {
-                throw new IllegalStateException("ledger entry missing for option trade " + t.getId());
+            CashLedgerEntryEntity e = entry(t, entries);
+            if (e != null) {
+                byTrade.put(t.getId(), e);
             }
-            byTrade.put(t.getId(), e);
             lotTrades.add(toLotTrade(t, e));
         }
         return new ContractTrades(lotTrades, byTrade);
     }
 
-    /** Replay input of a stored trade: cash and (for opens) frozen cash as recorded in its ledger entry. */
-    static LotTrade toLotTrade(OptionTradeEntity t, CashLedgerEntryEntity e) {
-        return new LotTrade(t.getId(), t.getTradedAt(), t.getAction(), t.getContracts(), t.getMultiplier(),
-                e.getAmount(), t.getAction().isOpening() ? e.getFrozenChange() : Money.ZERO, t.getNote());
+    /**
+     * The ledger entry of a stored record; null only for an expiry that releases nothing (FEAT-012). Every trade has
+     * one.
+     */
+    static CashLedgerEntryEntity entry(OptionTradeEntity t, Map<Long, CashLedgerEntryEntity> entries) {
+        CashLedgerEntryEntity e = entries.get(t.getId());
+        if (e == null && t.getAction() != TradeAction.EXP) {
+            throw new IllegalStateException("ledger entry missing for option trade " + t.getId());
+        }
+        return e;
     }
 
-    private static ContractHistory replayWith(ContractTrades existing, LotTrade candidate) {
+    /**
+     * Replay input of a stored trade: cash and (for opens) frozen cash as recorded in its ledger entry. An expiry
+     * without entry ({@code e} null) has no cash effect.
+     */
+    static LotTrade toLotTrade(OptionTradeEntity t, CashLedgerEntryEntity e) {
+        BigDecimal cash = e == null ? Money.ZERO : e.getAmount();
+        return new LotTrade(t.getId(), t.getTradedAt(), t.getAction(), t.getContracts(), t.getMultiplier(),
+                cash, t.getAction().isOpening() ? e.getFrozenChange() : Money.ZERO, t.getNote());
+    }
+
+    static ContractHistory replayWith(ContractTrades existing, LotTrade candidate) {
         List<LotTrade> all = new ArrayList<>(existing.trades());
         all.add(candidate);
         return ContractReplay.replay(all);
     }
 
-    private static void rejectFirstViolation(ContractKey contract, ContractHistory history,
+    static void rejectFirstViolation(ContractKey contract, ContractHistory history,
                                              Predicate<ViolationKind> kinds) {
         history.firstViolationFrom(LotTrade.NOT_YET_ENTERED, kinds).ifPresent(step -> {
             ViolationKind kind = ContractHistory.primaryViolation(step, kinds);
@@ -350,11 +383,29 @@ public class OptionTradeService {
             }
             CashLedgerEntryEntity e = existing.ledgerByTrade().get(id);
             BigDecimal expected = s.match().get().releasedFrozen().negate();
+            if (e == null) {
+                // an expiry without ledger entry (short call / long): its lots never hold frozen cash
+                if (expected.signum() != 0) {
+                    throw new IllegalStateException("expiry " + id + " would release frozen cash but has no ledger entry");
+                }
+                continue;
+            }
             if (e.getFrozenChange().compareTo(expected) != 0) {
                 corrections.put(e.getId(), expected);
             }
         }
         return corrections;
+    }
+
+    /**
+     * Q83 (FEAT-012): on the expiration date, a trade must not be later than 16:00:00 New York. Applies to the trade
+     * being recorded or edited only; stored trades are never rejected retroactively.
+     */
+    static void checkNotAfterCutoff(ContractKey contract, Instant tradedAt, List<ErrorResponse.FieldError> errors) {
+        if (ExpirationTimes.afterCutoff(contract.expirationDate(), tradedAt)) {
+            errors.add(new ErrorResponse.FieldError("tradedAtLocal",
+                    ExpirationTimes.afterCutoffMessage(contract.expirationDate())));
+        }
     }
 
     private void checkNotFuture(Instant tradedAt, List<ErrorResponse.FieldError> errors) {

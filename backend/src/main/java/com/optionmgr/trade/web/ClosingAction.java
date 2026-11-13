@@ -25,7 +25,7 @@ public @interface ClosingAction {
     class Validator implements ConstraintValidator<ClosingAction, TradeAction> {
         @Override
         public boolean isValid(TradeAction value, ConstraintValidatorContext context) {
-            return value == null || !value.isOpening();
+            return value == null || value.isUserClose();
         }
     }
 }

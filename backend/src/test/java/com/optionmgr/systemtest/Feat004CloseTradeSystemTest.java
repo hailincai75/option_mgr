@@ -325,7 +325,7 @@ class Feat004CloseTradeSystemTest extends OptionTradeSystemTestBase {
     // ------------------------------------------------------------------ AC 8 (Q36)
 
     @Test
-    @DisplayName("AC8 已过期：closable=false；11-09 平仓被拒（成交时间字段）；到期日 16:30 成功")
+    @DisplayName("AC8 已过期：closable=false；11-09 平仓被拒（成交时间字段）；到期日 16:30 被拒（FEAT-012 Q83）、16:00 成功")
     void ac8_expiry() {
         deposit("50000.00", "2026-10-26T10:00");
         open("STO", 1, "TSLA", "2026-11-06", "250", "PUT", "300.00", "2026-11-02T10:00", 100);
@@ -335,14 +335,18 @@ class Feat004CloseTradeSystemTest extends OptionTradeSystemTestBase {
         assertThat(p.get("expirationStatus").asText()).isEqualTo("EXPIRED");
         ObjectNode late = close("BTC", 1, "TSLA", "2026-11-06", "250", "PUT", "10.00", "2026-11-09T10:00");
         closeValidation(late, "tradedAtLocal", "到期日（2026-11-06）之后不能平仓");
-        JsonNode c = okClose(close("BTC", 1, "TSLA", "2026-11-06", "250", "PUT", "10.00", "2026-11-06T16:30"));
+        // FEAT-012 (Q83) tightened Q36: on the expiration date only trades at or before 16:00:00 New York
+        closeValidation(close("BTC", 1, "TSLA", "2026-11-06", "250", "PUT", "10.00", "2026-11-06T16:30"),
+                "tradedAtLocal", "成交时间不能晚于到期日（2026-11-06）美东 16:00");
+        JsonNode c = okClose(close("BTC", 1, "TSLA", "2026-11-06", "250", "PUT", "10.00", "2026-11-06T16:00"));
+        assertThat(c.get("tradedAt").asText()).isEqualTo("2026-11-06T21:00:00Z");
         assertThat(c.get("realizedPnl").asText()).isEqualTo("290.00");
         assertSummary("50290.00", "0.00", "50290.00");
         assertThat(position("TSLA 2026-11-06 250 P")).isNull();
     }
 
     @Test
-    @DisplayName("Q36 美东日期边界：到期日 23:59（UTC 已次日）允许；次日 00:00 拒绝；字段错误先于持仓检查")
+    @DisplayName("Q36/Q83 美东日期边界：到期日 23:59（UTC 已次日）被拒（16:00 提示，FEAT-012）；16:00:00 允许；次日 00:00 拒绝；字段错误先于持仓检查")
     void expiryNewYorkDateBoundary() {
         deposit("50000.00", "2026-10-26T10:00");
         open("STO", 1, "TSLA", "2026-11-06", "250", "PUT", "300.00", "2026-11-02T10:00", 100);
@@ -351,8 +355,13 @@ class Feat004CloseTradeSystemTest extends OptionTradeSystemTestBase {
         // no position AND after expiry -> the field error wins
         closeValidation(close("BTC", 1, "NOPE", "2026-11-06", "250", "PUT", "10.00", "2026-11-07T00:00"),
                 "tradedAtLocal", "到期日（2026-11-06）之后不能平仓");
-        JsonNode c = okClose(close("BTC", 1, "TSLA", "2026-11-06", "250", "PUT", "10.00", "2026-11-06T23:59"));
-        assertThat(c.get("tradedAt").asText()).isEqualTo("2026-11-07T04:59:00Z");
+        // 23:59 NY is still the expiration date in New York (UTC is already 11-07), so the Q83 16:00 message applies
+        closeValidation(close("BTC", 1, "TSLA", "2026-11-06", "250", "PUT", "10.00", "2026-11-06T23:59"),
+                "tradedAtLocal", "成交时间不能晚于到期日（2026-11-06）美东 16:00");
+        closeValidation(close("BTC", 1, "TSLA", "2026-11-06", "250", "PUT", "10.00", "2026-11-06T16:00:01"),
+                "tradedAtLocal", "成交时间不能晚于到期日（2026-11-06）美东 16:00");
+        JsonNode c = okClose(close("BTC", 1, "TSLA", "2026-11-06", "250", "PUT", "10.00", "2026-11-06T16:00:00"));
+        assertThat(c.get("tradedAt").asText()).isEqualTo("2026-11-06T21:00:00Z");
     }
 
     // ------------------------------------------------------------------ AC 9 (backend part)

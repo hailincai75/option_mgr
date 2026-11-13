@@ -95,7 +95,13 @@ export interface CashTransfer {
  * displayed as-is, so the type stays open.
  */
 export type CashSourceType =
-  'DEPOSIT' | 'WITHDRAWAL' | 'OPTION_OPEN' | 'OPTION_CLOSE' | (string & {})
+  | 'DEPOSIT'
+  | 'WITHDRAWAL'
+  | 'OPTION_OPEN'
+  | 'OPTION_CLOSE'
+  /** FEAT-012: 到期作废 of a short put (amount "0.00", frozenChange negative). */
+  | 'OPTION_EXPIRE'
+  | (string & {})
 
 /** Contract: `GET /api/cash/ledger` → `items[]`. */
 export interface CashLedgerEntry {
@@ -176,8 +182,8 @@ export interface OptionTrade {
   /** Trailing zeros removed, e.g. "200", "12.5". */
   strike: string
   optionType: OptionType
-  /** Open string type: FEAT-004 adds BTC / STC. */
-  action: OpeningAction | (string & {})
+  /** Open string type: FEAT-004 adds BTC / STC, FEAT-012 adds EXP (到期作废). */
+  action: OpeningAction | ClosingAction | 'EXP' | (string & {})
   contracts: number
   multiplier: number
   netAmount: MoneyString
@@ -191,7 +197,8 @@ export interface OptionTrade {
   /** e.g. "AAPL 2026-12-18 200 P". */
   contractLabel: string
   note: string | null
-  ledgerEntryId: number
+  /** FEAT-012: null for an EXP record without a ledger entry (long / short call). */
+  ledgerEntryId: number | null
   createdAt: InstantString
   /** FEAT-004: lots closed by this trade (FIFO order); null for opening trades. */
   coveredLots: CoveredLot[] | null
@@ -199,14 +206,16 @@ export interface OptionTrade {
   realizedPnl: MoneyString | null
   /** True when OPTION_TRADE + id has audit records (shows 历史). */
   hasAuditLog: boolean
+  /** FEAT-012: direction of the expired position (SHORT / LONG) for EXP records; null otherwise. */
+  expiredDirection: PositionDirection | null
 }
 
 // ---------------------------------------------------------------------------
 // FEAT-002 交易列表与筛选
 // ---------------------------------------------------------------------------
 
-/** All trade actions accepted by the list filter (BTC / STC are valid now, results empty until FEAT-004). */
-export type TradeAction = 'BTO' | 'STO' | 'BTC' | 'STC'
+/** All trade actions accepted by the list filter (FEAT-012 adds EXP = 到期作废). */
+export type TradeAction = 'BTO' | 'STO' | 'BTC' | 'STC' | 'EXP'
 
 /**
  * Contract: `GET /api/option-trades` query parameters. All filters optional; omitted = no filter.
@@ -270,8 +279,18 @@ export interface OptionPosition {
   closeAction: ClosingAction
   /** FEAT-004: contract counts that can be closed now (cumulative whole earliest lots), ascending. */
   allowedCloseContracts: number[]
-  /** FEAT-004: today (NY) ≤ expiration; the 平仓 button is shown only when true. */
+  /** FEAT-012: now < expiration date 16:00 New York; the 平仓 button is shown only when true. */
   closable: boolean
+  /** FEAT-012: 到期待确认 (16:00 ≤ now < 17:30 on the expiration date); no buttons. */
+  expiryPending: boolean
+  /** FEAT-012: now ≥ expiration date 17:30 New York; the 作废 button is shown only when true. */
+  expirable: boolean
+  /** FEAT-012: contracts held at 16:00 on the expiration date; sent as-is as the expire `contracts`. */
+  expiryContracts: number
+  /** FEAT-012: when the expiry would be recorded (expiration date 16:00 NY), UTC. */
+  expiryAt: InstantString
+  /** FEAT-012: same instant as New York local "YYYY-MM-DDTHH:mm:ss". */
+  expiryAtLocal: LocalDateTimeString
   symbol: string
   expirationDate: LocalDateString
   /** Trailing zeros removed; usable as-is as the FEAT-002 `strike` filter. */
@@ -334,6 +353,23 @@ export interface CreateCloseTradeRequest {
   netAmount: MoneyString
   tradedAtLocal: LocalDateTimeString
   note: string | null
+}
+
+// ---------------------------------------------------------------------------
+// FEAT-012 到期作废
+// ---------------------------------------------------------------------------
+
+/**
+ * Contract: `POST /api/option-trades/expirations` request body; 201 returns the EXP record
+ * (`OptionTrade`). `contracts` is the position's `expiryContracts` passed back unchanged (it only
+ * detects a position change while the dialog is open; not a user input).
+ */
+export interface CreateExpirationRequest {
+  symbol: string
+  expirationDate: LocalDateString
+  strike: string
+  optionType: OptionType
+  contracts: number
 }
 
 // ---------------------------------------------------------------------------
@@ -428,8 +464,9 @@ export interface ClosedTrade {
   strike: string
   optionType: OptionType
   contractLabel: string
-  action: ClosingAction | (string & {})
-  /** Direction of the closed position: BTC → SHORT, STC → LONG. */
+  /** FEAT-012 adds EXP (到期作废: close net "0.00", recorded at the expiration date 16:00 NY). */
+  action: ClosingAction | 'EXP' | (string & {})
+  /** Direction of the closed position: BTC → SHORT, STC → LONG, EXP → the expired position's. */
   closedDirection: PositionDirection
   contracts: number
   multiplier: number

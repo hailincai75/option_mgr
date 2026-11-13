@@ -21,6 +21,7 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
   WITHDRAWAL: '出金',
   OPTION_OPEN: '期权开仓',
   OPTION_CLOSE: '期权平仓',
+  OPTION_EXPIRE: '到期作废',
 }
 
 /** Known source types get a Chinese label; unknown ones (added by later features) are shown as-is. */

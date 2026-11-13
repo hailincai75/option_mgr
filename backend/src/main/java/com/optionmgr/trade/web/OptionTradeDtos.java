@@ -3,6 +3,7 @@ package com.optionmgr.trade.web;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.optionmgr.common.time.MarketLocalDateTimeDeserializer;
 import com.optionmgr.trade.domain.OptionType;
+import com.optionmgr.trade.domain.PositionDirection;
 import com.optionmgr.trade.domain.Symbols;
 import com.optionmgr.trade.domain.TradeAction;
 import jakarta.validation.constraints.DecimalMax;
@@ -11,6 +12,7 @@ import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -100,12 +102,48 @@ public final class OptionTradeDtos {
             BigDecimal frozenChange,
             String contractLabel,
             String note,
-            long ledgerEntryId,
+            /* null only for an expiry (EXP) that released no frozen cash (FEAT-012) */
+            Long ledgerEntryId,
             Instant createdAt,
             List<CoveredLotResponse> coveredLots,
             BigDecimal realizedPnl,
             /* stored flag of the trade: set when it is edited (it then has an audit record); create = false */
-            boolean hasAuditLog) {
+            boolean hasAuditLog,
+            /* FEAT-012: side of the expired position for EXP, null otherwise */
+            PositionDirection expiredDirection) {
+    }
+
+    /**
+     * FEAT-012 expire a position. {@code contracts} is the expiry size the user saw (0 allowed so that a position
+     * without contracts at the cutoff reaches the business checks); every other property is ignored.
+     */
+    public record ExpireRequest(
+            @NotEmpty(message = "标的不能为空")
+            @Size(max = Symbols.MAX_LENGTH, message = "标的最多 10 个字符")
+            @Pattern(regexp = Symbols.NORMALIZED_PATTERN, message = "标的只能包含字母、数字和点")
+            String symbol,
+
+            @NotNull(message = "到期日不能为空")
+            LocalDate expirationDate,
+
+            @NotNull(message = "行权价不能为空")
+            @Positive(message = "行权价必须大于 0")
+            @Digits(integer = 100, fraction = 3, message = "行权价最多 3 位小数")
+            @DecimalMax(value = "9999999.999", message = "行权价过大")
+            BigDecimal strike,
+
+            @NotNull(message = "请选择 Call 或 Put")
+            OptionType optionType,
+
+            @NotNull(message = "张数不能为空")
+            @PositiveOrZero(message = "张数必须是非负整数")
+            @Digits(integer = 100, fraction = 0, message = "张数必须是非负整数")
+            @DecimalMax(value = "100000", message = "张数过大")
+            BigDecimal contracts) {
+
+        public ExpireRequest {
+            symbol = Symbols.normalize(symbol);
+        }
     }
 
     /**

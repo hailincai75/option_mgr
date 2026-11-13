@@ -32,7 +32,7 @@ final class TradeListQuery {
     private final List<FieldError> unparsable = new ArrayList<>();
     private final List<FieldError> invalid = new ArrayList<>();
 
-    private static final String ALL_ACTIONS_MESSAGE = "方向只能是 BTO、STO、BTC、STC";
+    private static final String ALL_ACTIONS_MESSAGE = "方向只能是 BTO、STO、BTC、STC、EXP";
 
     private final Set<TradeAction> allowedActions;
     private final String actionMessage;

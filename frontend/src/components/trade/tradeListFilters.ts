@@ -42,7 +42,7 @@ export const EMPTY_TRADE_FILTERS: TradeFilterValues = {
   endDate: '',
 }
 
-export const TRADE_ACTIONS: readonly TradeAction[] = ['BTO', 'STO', 'BTC', 'STC']
+export const TRADE_ACTIONS: readonly TradeAction[] = ['BTO', 'STO', 'BTC', 'STC', 'EXP']
 export const TRADE_PAGE_SIZES = [20, 50, 100] as const
 export const DEFAULT_TRADE_PAGE_SIZE = 20
 

@@ -40,6 +40,7 @@ function trade(partial: Partial<OptionTrade> & Pick<OptionTrade, 'id'>): OptionT
     coveredLots: null,
     realizedPnl: null,
     hasAuditLog: false,
+    expiredDirection: null,
     ...partial,
   }
 }

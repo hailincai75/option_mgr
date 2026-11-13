@@ -160,3 +160,18 @@ export function toLocalDateTimeInputNY(instant: string | null | undefined): stri
   const base = `${parts.date}T${parts.time}`
   return parts.second === '00' ? base : `${base}:${parts.second}`
 }
+
+const LOCAL_DATE_TIME_PATTERN = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::(\d{2})(?:\.\d+)?)?$/
+
+/**
+ * Formats a New York local date-time from the backend ("2026-11-20T16:00:00") for display
+ * without any time-zone conversion: "2026-11-20 16:00" (seconds kept when not zero,
+ * "2026-11-20 16:00:05"). Returns EMPTY_VALUE for null / malformed input.
+ */
+export function formatLocalDateTime(local: string | null | undefined): string {
+  if (local == null) return EMPTY_VALUE
+  const match = LOCAL_DATE_TIME_PATTERN.exec(local.trim())
+  if (!match) return EMPTY_VALUE
+  const [, date = '', time = '', second] = match
+  return second === undefined || second === '00' ? `${date} ${time}` : `${date} ${time}:${second}`
+}

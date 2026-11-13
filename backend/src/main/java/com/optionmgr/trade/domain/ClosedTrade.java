@@ -9,7 +9,7 @@ import java.util.Objects;
  * FEAT-006: the figures of one close trade for the closed-trades list. All amounts carry the cash sign
  * (short opening / STC +, long opening / BTC -), scale 2. Pure Java.
  *
- * @param action         BTC or STC
+ * @param action         BTC, STC or EXP (FEAT-012 expiry: close net 0)
  * @param contracts      closed contracts
  * @param closeNetAmount the close's cash change
  * @param match          the lots it covers (FIFO) and its realized P&amp;L (Q21)
@@ -25,9 +25,13 @@ public record ClosedTrade(TradeAction action, int contracts, BigDecimal closeNet
         closeNetAmount = Money.of(closeNetAmount);
     }
 
-    /** BTC closes a short position, STC a long one. */
+    /** BTC closes a short position, STC a long one; an expiry (EXP) whatever side its covered lots were opened on. */
     public PositionDirection closedDirection() {
-        return action == TradeAction.BTC ? PositionDirection.SHORT : PositionDirection.LONG;
+        return switch (action) {
+            case BTC -> PositionDirection.SHORT;
+            case STC -> PositionDirection.LONG;
+            default -> PositionDirection.openedBy(match.coveredLots().get(0).action());
+        };
     }
 
     public List<PositionLot> coveredLots() {

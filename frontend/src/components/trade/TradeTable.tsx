@@ -1,11 +1,11 @@
-import { Button, Space, Table, Typography } from 'antd'
+import { Button, Space, Table, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { HTMLAttributes, ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { auditUrl } from '../audit/auditLinks'
 import type { OptionTrade } from '../../api/types'
 import { decimalSign, EMPTY_VALUE, formatDateTimeNY, formatMoney } from '../../utils/format'
-import { SIGNED_MONEY_COLORS, tradeActionLabel } from './tradeLabels'
+import { isExpiryAction, SIGNED_MONEY_COLORS, tradeActionLabel } from './tradeLabels'
 
 interface TradeTableProps {
   trades: OptionTrade[]
@@ -20,7 +20,7 @@ interface TradeTableProps {
 
 /**
  * Trade rows in the order returned by the backend; values are only formatted. Each row has
- * 修改 / 删除 / 历史 (FEAT-005).
+ * 修改 / 删除 / 历史 (FEAT-005); 到期作废 rows (FEAT-012) have no 修改.
  */
 export function TradeTable({
   trades,
@@ -43,11 +43,17 @@ export function TradeTable({
     {
       title: '方向',
       key: 'action',
-      render: (_value: unknown, trade) => (
-        <span data-testid="trade-cell-action" style={{ whiteSpace: 'nowrap' }}>
-          {tradeActionLabel(trade.action)}
-        </span>
-      ),
+      render: (_value: unknown, trade) =>
+        // FEAT-012: 到期作废 rows stand out with their own color.
+        isExpiryAction(trade.action) ? (
+          <Tag color="purple" data-testid="trade-cell-action" style={{ marginInlineEnd: 0 }}>
+            {tradeActionLabel(trade.action)}
+          </Tag>
+        ) : (
+          <span data-testid="trade-cell-action" style={{ whiteSpace: 'nowrap' }}>
+            {tradeActionLabel(trade.action)}
+          </span>
+        ),
     },
     {
       title: '合约',
@@ -128,16 +134,19 @@ export function TradeTable({
       key: 'actions',
       render: (_value: unknown, trade) => (
         <Space size={4} style={{ whiteSpace: 'nowrap' }}>
-          <Button
-            size="small"
-            type="link"
-            onClick={() => {
-              onEdit(trade)
-            }}
-            data-testid="trade-edit"
-          >
-            修改
-          </Button>
+          {/* FEAT-012: 到期作废 has nothing to edit (delete and re-expire instead). */}
+          {!isExpiryAction(trade.action) && (
+            <Button
+              size="small"
+              type="link"
+              onClick={() => {
+                onEdit(trade)
+              }}
+              data-testid="trade-edit"
+            >
+              修改
+            </Button>
+          )}
           <Button
             size="small"
             type="link"

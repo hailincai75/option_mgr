@@ -27,7 +27,7 @@
 | 5 | 全部平掉后反方向重开 | Pass — `ac5_reopenOppositeDirection` | Pass — `AC5 …` | 盈亏 +210.00；BTO 后变为多头 −300.00；再平掉后可以换 multiplier 重开 |
 | 6 | 先释放冻结再查现金（Q20） | Pass — `ac6_releaseBeforeCashCheck`、`ac6_exactBoundary` | Pass — 两个 `AC6 …` | 20,349.36 被拒，原文含"释放冻结"，输入保留；20,349.35 成功到 0/0/0，盈亏 −20,000.00；500.00 时盈亏 −150.65 |
 | 7 | 多头 call STC | Pass — `ac7_stcLongCall` | Pass — `AC7 …` | 净额标签为"实收净额"；+830.00、冻结 `—`、盈亏 +317.35；流水说明正确；用 BTC 被拒并提示用 STC |
-| 8 | 到期后不能平、到期日当天可以（Q36） | Pass — `ac8_expiry`、`expiryNewYorkDateBoundary` | Pass — `AC8 …` | 已过期的行没有平仓按钮；11-09 平仓时错误显示在成交时间字段下；到期日 16:30 平仓成功，盈亏 +290.00 |
+| 8 | 到期后不能平、到期日当天可以（Q36） | Pass — `ac8_expiry`、`expiryNewYorkDateBoundary` | Pass — `AC8 …` | 已过期的行没有平仓按钮；11-09 平仓时错误显示在成交时间字段下；到期日 16:30 平仓成功，盈亏 +290.00。**FEAT-012（Q83）已改变**：到期日 16:30 现在被拒（成交时间不能晚于到期日（2026-11-06）美东 16:00），16:00 成功 +290.00；今天到期的持仓 16:00 起不再有平仓按钮。`ac8_expiry` 与 E2E `AC8`/`AC9` 已更新（2026-11-13） |
 | 9 | 持仓页"平仓"按钮 | Pass — `ac9_expiresTodayIsClosable` | Pass — `AC9+AC1 …`、`AC9 今天到期…` | 预填合约和方向（只显示、不可改），可平 2 / 3 默认 2，标签正确，默认时间为当前美东时间，对话框内显示现金汇总；提交后不刷新页面，可平张数变为只有 1；今天到期的多头行显示按钮，方向预填 STC |
 | 10 | 补录平仓（Q39） | Pass — `ac10_backdatedCloseRematch` | Pass — `AC10 …` | 补录会让之后的平仓没有持仓时被拒，提示指出时间和那笔；补录合法时，之后那笔改为平 L2，盈亏 +260.00，交易列表与按 id 查询结果一致 |
 | 11 | 字段校验与 multiplier 10 | Pass — `ac11_fieldValidation`（9 组）、`noteAndOpenEndpoint`、`ac11_multiplier10` | Pass — 对话框校验、录入页张数校验、`AC11 multiplier 10…` | 前端校验时不发请求；请求里带的 multiplier 被忽略；开仓接口仍拒绝 BTC/STC |
@@ -41,7 +41,7 @@
 | 补录较早的开仓（走开仓接口）导致之后的平仓不再是整笔批次 → `CLOSE_NOT_WHOLE_LOTS`；补录反方向开仓 → 多空冲突；在平仓之后补录开仓则允许 | Pass | API |
 | **Q28 + Q39：之后那笔平仓的释放额从 24.70 改为 24.69**：该笔流水的 `frozenChange` 原地改正，现金金额不变；冻结合计和现金汇总都回到 0.00 | Pass | API `frozenCorrectionOnRematch` |
 | 同一时刻：先录入的开仓可以被同一时间后录入的平仓平掉；平仓先录入则没有持仓可平 | Pass | API |
-| 到期日的美东日期边界：23:59（UTC 已是次日）允许，次日 00:00 拒绝；字段错误优先于"没有持仓" | Pass | API |
+| 到期日的美东日期边界：23:59（UTC 已是次日）允许，次日 00:00 拒绝；字段错误优先于"没有持仓" | Pass | API。**FEAT-012（Q83）已改变**：23:59、16:00:01 现在被拒（16:00 提示），16:00:00 允许；`expiryNewYorkDateBoundary` 已更新 |
 | 读接口：持仓和现金汇总多次查询结果一致；POST 持仓接口返回 405 | Pass | API |
 | 录入交易页：四个方向；导航文字为"录入交易"；BTO/STO 显示 multiplier，BTC/STC 隐藏；净额标签随方向切换 | Pass | E2E |
 | 取消对话框不提交、数据不变 | Pass | E2E |

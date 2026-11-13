@@ -12,12 +12,16 @@ interface DeleteConfirmModalProps {
   onDone: () => void
   /** `trade-delete` or `transfer-delete`. */
   testIdPrefix: string
+  /** Warning under the summary (default "删除后不可恢复，会写入审计记录。"). */
+  warning?: string
 }
 
+const DEFAULT_WARNING = '删除后不可恢复，会写入审计记录。'
+
 /**
- * Delete confirmation (FEAT-005). Shows the summary and "删除后不可恢复，会写入审计记录". On a
- * rejection the backend message is shown verbatim and the dialog stays open; on success every
- * affected query refreshes and the dialog closes.
+ * Delete confirmation (FEAT-005). Shows the summary and a warning (default
+ * "删除后不可恢复，会写入审计记录。"). On a rejection the backend message is shown verbatim and the
+ * dialog stays open; on success every affected query refreshes and the dialog closes.
  */
 export function DeleteConfirmModal({
   title,
@@ -25,6 +29,7 @@ export function DeleteConfirmModal({
   onConfirm,
   onDone,
   testIdPrefix,
+  warning = DEFAULT_WARNING,
 }: DeleteConfirmModalProps) {
   const queryClient = useQueryClient()
   const [error, setError] = useState<{ code: string; message: string } | null>(null)
@@ -48,7 +53,9 @@ export function DeleteConfirmModal({
         <Typography.Text strong data-testid={`${testIdPrefix}-summary`}>
           {summary}
         </Typography.Text>
-        <Typography.Text type="danger">删除后不可恢复，会写入审计记录。</Typography.Text>
+        <Typography.Text type="danger" data-testid={`${testIdPrefix}-warning`}>
+          {warning}
+        </Typography.Text>
         {error !== null && (
           <Alert
             type="error"

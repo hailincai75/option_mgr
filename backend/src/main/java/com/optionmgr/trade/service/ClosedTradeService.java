@@ -22,7 +22,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ClosedTradeService {
 
-    static final Set<TradeAction> CLOSING_ACTIONS = EnumSet.of(TradeAction.BTC, TradeAction.STC);
+    /** Records listed as closed trades: user closes and (FEAT-012) expiries. */
+    public static final Set<TradeAction> CLOSING_ACTIONS = EnumSet.of(TradeAction.BTC, TradeAction.STC, TradeAction.EXP);
 
     private final OptionTradeRepository trades;
     private final OptionTradeService tradeService;
@@ -54,7 +55,7 @@ public class ClosedTradeService {
         return new ClosedTradePage(List.copyOf(items), page, size, totalItems, totalPages, total);
     }
 
-    /** Every close matching {@code filter} (an empty action set = BTC and STC), newest first, with its figures. */
+    /** Every close matching {@code filter} (an empty action set = BTC, STC and EXP), newest first, with its figures. */
     @Transactional(readOnly = true)
     public List<ClosedTradeView> all(long accountId, TradeFilter filter) {
         TradeFilter closesOnly = new TradeFilter(filter.symbol(), filter.expirationDate(), filter.strike(),
@@ -64,7 +65,7 @@ public class ClosedTradeService {
                 OptionTradeService.LIST_ORDER);
         List<ClosedTradeView> views = tradeService.views(accountId, all).stream()
                 .map(v -> new ClosedTradeView(v, new ClosedTrade(v.trade().getAction(), v.trade().getContracts(),
-                        v.ledgerEntry().getAmount(), v.closeMatch().orElseThrow(
+                        v.cashChange(), v.closeMatch().orElseThrow(
                                 () -> new IllegalStateException("close " + v.trade().getId() + " has no match")))))
                 .toList();
         return views;

@@ -121,14 +121,22 @@ class Feat001OpenTradeValidationSystemTest extends OptionTradeSystemTestBase {
     }
 
     @Test
-    @DisplayName("成交日取美东日期：NY 12-18 23:59（UTC 已是 12-19）到期 12-18 允许；NY 11-09 21:00（UTC 11-10）到期 11-09 允许")
+    @DisplayName("成交日取美东日期（FEAT-012 Q83 收紧）：到期日 16:00:00 允许；NY 12-18 23:59（UTC 已是 12-19）、"
+            + "NY 11-09 21:00（UTC 11-10）按美东日期 = 到期日判断，晚于 16:00 被拒（16:00 提示，不是成交日提示）")
     void tradeDateIsNewYorkDate() {
         clock.set(Instant.parse("2026-12-20T00:00:00Z"));
         fund();
-        JsonNode late = okTrade(aapl("BTO", "210", "CALL", "1.00", "2026-12-18T23:59"));
-        assertThat(late.get("tradedAt").asText()).isEqualTo("2026-12-19T04:59:00Z");
+        // Before FEAT-012 (Q36) any time on the expiration date was allowed; Q83 caps it at 16:00:00 New York.
+        validationError(aapl("BTO", "210", "CALL", "1.00", "2026-12-18T23:59"),
+                "tradedAtLocal", "成交时间不能晚于到期日（2026-12-18）美东 16:00");
+        validationError(aapl("BTO", "210", "CALL", "1.00", "2026-12-18T16:00:01"),
+                "tradedAtLocal", "成交时间不能晚于到期日（2026-12-18）美东 16:00");
+        JsonNode atCutoff = okTrade(aapl("BTO", "210", "CALL", "1.00", "2026-12-18T16:00:00"));
+        assertThat(atCutoff.get("tradedAt").asText()).isEqualTo("2026-12-18T21:00:00Z");
         ObjectNode early = trade("BTO", 1, "F", "2026-11-09", "10", "CALL", "1.00", "2026-11-09T21:00", 100);
-        assertThat(okTrade(early).get("tradedAt").asText()).isEqualTo("2026-11-10T02:00:00Z");
+        validationError(early, "tradedAtLocal", "成交时间不能晚于到期日（2026-11-09）美东 16:00");
+        ObjectNode earlyCutoff = trade("BTO", 1, "F", "2026-11-09", "10", "CALL", "1.00", "2026-11-09T16:00", 100);
+        assertThat(okTrade(earlyCutoff).get("tradedAt").asText()).isEqualTo("2026-11-09T21:00:00Z");
         // and the day after is rejected with the NY trade date in the message
         ObjectNode tooLate = trade("BTO", 1, "G", "2026-11-09", "10", "CALL", "1.00", "2026-11-10T00:30", 100);
         validationError(tooLate, "expirationDate", "到期日不能早于成交日（2026-11-10）");

@@ -667,7 +667,16 @@ class Feat005EditDeleteAuditSystemTest extends OptionTradeSystemTestBase {
         Resp r2 = putTrade(c, edit(1, "10.00", "2026-11-07T10:00", null, null));
         assertErrorShape(r2, 400, "VALIDATION_ERROR", TRADES + "/" + c);
         assertThat(r2.body().get("details").get(0).get("message").asText()).isEqualTo("到期日（2026-11-06）之后不能平仓");
-        okEditTrade(c, edit(1, "10.00", "2026-11-06T23:59", null, null));
+        // FEAT-012 (Q83): on the expiration date the edited time must be <= 16:00:00 New York (was: any time, Q36)
+        Full before = full();
+        Resp r3 = putTrade(c, edit(1, "10.00", "2026-11-06T23:59", null, null));
+        assertErrorShape(r3, 400, "VALIDATION_ERROR", TRADES + "/" + c);
+        assertThat(detailFields(r3)).containsExactly("tradedAtLocal");
+        assertThat(r3.body().get("details").get(0).get("message").asText())
+                .isEqualTo("成交时间不能晚于到期日（2026-11-06）美东 16:00");
+        assertThat(full()).as("nothing changed, no audit").isEqualTo(before);
+        JsonNode atCutoff = okEditTrade(c, edit(1, "10.00", "2026-11-06T16:00", null, null));
+        assertThat(atCutoff.get("tradedAt").asText()).isEqualTo("2026-11-06T21:00:00Z");
     }
 
     @Test

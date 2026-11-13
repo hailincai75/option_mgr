@@ -60,6 +60,11 @@ const AAPL_POSITION: OptionPosition = {
   closeAction: 'BTC',
   allowedCloseContracts: [2, 3],
   closable: true,
+  expiryPending: false,
+  expirable: false,
+  expiryContracts: 3,
+  expiryAt: '2026-12-18T21:00:00Z',
+  expiryAtLocal: '2026-12-18T16:00:00',
   lots: [
     {
       ...L1,
@@ -130,6 +135,7 @@ const CLOSE_AC1: OptionTrade = {
   coveredLots: [{ ...L1, contracts: 2, netAmount: '698.70', frozen: '40000.00' }],
   realizedPnl: '457.40',
   hasAuditLog: true,
+  expiredDirection: null,
 }
 
 // ---------------------------------------------------------------------------

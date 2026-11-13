@@ -2,6 +2,7 @@ import type { Locator, Page } from '@playwright/test'
 import { apiLedger, apiTransfer, CashPage, expect, MINUS, nyLocal, test } from '../support/fixtures'
 import { apiTrade, TradeForm } from '../support/trade'
 import { BACKEND_URL } from '../support/backend'
+import { stablePhase } from '../support/ny'
 
 /**
  * FEAT-004 平仓 E2E: both entries (positions-page 平仓 button → modal, and the 录入交易 page with BTC / STC).
@@ -332,7 +333,7 @@ test.describe('FEAT-004 平仓', () => {
     ])
   })
 
-  test('AC8 已过期：无平仓按钮；录入交易页 11-09 平仓错误在成交时间下；到期日 16:30 成功 +290.00', async ({ page, trade }) => {
+  test('AC8 已过期：无平仓按钮；录入交易页 11-09 平仓错误在成交时间下；到期日 16:30 被拒（FEAT-012 Q83）、16:00 成功 +290.00', async ({ page, trade }) => {
     await apiTransfer('DEPOSIT', '50000.00', '2026-10-26T10:00')
     await apiTrade({ action: 'STO', symbol: 'TSLA', expiration: '2026-11-06', strike: '250', type: 'PUT', netAmount: '300.00', time: '2026-11-02T10:00' })
     const ui = new CloseUi(page)
@@ -347,7 +348,12 @@ test.describe('FEAT-004 平仓', () => {
     await expect(trade.time).toHaveValue('2026-11-09T10:00')
     await new CashPage(page).expectSummary('50,300.00', '25,000.00', '25,300.00')
 
+    // FEAT-012 (Q83): on the expiration date trades must be at or before 16:00 New York (was: any time, Q36)
     await trade.time.fill('2026-11-06T16:30')
+    await trade.submit.click()
+    await expect(trade.fieldError(trade.time).and(page.locator(':not(.ant-form-show-help-item-leave)'))).toHaveText('成交时间不能晚于到期日（2026-11-06）美东 16:00')
+    await new CashPage(page).expectSummary('50,300.00', '25,000.00', '25,300.00')
+    await trade.time.fill('2026-11-06T16:00')
     await trade.submit.click()
     await expect(page.getByTestId('open-trade-confirmation-realized-pnl')).toHaveText('+290.00')
     await new CashPage(page).expectSummary('50,290.00', '0.00', '50,290.00')
@@ -355,13 +361,19 @@ test.describe('FEAT-004 平仓', () => {
     await expect(ui.row('TSLA 2026-11-06 250 P')).toHaveCount(0)
   })
 
-  test('AC9 今天到期的多头：显示平仓按钮，方向预填 STC（卖出平仓）', async ({ page }) => {
+  test('AC9 今天到期的多头：美东 16:00 前显示平仓按钮，方向预填 STC（卖出平仓）；16:00 起（FEAT-012）没有平仓按钮', async ({ page }) => {
     const d = today()
     await apiTransfer('DEPOSIT', '1000.00', '2026-10-26T10:00')
     await apiTrade({ action: 'BTO', symbol: 'SPY', expiration: d, strike: '600', type: 'CALL', netAmount: '50.00', time: '2026-11-02T10:00' })
     const ui = new CloseUi(page)
+    const phase = await stablePhase()
     await ui.openPositions()
     await expect(ui.row(`SPY ${d} 600 C`).getByTestId('position-cell-dte-today')).toBeVisible()
+    if (phase !== 'closable') {
+      // FEAT-012 (Q10 / Q83): from 16:00 NY on the expiration date the position can no longer be closed
+      await expect(ui.row(`SPY ${d} 600 C`).getByTestId('position-close')).toHaveCount(0)
+      return
+    }
     await ui.openModal(`SPY ${d} 600 C`)
     await expect(ui.m('close-trade-action')).toHaveText('STC（卖出平仓）')
     await expect(ui.m('close-trade-contracts-1')).toBeChecked()

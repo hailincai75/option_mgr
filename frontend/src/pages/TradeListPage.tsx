@@ -23,14 +23,22 @@ import {
 import { DeleteConfirmModal } from '../components/DeleteConfirmModal'
 import { EditTradeModal } from '../components/trade/EditTradeModal'
 import { TradeTable } from '../components/trade/TradeTable'
+import { isExpiryAction, tradeActionLabel } from '../components/trade/tradeLabels'
 import { formatDateTimeNY, formatMoney } from '../utils/format'
 
-/** e.g. "STO 1 张 AAPL 2026-12-18 200 P，2026-11-04 11:00，+360.00" (backend values, formatted). */
+/**
+ * e.g. "STO 1 张 AAPL 2026-12-18 200 P，2026-11-04 11:00，+360.00", or for FEAT-012
+ * "到期作废 3 张 XYZ 2026-11-20 45 P，2026-11-20 16:00，0.00" (backend values, formatted).
+ */
 function tradeSummary(trade: OptionTrade): string {
   const time = formatDateTimeNY(trade.tradedAt)
   const cash = formatMoney(trade.cashChange, { signed: true })
-  return `${trade.action} ${String(trade.contracts)} 张 ${trade.contractLabel}，${time}，${cash}`
+  const action = isExpiryAction(trade.action) ? tradeActionLabel(trade.action) : trade.action
+  return `${action} ${String(trade.contracts)} 张 ${trade.contractLabel}，${time}，${cash}`
 }
+
+/** FEAT-012: deleting a 到期作废 restores the position and its frozen cash. */
+const EXPIRY_DELETE_WARNING = '删除后持仓恢复、冻结恢复，会写入审计记录。'
 
 /** Field errors the backend reported for the filter query parameters (400 with details). */
 function serverFilterErrors(error: Error | null): Partial<Record<TradeFilterField, string>> {
@@ -247,8 +255,13 @@ export function TradeListPage() {
       {deleting !== null && (
         <DeleteConfirmModal
           key={deleting.id}
-          title={`删除交易 #${String(deleting.id)}`}
+          title={
+            isExpiryAction(deleting.action)
+              ? `删除到期作废 #${String(deleting.id)}`
+              : `删除交易 #${String(deleting.id)}`
+          }
           summary={tradeSummary(deleting)}
+          warning={isExpiryAction(deleting.action) ? EXPIRY_DELETE_WARNING : undefined}
           onConfirm={() => deleteOptionTrade(deleting.id)}
           onDone={() => {
             setDeleting(null)

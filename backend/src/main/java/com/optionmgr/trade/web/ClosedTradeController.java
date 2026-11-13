@@ -63,7 +63,7 @@ public class ClosedTradeController {
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
         TradeFilter filter = TradeListQuery.parse(symbol, expirationDate, strike, optionType, actions, startDate,
-                endDate, page, size, EnumSet.of(TradeAction.BTC, TradeAction.STC), "方向只能是 BTC、STC");
+                endDate, page, size, ClosedTradeService.CLOSING_ACTIONS, "方向只能是 BTC、STC、EXP");
         ClosedTradeService.ClosedTradePage p = service.page(account.id(), filter, page, size);
         return new ClosedTradePageResponse(p.items().stream().map(ClosedTradeController::toResponse).toList(),
                 p.page(), p.size(), p.totalItems(), p.totalPages(), p.totalItems(), p.filteredRealizedPnlTotal());

@@ -186,8 +186,8 @@ class Feat002TradeListSystemTest extends OptionTradeSystemTestBase {
     @CsvSource(delimiter = '|', value = {
             "optionType=put|optionType|类型只能是 CALL 或 PUT",
             "optionType=P|optionType|类型只能是 CALL 或 PUT",
-            "action=bto|action|方向只能是 BTO、STO、BTC、STC",
-            "action=XYZ|action|方向只能是 BTO、STO、BTC、STC",
+            "action=bto|action|方向只能是 BTO、STO、BTC、STC、EXP",
+            "action=XYZ|action|方向只能是 BTO、STO、BTC、STC、EXP",
             "expirationDate=2026-02-30|expirationDate|日期格式不正确（YYYY-MM-DD）",
             "expirationDate=2026/12/18|expirationDate|日期格式不正确（YYYY-MM-DD）",
             "startDate=2026-13-01|startDate|日期格式不正确（YYYY-MM-DD）",

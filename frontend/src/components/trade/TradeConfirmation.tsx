@@ -67,6 +67,25 @@ const coveredLotColumns: ColumnsType<CoveredLot> = [
   },
 ]
 
+/** Lots covered by a close or an expiry (FIFO order), rows `covered-lot-row`; backend values only. */
+export function CoveredLotTable({ lots }: { lots: CoveredLot[] }) {
+  return (
+    <Table<CoveredLot>
+      rowKey="tradeId"
+      size="small"
+      pagination={false}
+      dataSource={lots}
+      columns={coveredLotColumns}
+      onRow={(lot) =>
+        ({
+          'data-testid': 'covered-lot-row',
+          'data-trade-id': lot.tradeId,
+        }) as HTMLAttributes<HTMLElement>
+      }
+    />
+  )
+}
+
 /**
  * Success message for a saved trade; every value comes from the backend response. Closing
  * trades (FEAT-004) also show the covered lots and this close's realized P&L.
@@ -123,19 +142,7 @@ export function TradeConfirmation({ trade, onClose, testIdPrefix }: TradeConfirm
           {coveredLots !== null && (
             <div data-testid={id('-covered-lots')}>
               <div style={{ margin: '8px 0 4px' }}>被平掉的开仓批次（FIFO）</div>
-              <Table<CoveredLot>
-                rowKey="tradeId"
-                size="small"
-                pagination={false}
-                dataSource={coveredLots}
-                columns={coveredLotColumns}
-                onRow={(lot) =>
-                  ({
-                    'data-testid': 'covered-lot-row',
-                    'data-trade-id': lot.tradeId,
-                  }) as HTMLAttributes<HTMLElement>
-                }
-              />
+              <CoveredLotTable lots={coveredLots} />
             </div>
           )}
         </>

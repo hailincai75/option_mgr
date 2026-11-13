@@ -51,10 +51,27 @@ function DteCell({ position }: { position: OptionPosition }) {
         <Tag color="warning" data-testid="position-cell-dte-today">
           今天到期
         </Tag>
+        {position.expiryPending && <ExpiryPendingTag />}
       </span>
     )
   }
   return <span data-testid="position-cell-dte">{position.dte}</span>
+}
+
+const EXPIRY_PENDING_HINT = '16:00 已停止交易；17:30 前仍可能被指派，17:30（美东）起可作废'
+
+/**
+ * FEAT-012 (Q10 / Q83): 到期待确认 between 16:00 and 17:30 NY on the expiration date, shown from
+ * the backend's `expiryPending` (never computed here); the row has no buttons meanwhile.
+ */
+function ExpiryPendingTag() {
+  return (
+    <Tooltip title={EXPIRY_PENDING_HINT}>
+      <Tag color="processing" data-testid="position-expiry-pending" style={{ cursor: 'help' }}>
+        到期待确认
+      </Tag>
+    </Tooltip>
+  )
 }
 
 const lotColumns: ColumnsType<OptionPositionLot> = [
@@ -137,6 +154,7 @@ function LotTable({ lots }: { lots: OptionPositionLot[] }) {
 
 function positionColumns(
   onClosePosition: (position: OptionPosition) => void,
+  onExpirePosition: (position: OptionPosition) => void,
 ): ColumnsType<OptionPosition> {
   return [
     {
@@ -233,19 +251,38 @@ function positionColumns(
     {
       title: '操作',
       key: 'actions',
-      // FEAT-004: only while today (NY) ≤ expiration (backend `closable`).
-      render: (_value: unknown, position) =>
-        position.closable ? (
-          <Button
-            size="small"
-            onClick={() => {
-              onClosePosition(position)
-            }}
-            data-testid="position-close"
-          >
-            平仓
-          </Button>
-        ) : null,
+      // Backend flags only (at most one is true): 平仓 before 16:00 NY on the expiration date
+      // (`closable`), nothing while `expiryPending`, 作废 from 17:30 (`expirable`, FEAT-012).
+      render: (_value: unknown, position) => {
+        if (position.closable) {
+          return (
+            <Button
+              size="small"
+              onClick={() => {
+                onClosePosition(position)
+              }}
+              data-testid="position-close"
+            >
+              平仓
+            </Button>
+          )
+        }
+        if (position.expirable) {
+          return (
+            <Button
+              size="small"
+              danger
+              onClick={() => {
+                onExpirePosition(position)
+              }}
+              data-testid="position-expire"
+            >
+              作废
+            </Button>
+          )
+        }
+        return null
+      },
     },
   ]
 }
@@ -256,15 +293,26 @@ interface PositionTableProps {
   empty: ReactNode
   /** Opens the 平仓 dialog for a closable position. */
   onClosePosition: (position: OptionPosition) => void
+  /** Opens the 作废 dialog for an expirable position (FEAT-012). */
+  onExpirePosition: (position: OptionPosition) => void
 }
 
-/** Positions in backend order; each row expands to its FIFO lots and, if closable, has 平仓. */
-export function PositionTable({ positions, loading, empty, onClosePosition }: PositionTableProps) {
+/**
+ * Positions in backend order; each row expands to its FIFO lots and has 平仓 (closable) or
+ * 作废 (expirable, FEAT-012) by the backend's flags.
+ */
+export function PositionTable({
+  positions,
+  loading,
+  empty,
+  onClosePosition,
+  onExpirePosition,
+}: PositionTableProps) {
   return (
     <Table<OptionPosition>
       rowKey="contractLabel"
       size="small"
-      columns={positionColumns(onClosePosition)}
+      columns={positionColumns(onClosePosition, onExpirePosition)}
       dataSource={positions}
       loading={loading}
       pagination={false}

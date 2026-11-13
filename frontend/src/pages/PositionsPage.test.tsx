@@ -53,6 +53,11 @@ function position(partial: Partial<OptionPosition> & Pick<OptionPosition, 'lots'
     closeAction: partial.direction === 'LONG' ? 'STC' : 'BTC',
     allowedCloseContracts: [partial.contracts ?? 1],
     closable: true,
+    expiryPending: false,
+    expirable: false,
+    expiryContracts: partial.contracts ?? 1,
+    expiryAt: '2026-12-18T21:00:00Z',
+    expiryAtLocal: '2026-12-18T16:00:00',
     ...partial,
   }
   const cp = merged.optionType === 'CALL' ? 'C' : 'P'
@@ -555,6 +560,7 @@ describe('PositionsPage', () => {
       coveredLots: null,
       realizedPnl: null,
       hasAuditLog: false,
+      expiredDirection: null,
     }
     startFakeServer({
       positions: () => jsonResponse(current),

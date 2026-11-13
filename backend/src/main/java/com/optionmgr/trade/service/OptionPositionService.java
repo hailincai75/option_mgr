@@ -5,6 +5,7 @@ import com.optionmgr.cash.service.CashLedgerService;
 import com.optionmgr.common.money.Money;
 import com.optionmgr.common.time.MarketTime;
 import com.optionmgr.trade.domain.ContractKey;
+import com.optionmgr.trade.domain.ExpiryReplay;
 import com.optionmgr.trade.domain.LotTrade;
 import com.optionmgr.trade.domain.OptionPosition;
 import com.optionmgr.trade.domain.PositionBuilder;
@@ -12,8 +13,10 @@ import com.optionmgr.trade.repository.OptionTradeEntity;
 import com.optionmgr.trade.repository.OptionTradeRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,26 +39,31 @@ public class OptionPositionService {
     }
 
     /**
-     * @param asOfDate     "today" = New York date of the server clock; DTE is relative to it
-     * @param positions    sorted for display (Q35)
-     * @param frozenTotal  sum of the positions' frozen cash
+     * @param now             server clock: closable / expiry pending / expirable are relative to it (FEAT-012)
+     * @param asOfDate        "today" = New York date of the server clock; DTE is relative to it
+     * @param positions       sorted for display (Q35)
+     * @param frozenTotal     sum of the positions' frozen cash
+     * @param expiryContracts per position: contracts at the expiration cutoff (FEAT-012 expiry size)
      */
-    public record PositionSummary(LocalDate asOfDate, List<OptionPosition> positions, BigDecimal frozenTotal) {
+    public record PositionSummary(Instant now, LocalDate asOfDate, List<OptionPosition> positions,
+                                  BigDecimal frozenTotal, Map<ContractKey, Integer> expiryContracts) {
+
+        public int expiryContracts(OptionPosition p) {
+            return expiryContracts.getOrDefault(p.contract(), 0);
+        }
     }
 
     @Transactional(readOnly = true)
     public PositionSummary currentPositions(long accountId) {
-        LocalDate today = MarketTime.toLocal(clock.instant()).toLocalDate();
+        Instant now = clock.instant();
+        LocalDate today = MarketTime.toLocal(now).toLocalDate();
         List<OptionTradeEntity> all = trades.findByAccountIdOrderByTradedAtAscIdAsc(accountId);
         Map<Long, CashLedgerEntryEntity> entries = ledger.findBySources(accountId, OptionTradeService.TRADE_SOURCE_TYPES,
                 all.stream().map(OptionTradeEntity::getId).toList());
 
         Map<ContractKey, List<LotTrade>> byContract = new LinkedHashMap<>();
         for (OptionTradeEntity t : all) {
-            CashLedgerEntryEntity e = entries.get(t.getId());
-            if (e == null) {
-                throw new IllegalStateException("ledger entry missing for option trade " + t.getId());
-            }
+            CashLedgerEntryEntity e = OptionTradeService.entry(t, entries);
             byContract.computeIfAbsent(t.contract(), k -> new ArrayList<>()).add(OptionTradeService.toLotTrade(t, e));
         }
 
@@ -64,8 +72,12 @@ public class OptionPositionService {
                 .flatMap(Optional::stream)
                 .sorted(OptionPosition.DISPLAY_ORDER)
                 .toList();
+        Map<ContractKey, Integer> expiryContracts = new HashMap<>();
+        for (OptionPosition p : positions) {
+            expiryContracts.put(p.contract(), ExpiryReplay.contractsAtCutoff(p.contract(), byContract.get(p.contract())));
+        }
         BigDecimal frozenTotal = positions.stream().map(OptionPosition::frozenCash)
                 .reduce(Money.ZERO, BigDecimal::add);
-        return new PositionSummary(today, positions, frozenTotal);
+        return new PositionSummary(now, today, positions, frozenTotal, Map.copyOf(expiryContracts));
     }
 }

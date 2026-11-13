@@ -11,5 +11,8 @@ public enum CashSourceType {
     OPTION_OPEN,
     /** FEAT-004 closing option trade (BTC / STC); source id = option_trade.id. Its frozen change may be corrected
      *  when an earlier trade is back-filled and the FIFO lot matching changes (Q39). */
-    OPTION_CLOSE
+    OPTION_CLOSE,
+    /** FEAT-012 expire worthless; source id = option_trade.id of the EXP record. Written only when it releases
+     *  frozen cash (short put): amount 0, frozen change = -released; the frozen change may be corrected (Q39). */
+    OPTION_EXPIRE
 }

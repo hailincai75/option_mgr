@@ -251,7 +251,7 @@ class ClosedTradeControllerTest {
             JsonNode err = error("action=" + action, 400);
             assertThat(err.get("code").asText()).isEqualTo("BAD_REQUEST");
             assertThat(err.get("details").get(0).get("field").asText()).isEqualTo("action");
-            assertThat(err.get("details").get(0).get("message").asText()).isEqualTo("方向只能是 BTC、STC");
+            assertThat(err.get("details").get(0).get("message").asText()).isEqualTo("方向只能是 BTC、STC、EXP");
         }
     }
 

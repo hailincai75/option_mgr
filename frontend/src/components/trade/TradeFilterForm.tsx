@@ -8,6 +8,7 @@ const ACTION_OPTION_LABELS: Record<string, string> = {
   STO: 'STO 卖出开仓',
   BTC: 'BTC 买入平仓',
   STC: 'STC 卖出平仓',
+  EXP: '到期作废',
 }
 
 interface TradeFilterFormProps {
@@ -17,7 +18,7 @@ interface TradeFilterFormProps {
   errors: Partial<Record<TradeFilterField, string>>
   onApply: (filters: TradeFilterValues) => void
   onClear: () => void
-  /** Direction options (default all four; FEAT-006 uses BTC / STC). */
+  /** Direction options (default all five; FEAT-006 uses BTC / STC / EXP). */
   actions?: readonly TradeAction[]
   /** Prefix for the date labels, e.g. "平仓" → "平仓开始日期（美东日期）". */
   dateLabelPrefix?: string

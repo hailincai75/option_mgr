@@ -13,7 +13,12 @@ public enum TradeAction {
     /** Buy to Close (FEAT-004): reduces a short position. */
     BTC(1, false),
     /** Sell to Close (FEAT-004): reduces a long position. */
-    STC(-1, false);
+    STC(-1, false),
+    /**
+     * FEAT-012 expire worthless: closes the whole position at the expiration cutoff (16:00 New York), whichever side
+     * it is (sign 0: never "against" a position). No cash; stored with net amount 0. Cannot be edited, only deleted.
+     */
+    EXP(0, false);
 
     private final int sign;
     private final boolean opening;
@@ -35,6 +40,16 @@ public enum TradeAction {
     /** True for actions that receive cash (sells), false for actions that pay cash (buys). */
     public boolean receivesCash() {
         return sign < 0;
+    }
+
+    /** BTC / STC: a closing trade entered by the user (not an expiry). */
+    public boolean isUserClose() {
+        return this == BTC || this == STC;
+    }
+
+    /** User-facing name in texts: the code, except "到期作废" for EXP. */
+    public String displayName() {
+        return this == EXP ? "到期作废" : name();
     }
 
     public int signedContracts(int contracts) {

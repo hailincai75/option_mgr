@@ -37,7 +37,7 @@
 | 夏令时结束当天（11-01，25 小时）：00:30、01:30（重复时刻取 EDT）、23:30 EST（UTC 已是 11-02）都归 11-01；10-31 23:59 EDT 归 10-31 | Pass | API |
 | 空串或全空白的参数等于不筛选 | Pass | API |
 | 错误优先级：同时有无法解析和不满足规则的问题时只报 BAD_REQUEST；同类问题一起返回，按 field 排序 | Pass | API |
-| BAD_REQUEST 的 message（类型、方向、日期、行权价）与契约一致 | Pass | API |
+| BAD_REQUEST 的 message（类型、方向、日期、行权价）与契约一致 | Pass | API。FEAT-012 起方向文案为"方向只能是 BTO、STO、BTC、STC、EXP"，测试已更新 |
 | `size=1&page=45` 是最后一条；`size=100` | Pass | API |
 | 地址里的非法参数：`strike=abc`（前端报错）、`expirationDate=2026-02-30`（显示后端返回的字段错误）、`action=XYZ`、`size=30`（按 20）、`page=99`（跳到最后一页）都不会让页面崩溃 | Pass | E2E |
 | 每页条数选 50 写入地址，刷新后保持 | Pass | E2E |

@@ -28,6 +28,16 @@ public enum ErrorCode {
     CLOSE_NOT_WHOLE_LOTS(HttpStatus.UNPROCESSABLE_ENTITY),
     /** FEAT-005: an edit that changes nothing ("没有修改"); nothing saved, nothing audited. */
     NO_CHANGES(HttpStatus.UNPROCESSABLE_ENTITY),
+    /** FEAT-012 Q10: expiring before 17:30 New York on the expiration date. */
+    EXPIRY_TOO_EARLY(HttpStatus.UNPROCESSABLE_ENTITY),
+    /** FEAT-012: no position of the contract at the expiration cutoff (16:00). */
+    NO_POSITION_TO_EXPIRE(HttpStatus.UNPROCESSABLE_ENTITY),
+    /** FEAT-012: the position at the cutoff differs from the contracts the user saw. */
+    POSITION_CHANGED(HttpStatus.UNPROCESSABLE_ENTITY),
+    /** FEAT-012 Q83: a trade stored before FEAT-012 is later than the cutoff and conflicts with the expiry. */
+    EXPIRY_BLOCKED_BY_LATE_TRADE(HttpStatus.UNPROCESSABLE_ENTITY),
+    /** FEAT-012 Q66: an expiry cannot be edited, only deleted. */
+    EXPIRY_NOT_EDITABLE(HttpStatus.UNPROCESSABLE_ENTITY),
     /** FEAT-033: an account-scoped endpoint was called without the X-Account-Id header. */
     ACCOUNT_REQUIRED(HttpStatus.BAD_REQUEST),
     /** FEAT-033: the X-Account-Id / path account does not exist. */

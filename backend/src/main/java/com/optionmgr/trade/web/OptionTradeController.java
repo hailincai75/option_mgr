@@ -1,10 +1,14 @@
 package com.optionmgr.trade.web;
 
 import com.optionmgr.account.web.AccountRef;
-import com.optionmgr.cash.repository.CashLedgerEntryEntity;
+import com.optionmgr.common.money.Money;
 import com.optionmgr.common.time.MarketTime;
 import com.optionmgr.trade.domain.ContractKey;
 import com.optionmgr.trade.domain.OpenTradeTerms;
+import com.optionmgr.trade.domain.PositionDirection;
+import com.optionmgr.trade.domain.TradeAction;
+import com.optionmgr.trade.service.OptionExpiryService;
+import com.optionmgr.trade.web.OptionTradeDtos.ExpireRequest;
 import com.optionmgr.trade.repository.OptionTradeEntity;
 import com.optionmgr.trade.service.OptionTradeService;
 import com.optionmgr.trade.service.OptionTradeEditService;
@@ -41,10 +45,13 @@ public class OptionTradeController {
 
     private final OptionTradeService service;
     private final OptionTradeEditService edits;
+    private final OptionExpiryService expiries;
 
-    public OptionTradeController(OptionTradeService service, OptionTradeEditService edits) {
+    public OptionTradeController(OptionTradeService service, OptionTradeEditService edits,
+                                 OptionExpiryService expiries) {
         this.service = service;
         this.edits = edits;
+        this.expiries = expiries;
     }
 
     @PostMapping
@@ -65,6 +72,15 @@ public class OptionTradeController {
         ContractKey contract = new ContractKey(req.symbol(), req.expirationDate(), req.strike(), req.optionType());
         return toResponse(service.close(account.id(), new OptionTradeService.CloseCommand(contract, req.action(),
                 req.contracts().intValueExact(), req.netAmount(), req.tradedAtLocal(), req.note())));
+    }
+
+    /** FEAT-012: expire the whole position of a contract at its expiration cutoff (16:00 New York). */
+    @PostMapping("/expirations")
+    @ResponseStatus(HttpStatus.CREATED)
+    public TradeResponse expire(AccountRef account, @Valid @RequestBody ExpireRequest req) {
+        ContractKey contract = new ContractKey(req.symbol(), req.expirationDate(), req.strike(), req.optionType());
+        return toResponse(expiries.expire(account.id(),
+                new OptionExpiryService.ExpireCommand(contract, req.contracts().intValueExact())));
     }
 
     /** FEAT-002 trade list; all filters optional, see TradeListQuery. */
@@ -109,16 +125,18 @@ public class OptionTradeController {
 
     private static TradeResponse toResponse(OptionTradeService.TradeView view) {
         OptionTradeEntity t = view.trade();
-        CashLedgerEntryEntity e = view.ledgerEntry();
         ContractKey contract = t.contract();
+        PositionDirection expiredDirection = t.getAction() == TradeAction.EXP
+                ? view.closeMatch().map(m -> PositionDirection.openedBy(m.coveredLots().get(0).action())).orElse(null)
+                : null;
         return new TradeResponse(t.getId(), t.getSymbol(), t.getExpirationDate(),
                 ContractKey.strikeText(t.getStrike()), t.getOptionType(), t.getAction(), t.getContracts(),
-                t.getMultiplier(), t.getNetAmount(), t.getTradedAt(),
-                LOCAL_SECONDS.format(MarketTime.toLocal(t.getTradedAt())), e.getAmount(), e.getFrozenChange(),
-                contract.label(), t.getNote(), e.getId(), t.getCreatedAt(),
+                t.getMultiplier(), Money.of(t.getNetAmount()), t.getTradedAt(),
+                LOCAL_SECONDS.format(MarketTime.toLocal(t.getTradedAt())), view.cashChange(), view.frozenChange(),
+                contract.label(), t.getNote(), view.ledgerEntryId(), t.getCreatedAt(),
                 view.closeMatch().map(m -> m.coveredLots().stream().map(OptionTradeController::toCovered).toList())
                         .orElse(null),
-                view.closeMatch().map(CloseMatch::realizedPnl).orElse(null), t.hasAuditLog());
+                view.closeMatch().map(CloseMatch::realizedPnl).orElse(null), t.hasAuditLog(), expiredDirection);
     }
 
     private static CoveredLotResponse toCovered(PositionLot l) {

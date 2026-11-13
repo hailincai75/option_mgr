@@ -368,7 +368,11 @@ class OptionTradeCloseControllerTest {
         assertThat(err.get("details").get(0).get("field").asText()).isEqualTo("tradedAtLocal");
         assertThat(err.get("details").get(0).get("message").asText()).isEqualTo("到期日（2026-11-06）之后不能平仓");
 
-        JsonNode t = closeOk(with(late, n -> n.put("tradedAtLocal", "2026-11-06T16:30")));
+        // FEAT-012 (Q83): on the expiration date not later than 16:00 New York
+        JsonNode afterCutoff = send(CLOSES, with(late, n -> n.put("tradedAtLocal", "2026-11-06T16:30")), 400);
+        assertThat(afterCutoff.get("details").get(0).get("message").asText())
+                .isEqualTo("成交时间不能晚于到期日（2026-11-06）美东 16:00");
+        JsonNode t = closeOk(with(late, n -> n.put("tradedAtLocal", "2026-11-06T16:00")));
         assertThat(t.get("realizedPnl").asText()).isEqualTo("290.00");
         assertSummary("50290.00", "0.00", "50290.00");
         assertThat(position(positions(), "TSLA 2026-11-06 250 P")).isNull();
