@@ -42,7 +42,8 @@
 backend/                   Spring Boot 工程，包名根 com.optionmgr（backend-dev 负责）
 frontend/                  React 工程（frontend-dev 负责）
 e2e/                       Playwright 端到端测试（qa 负责）
-docs/backlog.md            PM 维护的需求列表与优先级
+docs/backlog.md            PM 维护的需求列表、优先级、待定问题
+docs/decisions.md          已由用户确认的问题（Q 编号），PM 追加
 docs/requirements/         PM 写：FEAT-XXX-<short-name>.md（一功能一文件）
 docs/api/api-contract.md   API 契约（backend-dev 负责，frontend-dev 只读）
 docs/architecture.md       架构说明（backend-dev 写后端部分，frontend-dev 写前端部分）
@@ -53,7 +54,7 @@ docs/bugs/                 QA 写：BUG-XXX-<short-name>.md，标明 backend / f
 ## 角色
 | Agent | 负责 | 可以修改 |
 |-------|------|---------|
-| pm | 需求、backlog | docs/requirements/, docs/backlog.md |
+| pm | 需求、backlog、已定问题 | docs/requirements/, docs/backlog.md, docs/decisions.md |
 | backend-dev | 后端实现、API 契约 | backend/, docs/api/, docs/architecture.md |
 | frontend-dev | 前端实现 | frontend/, docs/architecture.md |
 | qa | 系统测试、E2E、bug 单 | backend/src/test/java/com/optionmgr/systemtest/, e2e/, docs/test-reports/, docs/bugs/ |
@@ -74,7 +75,7 @@ docs/bugs/                 QA 写：BUG-XXX-<short-name>.md，标明 backend / f
 - 开发和复测过程中只跑相关测试：后端用 `gradlew.bat test --tests <本功能及受影响的测试类>`；E2E 只跑本功能和受影响的 spec；前端 `npm test -- <相关文件>`。
 - 完整检查只在 commit 前跑一次：`gradlew.bat build`（全部后端测试）、前端 `npm run lint && npm run typecheck && npm test`、全量 E2E。由 qa 在验证阶段最后执行；dev 不重复跑全量后端构建/全量 E2E。
 
-**需求大小：** 每个需求的验收标准控制在 8–10 条左右；超出时 pm 先拆分成多个可独立构建测试的需求。
+**需求大小：** 每个需求的验收标准控制在 8–10 条左右，文件约 15 KB 以内；超出时 pm 先拆分成多个可独立构建测试的需求。已定问题只引用编号（全文在 `docs/decisions.md`）。
 
 需求状态：`Draft → Approved → Implemented → Verified`（或 `Failed → Implemented`）
 **只有人（我）能把 `Draft` 改成 `Approved`。** agent 不得自行批准需求。
@@ -85,7 +86,7 @@ docs/bugs/                 QA 写：BUG-XXX-<short-name>.md，标明 backend / f
 - 合约唯一标识：标的 + 到期日 + 行权价 + Call/Put
 - 方向：Buy to Open / Sell to Open / Buy to Close / Sell to Close
 - 平仓盈亏要计入手续费；成本法默认 FIFO
-- 平仓必须整笔平掉最早的一笔或几笔开仓批次，不支持部分平仓（见 backlog Q21）
+- 平仓必须整笔平掉最早的一笔或几笔开仓批次，不支持部分平仓（见 decisions.md Q21）
 - 到期事件：过期作废、被行权（exercise）、被指派（assignment），指派后生成股票持仓
 - 边界情况必须考虑：一笔平仓覆盖多笔开仓、同一合约多次开仓、到期日当天、周末与美股假日、标的拆股
 - 所有业务计算（盈亏、成本、保证金）只在后端做，前端不重复实现
