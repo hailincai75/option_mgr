@@ -32,7 +32,7 @@ describe('closedListFilters (FEAT-040)', () => {
     })
     // Closing directions only (FEAT-006).
     expect(validateClosedFilters({ ...EMPTY_CLOSED_FILTERS, action: ['STO'] })).toEqual({
-      action: '方向只能是 BTC、STC、EXP',
+      action: '方向只能是 BTC、STC、EXP、ASG',
     })
   })
 

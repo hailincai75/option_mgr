@@ -5,16 +5,20 @@ import { Link } from 'react-router-dom'
 import type { StockTrade } from '../../api/types'
 import { decimalSign, EMPTY_VALUE, formatInteger, formatMoney } from '../../utils/format'
 import { auditUrl } from '../audit/auditLinks'
+import { tradesUrlForAssignment } from '../position/positionLinks'
 import { SIGNED_MONEY_COLORS } from '../trade/tradeLabels'
 import { SoldLotTable } from './SoldLotTable'
-import { STOCK_TYPE_COLORS, stockTimeText, stockTypeLabel } from './stockLabels'
+import { ASSIGN_BUY_HINT, STOCK_TYPE_COLORS, stockTimeText, stockTypeLabel } from './stockLabels'
 
-/** "−1,500.65" / "+1,200.00" colored by cash direction; transfers "总成本 750.00" uncolored. */
+/**
+ * "−1,500.65" / "+1,200.00" colored by cash direction; transfers "总成本 750.00" and (FEAT-013)
+ * 指派买入 "成本 13,130.00" uncolored (no cash of their own).
+ */
 export function StockAmountText({ trade, testId }: { trade: StockTrade; testId: string }) {
-  if (trade.type === 'TRANSFER_IN') {
+  if (trade.type === 'TRANSFER_IN' || trade.type === 'ASSIGN_BUY') {
     return (
       <span data-testid={testId} style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
-        总成本 {formatMoney(trade.amount)}
+        {trade.type === 'TRANSFER_IN' ? '总成本' : '成本'} {formatMoney(trade.amount)}
       </span>
     )
   }
@@ -78,7 +82,9 @@ interface StockTradeTableProps {
 
 /**
  * Stock records in backend order (FEAT-011); values are only formatted. Sell rows expand to the
- * lots they sold. Every row has 修改 / 删除, and 历史 when the record has audit records.
+ * lots they sold. Rows have 修改 / 删除 by the backend's `editable` / `deletable` (FEAT-013: not on
+ * 指派买入, which shows a hint and a link to its 被指派 record), and 历史 when the record has audit
+ * records.
  */
 export function StockTradeTable({
   trades,
@@ -115,18 +121,31 @@ export function StockTradeTable({
       title: '标的',
       key: 'symbol',
       render: (_value: unknown, trade) => (
-        <Button
-          type="link"
-          size="small"
-          style={{ padding: 0 }}
-          title="按此标的筛选"
-          onClick={() => {
-            onSymbolClick(trade)
-          }}
-          data-testid="stock-cell-symbol"
-        >
-          {trade.symbol}
-        </Button>
+        <>
+          <Button
+            type="link"
+            size="small"
+            style={{ padding: 0 }}
+            title="按此标的筛选"
+            onClick={() => {
+              onSymbolClick(trade)
+            }}
+            data-testid="stock-cell-symbol"
+          >
+            {trade.symbol}
+          </Button>
+          {trade.assignmentTradeId !== null && (
+            <div>
+              <Link
+                to={tradesUrlForAssignment(trade.symbol, trade.tradedAtLocal)}
+                style={{ fontSize: 12, whiteSpace: 'nowrap' }}
+                data-testid="stock-assignment-link"
+              >
+                来自被指派 #{trade.assignmentTradeId}
+              </Link>
+            </div>
+          )}
+        </>
       ),
     },
     {
@@ -189,27 +208,40 @@ export function StockTradeTable({
       key: 'actions',
       render: (_value: unknown, trade) => (
         <Space size={4} style={{ whiteSpace: 'nowrap' }}>
-          <Button
-            size="small"
-            type="link"
-            onClick={() => {
-              onEdit(trade)
-            }}
-            data-testid="stock-edit"
-          >
-            修改
-          </Button>
-          <Button
-            size="small"
-            type="link"
-            danger
-            onClick={() => {
-              onDelete(trade)
-            }}
-            data-testid="stock-delete"
-          >
-            删除
-          </Button>
+          {trade.editable && (
+            <Button
+              size="small"
+              type="link"
+              onClick={() => {
+                onEdit(trade)
+              }}
+              data-testid="stock-edit"
+            >
+              修改
+            </Button>
+          )}
+          {trade.deletable && (
+            <Button
+              size="small"
+              type="link"
+              danger
+              onClick={() => {
+                onDelete(trade)
+              }}
+              data-testid="stock-delete"
+            >
+              删除
+            </Button>
+          )}
+          {trade.type === 'ASSIGN_BUY' && (
+            <Typography.Text
+              type="secondary"
+              style={{ fontSize: 12 }}
+              data-testid="stock-assign-buy-hint"
+            >
+              {ASSIGN_BUY_HINT}
+            </Typography.Text>
+          )}
           {trade.hasAuditLog && (
             <Link to={auditUrl('STOCK_TRADE', trade.id)} data-testid="stock-history">
               历史

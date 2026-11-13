@@ -1,4 +1,4 @@
-import { Button, Table, Tag, Tooltip, Typography } from 'antd'
+import { Button, Space, Table, Tag, Tooltip, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { HTMLAttributes, ReactNode } from 'react'
 import { Link } from 'react-router-dom'
@@ -62,7 +62,8 @@ const EXPIRY_PENDING_HINT = '16:00 已停止交易；17:30 前仍可能被指派
 
 /**
  * FEAT-012 (Q10 / Q83): 到期待确认 between 16:00 and 17:30 NY on the expiration date, shown from
- * the backend's `expiryPending` (never computed here); the row has no buttons meanwhile.
+ * the backend's `expiryPending` (never computed here); meanwhile only short puts have a button
+ * (被指派, FEAT-013).
  */
 function ExpiryPendingTag() {
   return (
@@ -155,6 +156,7 @@ function LotTable({ lots }: { lots: OptionPositionLot[] }) {
 function positionColumns(
   onClosePosition: (position: OptionPosition) => void,
   onExpirePosition: (position: OptionPosition) => void,
+  onAssignPosition: (position: OptionPosition) => void,
 ): ColumnsType<OptionPosition> {
   return [
     {
@@ -251,37 +253,49 @@ function positionColumns(
     {
       title: '操作',
       key: 'actions',
-      // Backend flags only (at most one is true): 平仓 before 16:00 NY on the expiration date
-      // (`closable`), nothing while `expiryPending`, 作废 from 17:30 (`expirable`, FEAT-012).
+      // Backend flags only: 平仓 before 16:00 NY on the expiration date (`closable`), 作废 from
+      // 17:30 (`expirable`, FEAT-012), and 被指派 on short puts at any time (`assignable`,
+      // FEAT-013 Q95 — the only button while 到期待确认).
       render: (_value: unknown, position) => {
-        if (position.closable) {
-          return (
-            <Button
-              size="small"
-              onClick={() => {
-                onClosePosition(position)
-              }}
-              data-testid="position-close"
-            >
-              平仓
-            </Button>
-          )
-        }
-        if (position.expirable) {
-          return (
-            <Button
-              size="small"
-              danger
-              onClick={() => {
-                onExpirePosition(position)
-              }}
-              data-testid="position-expire"
-            >
-              作废
-            </Button>
-          )
-        }
-        return null
+        if (!position.closable && !position.expirable && !position.assignable) return null
+        return (
+          <Space size={4} style={{ whiteSpace: 'nowrap' }}>
+            {position.closable && (
+              <Button
+                size="small"
+                onClick={() => {
+                  onClosePosition(position)
+                }}
+                data-testid="position-close"
+              >
+                平仓
+              </Button>
+            )}
+            {position.expirable && (
+              <Button
+                size="small"
+                danger
+                onClick={() => {
+                  onExpirePosition(position)
+                }}
+                data-testid="position-expire"
+              >
+                作废
+              </Button>
+            )}
+            {position.assignable && (
+              <Button
+                size="small"
+                onClick={() => {
+                  onAssignPosition(position)
+                }}
+                data-testid="position-assign"
+              >
+                被指派
+              </Button>
+            )}
+          </Space>
+        )
       },
     },
   ]
@@ -295,11 +309,13 @@ interface PositionTableProps {
   onClosePosition: (position: OptionPosition) => void
   /** Opens the 作废 dialog for an expirable position (FEAT-012). */
   onExpirePosition: (position: OptionPosition) => void
+  /** Opens the 被指派 dialog for an assignable position (FEAT-013). */
+  onAssignPosition: (position: OptionPosition) => void
 }
 
 /**
- * Positions in backend order; each row expands to its FIFO lots and has 平仓 (closable) or
- * 作废 (expirable, FEAT-012) by the backend's flags.
+ * Positions in backend order; each row expands to its FIFO lots and has 平仓 (closable),
+ * 作废 (expirable, FEAT-012) and 被指派 (assignable, FEAT-013) by the backend's flags.
  */
 export function PositionTable({
   positions,
@@ -307,12 +323,13 @@ export function PositionTable({
   empty,
   onClosePosition,
   onExpirePosition,
+  onAssignPosition,
 }: PositionTableProps) {
   return (
     <Table<OptionPosition>
       rowKey="contractLabel"
       size="small"
-      columns={positionColumns(onClosePosition, onExpirePosition)}
+      columns={positionColumns(onClosePosition, onExpirePosition, onAssignPosition)}
       dataSource={positions}
       loading={loading}
       pagination={false}

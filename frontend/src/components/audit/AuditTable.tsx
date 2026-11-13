@@ -46,6 +46,22 @@ interface SnapshotField {
   format: FieldFormat
 }
 
+/** FEAT-013: extra flat fields of a 被指派 (ASG) snapshot (contract: audit `before`). */
+const ASSIGNMENT_FIELDS: SnapshotField[] = [
+  { key: 'assignmentDate', label: '指派日期', format: 'text' },
+  { key: 'assignmentFee', label: '指派费', format: 'money' },
+  { key: 'shares', label: '股数', format: 'text' },
+  { key: 'purchaseAmount', label: '买股金额', format: 'money' },
+  { key: 'stockCost', label: '股票成本', format: 'money' },
+  { key: 'stockTradeId', label: '股票记录 ID', format: 'text' },
+]
+
+/** Option trade snapshot; a 被指派 (FEAT-013) also shows its assignment fields. */
+function optionTradeFields(snapshot: AuditSnapshot | null): SnapshotField[] {
+  const base = SNAPSHOT_FIELDS.OPTION_TRADE ?? []
+  return snapshot?.action === 'ASG' ? [...base, ...ASSIGNMENT_FIELDS] : base
+}
+
 /**
  * FEAT-011 stock trade snapshot: for transfers the amount is 总成本 and the time is a date,
  * otherwise 金额 and the New York trade time.
@@ -116,9 +132,14 @@ function Snapshot({
   /** Shown when the snapshot is null: "已删除" (after a delete) or "无（新增）" (before a create). */
   emptyText: string
 }) {
+  const known =
+    objectType === 'STOCK_TRADE'
+      ? stockTradeFields(snapshot)
+      : objectType === 'OPTION_TRADE'
+        ? optionTradeFields(snapshot)
+        : SNAPSHOT_FIELDS[objectType]
   const fields =
-    (objectType === 'STOCK_TRADE' ? stockTradeFields(snapshot) : SNAPSHOT_FIELDS[objectType]) ??
-    Object.keys(snapshot ?? {}).map((key) => ({ key, label: key, format: 'text' as const }))
+    known ?? Object.keys(snapshot ?? {}).map((key) => ({ key, label: key, format: 'text' as const }))
   return (
     <Descriptions
       title={title}

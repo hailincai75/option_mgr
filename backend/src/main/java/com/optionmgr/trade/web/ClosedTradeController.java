@@ -56,8 +56,14 @@ public class ClosedTradeController {
                                       BigDecimal closeNetAmount, BigDecimal closeNetPerContract,
                                       BigDecimal pricePerShare, BigDecimal realizedPnl, String note,
                                       List<CoveredLotResponse> coveredLots, List<SoldLotResponse> soldLots,
+                                      /* FEAT-013: ASG rows only (shares, stock cost, generated lot id) */
+                                      AssignedStockResponse assignment,
                                       /* the closing trade's / sale's (id) stored flag: it has been edited */
                                       boolean hasAuditLog) {
+    }
+
+    /** FEAT-013: where an assignment's premium went: the generated stock lot. */
+    public record AssignedStockResponse(int shares, BigDecimal stockCost, Long stockTradeId) {
     }
 
     /** A lot part taken by a stock sale; {@code netAmount} = -cost (cash sign). */
@@ -84,7 +90,7 @@ public class ClosedTradeController {
             @RequestParam(defaultValue = "20") int size) {
         ClosedRecordFilter filter = TradeListQuery.parseClosed(type, symbol, expirationDate, strike, optionType,
                 actions, startDate, endDate, page, size, ClosedTradeService.CLOSING_ACTIONS,
-                "方向只能是 BTC、STC、EXP");
+                "方向只能是 BTC、STC、EXP、ASG");
         ClosedTradeService.ClosedTradePage p = service.page(account.id(), filter, page, size);
         return new ClosedTradePageResponse(p.items().stream().map(ClosedTradeController::toResponse).toList(),
                 p.page(), p.size(), p.totalItems(), p.totalPages(), p.totalItems(), p.filteredRealizedPnlTotal());
@@ -106,7 +112,9 @@ public class ClosedTradeController {
                 c.label(), t.getAction().name(), f.closedDirection(), t.getContracts(), t.getMultiplier(), null,
                 f.openingNetTotal(), f.openingNetPerContract(), null, f.closeNetAmount(), f.closeNetPerContract(),
                 null, f.realizedPnl(), t.getNote(), f.coveredLots().stream().map(ClosedTradeController::toLot).toList(),
-                null, t.hasAuditLog());
+                null, v.trade().assignment().map(a -> new AssignedStockResponse(a.shares(), a.stockCost(),
+                        v.trade().assignedLot() == null ? null : v.trade().assignedLot().getId())).orElse(null),
+                t.hasAuditLog());
     }
 
     private static ClosedTradeResponse toResponse(StockSaleView v) {
@@ -116,7 +124,7 @@ public class ClosedTradeController {
                 t.getSymbol(), null, null, null, null, t.getType().name(), null, null, null, t.getShares(),
                 f.openingNetTotal(), null, f.costPerShare(), f.closeNetAmount(), null, f.pricePerShare(),
                 f.realizedPnl(), t.getNote(), null,
-                f.match().lots().stream().map(ClosedTradeController::toSoldLot).toList(), t.hasAuditLog());
+                f.match().lots().stream().map(ClosedTradeController::toSoldLot).toList(), null, t.hasAuditLog());
     }
 
     private static CoveredLotResponse toLot(PositionLot l) {

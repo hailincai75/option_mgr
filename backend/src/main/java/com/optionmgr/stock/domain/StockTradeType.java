@@ -12,7 +12,9 @@ import java.util.Optional;
 public enum StockTradeType {
     BUY("买入"),
     SELL("卖出"),
-    TRANSFER_IN("转入");
+    TRANSFER_IN("转入"),
+    /** FEAT-013: the lot bought by a short-put assignment; generated only, cash is on the OPTION_ASSIGN entry. */
+    ASSIGN_BUY("指派买入");
 
     private final String label;
 
@@ -35,7 +37,7 @@ public enum StockTradeType {
         return switch (this) {
             case BUY -> Money.of(amount).negate();
             case SELL -> Money.of(amount);
-            case TRANSFER_IN -> Money.ZERO;
+            case TRANSFER_IN, ASSIGN_BUY -> Money.ZERO;
         };
     }
 
@@ -44,7 +46,7 @@ public enum StockTradeType {
         return switch (this) {
             case BUY -> Optional.of(CashSourceType.STOCK_BUY);
             case SELL -> Optional.of(CashSourceType.STOCK_SELL);
-            case TRANSFER_IN -> Optional.empty();
+            case TRANSFER_IN, ASSIGN_BUY -> Optional.empty();
         };
     }
 

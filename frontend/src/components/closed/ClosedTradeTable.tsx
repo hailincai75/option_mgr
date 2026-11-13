@@ -13,8 +13,13 @@ import {
 import { auditUrl } from '../audit/auditLinks'
 import { tradesUrlForContract } from '../position/positionLinks'
 import { stockTimeText, stockTypeLabel, STOCK_TYPE_COLORS } from '../stock/stockLabels'
-import { stocksUrlForSymbol } from '../stock/stockListFilters'
-import { isExpiryAction, SIGNED_MONEY_COLORS, tradeActionLabel } from '../trade/tradeLabels'
+import { stocksUrlForAssignment, stocksUrlForSymbol } from '../stock/stockListFilters'
+import {
+  isDeleteOnlyAction,
+  SIGNED_MONEY_COLORS,
+  SPECIAL_ACTION_COLORS,
+  tradeActionLabel,
+} from '../trade/tradeLabels'
 
 const DIRECTION_TAGS: Record<string, { label: string; color: string }> = {
   SHORT: { label: '空头', color: 'orange' },
@@ -210,9 +215,13 @@ const columns: ColumnsType<ClosedTrade> = [
       const tag = DIRECTION_TAGS[trade.closedDirection]
       return (
         <Space size={4} style={{ whiteSpace: 'nowrap' }}>
-          {isExpiryAction(trade.action) ? (
-            // FEAT-012: 到期作废 (close net 0.00, recorded at the expiration date 16:00 NY).
-            <Tag color="purple" data-testid="closed-cell-action" style={{ marginInlineEnd: 0 }}>
+          {isDeleteOnlyAction(trade.action) ? (
+            // FEAT-012 到期作废 / FEAT-013 被指派 (both recorded at a date's 16:00 NY).
+            <Tag
+              color={SPECIAL_ACTION_COLORS[trade.action]}
+              data-testid="closed-cell-action"
+              style={{ marginInlineEnd: 0 }}
+            >
               {tradeActionLabel(trade.action)}
             </Tag>
           ) : (
@@ -278,9 +287,34 @@ const columns: ColumnsType<ClosedTrade> = [
     title: '已实现盈亏',
     key: 'realizedPnl',
     align: 'right',
-    render: (_value: unknown, trade) => (
-      <SignedMoney value={trade.realizedPnl} testId="closed-cell-pnl" strong />
-    ),
+    render: (_value: unknown, trade) => {
+      const pnl = <SignedMoney value={trade.realizedPnl} testId="closed-cell-pnl" strong />
+      const assignment = trade.assignment
+      if (assignment === null) return pnl
+      // FEAT-013: the option P&L of a 被指派 is 0.00; the premium went into the stock cost.
+      return (
+        <div style={{ textAlign: 'right' }}>
+          {pnl}
+          <div>
+            <Typography.Text
+              type="secondary"
+              style={{ fontSize: 12, whiteSpace: 'nowrap' }}
+              data-testid="closed-cell-assignment"
+            >
+              权利金已计入股票成本（{formatInteger(assignment.shares)} 股 {trade.symbol}，成本{' '}
+              {formatMoney(assignment.stockCost)}）
+            </Typography.Text>{' '}
+            <Link
+              to={stocksUrlForAssignment(trade.symbol, trade.tradedAtLocal)}
+              style={{ fontSize: 12, whiteSpace: 'nowrap' }}
+              data-testid="closed-assignment-stock-link"
+            >
+              股票记录 #{assignment.stockTradeId}
+            </Link>
+          </div>
+        </div>
+      )
+    },
   },
   {
     title: '备注',

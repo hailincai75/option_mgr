@@ -50,6 +50,10 @@ function position(partial: Partial<OptionPosition>): OptionPosition {
     expiryContracts: 3,
     expiryAt: '2026-11-20T21:00:00Z',
     expiryAtLocal: '2026-11-20T16:00:00',
+    assignable: false,
+    assignChoices: [],
+    assignmentDateMax: null,
+    assignmentDateDefault: null,
     ...partial,
   }
   const cp = merged.optionType === 'CALL' ? 'C' : 'P'
@@ -126,6 +130,7 @@ function expiry(partial: Partial<OptionTrade>): OptionTrade {
     realizedPnl: '370.00',
     hasAuditLog: false,
     expiredDirection: 'SHORT',
+    assignment: null,
     ...partial,
   }
 }
@@ -153,6 +158,7 @@ const QRTV_EXPIRY = expiry({
   ],
   realizedPnl: '-85.65',
   expiredDirection: 'LONG',
+  assignment: null,
 })
 
 const E1_TRADE: OptionTrade = {
@@ -169,6 +175,7 @@ const E1_TRADE: OptionTrade = {
   coveredLots: null,
   realizedPnl: null,
   expiredDirection: null,
+  assignment: null,
 }
 
 function errorBody(
@@ -557,6 +564,7 @@ describe('FEAT-012 closed trades', () => {
     costPerShare: null,
     pricePerShare: null,
     soldLots: null,
+    assignment: null,
   }
 
   it('shows an EXP row and offers the 到期作废 filter (AC 2, 3)', async () => {

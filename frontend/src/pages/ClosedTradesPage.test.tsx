@@ -38,6 +38,7 @@ function closed(
     costPerShare: null,
     pricePerShare: null,
     soldLots: null,
+    assignment: null,
     tradedAt: '2026-11-05T15:00:00Z',
     tradedAtLocal: '2026-11-05T10:00:00',
     symbol: 'AAPL',
@@ -519,7 +520,7 @@ describe('ClosedTradesPage', () => {
   it('rejects BTO / STO in the URL action filter without querying', async () => {
     const queries = startFakeServer({ closed: SCENARIO_P })
     renderPage('/closed?action=STO')
-    expect(await screen.findByText('方向只能是 BTC、STC、EXP')).toBeInTheDocument()
+    expect(await screen.findByText('方向只能是 BTC、STC、EXP、ASG')).toBeInTheDocument()
     expect(queries).toHaveLength(0)
   })
 
@@ -774,6 +775,7 @@ function stockSale(
     note: null,
     coveredLots: null,
     soldLots: [],
+    assignment: null,
     hasAuditLog: false,
     ...partial,
   }

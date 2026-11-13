@@ -2,6 +2,7 @@ package com.optionmgr.trade.web;
 
 import com.optionmgr.account.web.AccountRef;
 import com.optionmgr.common.time.MarketTime;
+import com.optionmgr.trade.domain.AssignmentTerms;
 import com.optionmgr.trade.domain.ContractKey;
 import com.optionmgr.trade.domain.ExpirationStatus;
 import com.optionmgr.trade.domain.ExpirationTimes;
@@ -51,7 +52,14 @@ public class OptionPositionController {
                                    boolean expirable,
                                    /* FEAT-012: contracts at the cutoff = the expiry size to send back */
                                    int expiryContracts,
-                                   Instant expiryAt, String expiryAtLocal) {
+                                   Instant expiryAt, String expiryAtLocal,
+                                   /* FEAT-013: short put, any time (Q95) */
+                                   boolean assignable, List<AssignChoice> assignChoices,
+                                   LocalDate assignmentDateMax, LocalDate assignmentDateDefault) {
+    }
+
+    /** FEAT-013: one selectable assignment size (earliest whole lots) and its shares. */
+    public record AssignChoice(int contracts, int shares) {
     }
 
     public record LotResponse(long tradeId, TradeAction action, Instant tradedAt, String tradedAtLocal,
@@ -73,12 +81,18 @@ public class OptionPositionController {
         Instant now = s.now();
         long dte = p.dte(today);
         Instant cutoff = ExpirationTimes.tradingCutoff(c.expirationDate());
+        boolean assignable = p.direction() == PositionDirection.SHORT && c.optionType() == OptionType.PUT;
+        LocalDate latest = assignable ? AssignmentTerms.latestDate(c.expirationDate(), now) : null;
         return new PositionResponse(c.symbol(), c.expirationDate(), ContractKey.strikeText(c.strike()),
                 c.optionType(), c.label(), p.direction(), p.contracts(), p.multiplier(), p.openingNetTotal(),
                 p.averageNetPerContract(), p.frozenCash(), dte, p.expirationStatus(today), Math.max(0, -dte),
                 p.lots().size(), p.lots().stream().map(OptionPositionController::toResponse).toList(),
                 p.closeAction(), p.allowedCloseContracts(), p.closable(now), p.expiryPending(now), p.expirable(now),
-                s.expiryContracts(p), cutoff, LOCAL_SECONDS.format(MarketTime.toLocal(cutoff)));
+                s.expiryContracts(p), cutoff, LOCAL_SECONDS.format(MarketTime.toLocal(cutoff)), assignable,
+                assignable
+                        ? p.allowedCloseContracts().stream().map(n -> new AssignChoice(n, n * p.multiplier())).toList()
+                        : List.of(),
+                latest, latest);
     }
 
     private static LotResponse toResponse(PositionLot l) {

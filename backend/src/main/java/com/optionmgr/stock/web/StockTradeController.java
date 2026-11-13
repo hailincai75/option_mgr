@@ -106,7 +106,8 @@ public class StockTradeController {
                 t.getCreatedAt(), t.hasAuditLog(),
                 sale == null ? null : sale.soldCost(),
                 sale == null ? null : sale.realizedPnl(),
-                sale == null ? null : sale.lots().stream().map(StockTradeController::toSoldLot).toList());
+                sale == null ? null : sale.lots().stream().map(StockTradeController::toSoldLot).toList(),
+                t.getOptionTradeId(), t.getType() != StockTradeType.ASSIGN_BUY, t.getType() != StockTradeType.ASSIGN_BUY);
     }
 
     private static SoldLotResponse toSoldLot(LotSale l) {

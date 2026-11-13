@@ -110,7 +110,58 @@ public final class OptionTradeDtos {
             /* stored flag of the trade: set when it is edited (it then has an audit record); create = false */
             boolean hasAuditLog,
             /* FEAT-012: side of the expired position for EXP, null otherwise */
-            PositionDirection expiredDirection) {
+            PositionDirection expiredDirection,
+            /* FEAT-013: figures of an assignment (ASG), null otherwise */
+            AssignmentResponse assignment) {
+    }
+
+    /** FEAT-013 figures of an assignment under its current match. */
+    public record AssignmentResponse(LocalDate assignmentDate, BigDecimal assignmentFee, BigDecimal premium, int shares,
+                                     BigDecimal purchaseAmount, BigDecimal stockCost, BigDecimal stockCostPerShare,
+                                     Long stockTradeId) {
+    }
+
+    /**
+     * FEAT-013 record a short-put assignment. {@code assignmentFee}: null = 0.00. Other properties are ignored.
+     */
+    public record AssignRequest(
+            @NotEmpty(message = "标的不能为空")
+            @Size(max = Symbols.MAX_LENGTH, message = "标的最多 10 个字符")
+            @Pattern(regexp = Symbols.NORMALIZED_PATTERN, message = "标的只能包含字母、数字和点")
+            String symbol,
+
+            @NotNull(message = "到期日不能为空")
+            LocalDate expirationDate,
+
+            @NotNull(message = "行权价不能为空")
+            @Positive(message = "行权价必须大于 0")
+            @Digits(integer = 100, fraction = 3, message = "行权价最多 3 位小数")
+            @DecimalMax(value = "9999999.999", message = "行权价过大")
+            BigDecimal strike,
+
+            @NotNull(message = "请选择 Call 或 Put")
+            OptionType optionType,
+
+            @NotNull(message = "张数不能为空")
+            @Positive(message = "张数必须是正整数")
+            @Digits(integer = 100, fraction = 0, message = "张数必须是正整数")
+            @DecimalMax(value = "100000", message = "张数过大")
+            BigDecimal contracts,
+
+            @NotNull(message = "指派日期不能为空")
+            LocalDate assignmentDate,
+
+            @PositiveOrZero(message = "指派费不能为负数")
+            @Digits(integer = 100, fraction = 2, message = "指派费最多 2 位小数")
+            @DecimalMax(value = "9999999999999.99", message = "指派费过大")
+            BigDecimal assignmentFee,
+
+            @Size(max = 500, message = "备注最多 500 个字符")
+            String note) {
+
+        public AssignRequest {
+            symbol = Symbols.normalize(symbol);
+        }
     }
 
     /**

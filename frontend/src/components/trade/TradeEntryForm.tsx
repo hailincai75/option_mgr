@@ -52,8 +52,8 @@ const FIELD_NAMES: readonly (keyof TradeEntryFormValues)[] = [
   'note',
 ]
 
-/** Directions recorded on this page (EXP = 到期作废 only comes from the positions page, FEAT-012). */
-type EntryAction = Exclude<TradeAction, 'EXP'>
+/** Directions recorded on this page (EXP 到期作废 / ASG 被指派 only come from the positions page). */
+type EntryAction = Exclude<TradeAction, 'EXP' | 'ASG'>
 
 const ACTION_OPTIONS: { value: EntryAction; label: string }[] = [
   { value: 'STO', label: 'STO 卖出开仓' },

@@ -325,7 +325,7 @@ class StockTradeControllerTest {
         assertField(call(get("/api/stock-trades?symbol=$IXQZ"), 400), "symbol", "标的只能包含字母、数字和点");
         JsonNode bad = call(get("/api/stock-trades?type=FOO"), 400);
         assertThat(bad.get("code").asText()).isEqualTo("BAD_REQUEST");
-        assertThat(bad.get("details").get(0).get("message").asText()).isEqualTo("类型只能是 BUY、SELL、TRANSFER_IN");
+        assertThat(bad.get("details").get(0).get("message").asText()).isEqualTo("类型只能是 BUY、SELL、TRANSFER_IN、ASSIGN_BUY");
         assertField(call(get("/api/stock-trades?startDate=2026-11-05&endDate=2026-11-04"), 400), "endDate",
                 "开始日期不能晚于结束日期");
         assertField(call(get("/api/stock-trades?size=101"), 400), "size", "size 必须在 1 到 100 之间");

@@ -120,8 +120,12 @@ test.describe('FEAT-003 期权持仓', () => {
     const headers = (await page.getByTestId('positions-page').locator('th').allTextContents()).join('|')
     expect(headers).toContain('仅供参考')
     await expect(page.getByText('空头为实收、多头为实付，均已含手续费').first()).toBeVisible()
-    // no operation buttons (only the expand toggles)
-    await expect(page.getByTestId('positions-page').getByRole('button', { name: /平仓|删除|编辑|作废|指派|行权/ })).toHaveCount(0)
+    // FEAT-003 itself adds no operation buttons; later features add them by backend flags (Q34):
+    // 平仓 (FEAT-004) and 被指派 on short puts (FEAT-013) — never 删除 / 编辑 / 行权 here
+    await expect(page.getByTestId('positions-page').getByRole('button', { name: /删\s*除|编\s*辑|行\s*权/ })).toHaveCount(0)
+    await expect
+      .poll(() => page.getByTestId('position-assign').evaluateAll((bs) => bs.map((b) => b.closest('[data-contract]')?.getAttribute('data-contract'))))
+      .toEqual(['AAPL 2026-12-18 200 P', 'F 2026-12-18 12.5 P', 'XYZ 2026-12-18 200 P'])
     // frozen total equals the cash page
     await page.getByTestId('nav-cash').click()
     await expect(page.getByTestId('cash-summary-frozen')).toHaveText('44,500.00')

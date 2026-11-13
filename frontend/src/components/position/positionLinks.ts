@@ -23,5 +23,19 @@ export function tradesUrlForContract(contract: ContractFields): string {
   return `/trades?${search.toString()}`
 }
 
+/**
+ * FEAT-013: trade list URL that finds one 被指派 record — its symbol, action ASG and its New York
+ * date (`tradedAtLocal` "YYYY-MM-DDT16:00:00" of the generated stock record).
+ */
+export function tradesUrlForAssignment(symbol: string, tradedAtLocal: string): string {
+  const date = tradedAtLocal.slice(0, 10)
+  const search = toTradeListSearch({
+    filters: { ...EMPTY_TRADE_FILTERS, symbol, action: ['ASG'], startDate: date, endDate: date },
+    page: 1,
+    size: 20,
+  })
+  return `/trades?${search.toString()}`
+}
+
 /** @see tradesUrlForContract */
 export const tradesUrlForPosition = tradesUrlForContract

@@ -479,7 +479,7 @@ class Feat011StockTradesSystemTest extends OptionTradeSystemTestBase {
         assertThat(details(longSym)).containsExactly("symbol=标的最多 10 个字符");
         Resp badType = get(STOCKS + "?type=BUY,FOO");
         assertErrorShape(badType, 400, "BAD_REQUEST", STOCKS);
-        assertThat(details(badType)).containsExactly("type=类型只能是 BUY、SELL、TRANSFER_IN");
+        assertThat(details(badType)).containsExactly("type=类型只能是 BUY、SELL、TRANSFER_IN、ASSIGN_BUY");
         Resp badDate = get(STOCKS + "?startDate=2026-02-30");
         assertErrorShape(badDate, 400, "BAD_REQUEST", STOCKS);
         assertThat(details(badDate)).containsExactly("startDate=日期格式不正确（YYYY-MM-DD）");

@@ -18,7 +18,13 @@ public enum TradeAction {
      * FEAT-012 expire worthless: closes the whole position at the expiration cutoff (16:00 New York), whichever side
      * it is (sign 0: never "against" a position). No cash; stored with net amount 0. Cannot be edited, only deleted.
      */
-    EXP(0, false);
+    EXP(0, false),
+    /**
+     * FEAT-013 a short put is assigned: closes the earliest whole short lots like a BTC (sign +1, so a long position
+     * is "the wrong side"), recorded at 16:00 New York of the assignment date, net amount 0, option realized P&amp;L
+     * 0 (the premium goes into the cost of the generated stock lot, Q8). Cannot be edited, only deleted.
+     */
+    ASG(1, false);
 
     private final int sign;
     private final boolean opening;
@@ -47,9 +53,18 @@ public enum TradeAction {
         return this == BTC || this == STC;
     }
 
-    /** User-facing name in texts: the code, except "到期作废" for EXP. */
+    /** User-facing name in texts: the code, except "到期作废" for EXP and "被指派" for ASG. */
     public String displayName() {
-        return this == EXP ? "到期作废" : name();
+        return switch (this) {
+            case EXP -> "到期作废";
+            case ASG -> "被指派";
+            default -> name();
+        };
+    }
+
+    /** EXP / ASG: closing records shaped by the system; they can only be deleted, never edited. */
+    public boolean isDeleteOnly() {
+        return this == EXP || this == ASG;
     }
 
     public int signedContracts(int contracts) {

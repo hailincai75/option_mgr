@@ -578,7 +578,7 @@ test.describe('FEAT-012 到期作废', () => {
       await expect(today.getByTestId('position-expire')).toHaveCount(0)
       await expect(today.getByRole('button')).toHaveCount(0)
       await today.getByTestId('position-expiry-pending').hover()
-      await expect(page.getByRole('tooltip')).toHaveText('16:00 已停止交易；17:30 前仍可能被指派，17:30（美东）起可作废')
+      await expect(page.getByRole('tooltip')).toHaveText('16:00 已停止交易；17:30 前仍可能被指派（空头 put 可记录被指派），17:30（美东）起可作废')
     } else {
       await expect(today.getByTestId('position-expire')).toBeVisible()
       await expect(today.getByTestId('position-close')).toHaveCount(0)

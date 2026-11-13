@@ -7,7 +7,10 @@ import com.optionmgr.trade.domain.ContractKey;
 import com.optionmgr.trade.domain.OpenTradeTerms;
 import com.optionmgr.trade.domain.PositionDirection;
 import com.optionmgr.trade.domain.TradeAction;
+import com.optionmgr.trade.service.OptionAssignmentService;
 import com.optionmgr.trade.service.OptionExpiryService;
+import com.optionmgr.trade.web.OptionTradeDtos.AssignRequest;
+import com.optionmgr.trade.web.OptionTradeDtos.AssignmentResponse;
 import com.optionmgr.trade.web.OptionTradeDtos.ExpireRequest;
 import com.optionmgr.trade.repository.OptionTradeEntity;
 import com.optionmgr.trade.service.OptionTradeService;
@@ -46,12 +49,23 @@ public class OptionTradeController {
     private final OptionTradeService service;
     private final OptionTradeEditService edits;
     private final OptionExpiryService expiries;
+    private final OptionAssignmentService assignments;
 
     public OptionTradeController(OptionTradeService service, OptionTradeEditService edits,
-                                 OptionExpiryService expiries) {
+                                 OptionExpiryService expiries, OptionAssignmentService assignments) {
         this.service = service;
         this.edits = edits;
         this.expiries = expiries;
+        this.assignments = assignments;
+    }
+
+    /** FEAT-013: a short put is assigned (recorded at 16:00 New York of the assignment date). */
+    @PostMapping("/assignments")
+    @ResponseStatus(HttpStatus.CREATED)
+    public TradeResponse assign(AccountRef account, @Valid @RequestBody AssignRequest req) {
+        ContractKey contract = new ContractKey(req.symbol(), req.expirationDate(), req.strike(), req.optionType());
+        return toResponse(assignments.assign(account.id(), new OptionAssignmentService.AssignCommand(contract,
+                req.contracts().intValueExact(), req.assignmentDate(), req.assignmentFee(), req.note())));
     }
 
     @PostMapping
@@ -136,7 +150,16 @@ public class OptionTradeController {
                 contract.label(), t.getNote(), view.ledgerEntryId(), t.getCreatedAt(),
                 view.closeMatch().map(m -> m.coveredLots().stream().map(OptionTradeController::toCovered).toList())
                         .orElse(null),
-                view.closeMatch().map(CloseMatch::realizedPnl).orElse(null), t.hasAuditLog(), expiredDirection);
+                view.closeMatch().map(CloseMatch::realizedPnl).orElse(null), t.hasAuditLog(), expiredDirection,
+                assignment(view));
+    }
+
+    /** FEAT-013: figures of an ASG record, null for every other record. */
+    static AssignmentResponse assignment(OptionTradeService.TradeView view) {
+        return view.assignment().map(a -> new AssignmentResponse(
+                MarketTime.toLocal(view.trade().getTradedAt()).toLocalDate(), Money.of(view.trade().getAssignmentFee()),
+                a.premium(), a.shares(), a.purchaseAmount(), a.stockCost(), a.stockCostPerShare(),
+                view.assignedLot() == null ? null : view.assignedLot().getId())).orElse(null);
     }
 
     private static CoveredLotResponse toCovered(PositionLot l) {

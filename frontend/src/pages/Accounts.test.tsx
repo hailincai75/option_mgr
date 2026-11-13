@@ -59,6 +59,7 @@ function trade(id: number, symbol: string): OptionTrade {
     realizedPnl: null,
     hasAuditLog: false,
     expiredDirection: null,
+    assignment: null,
   }
 }
 

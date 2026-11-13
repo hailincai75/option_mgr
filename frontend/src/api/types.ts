@@ -101,6 +101,8 @@ export type CashSourceType =
   | 'OPTION_CLOSE'
   /** FEAT-012: 到期作废 of a short put (amount "0.00", frozenChange negative). */
   | 'OPTION_EXPIRE'
+  /** FEAT-013: 被指派 of a short put (amount −(purchase + fee), frozenChange −released). */
+  | 'OPTION_ASSIGN'
   /** FEAT-011: 股票买入 / 股票卖出 (sourceId = stock trade id; edited on the 股票 page). */
   | 'STOCK_BUY'
   | 'STOCK_SELL'
@@ -185,8 +187,8 @@ export interface OptionTrade {
   /** Trailing zeros removed, e.g. "200", "12.5". */
   strike: string
   optionType: OptionType
-  /** Open string type: FEAT-004 adds BTC / STC, FEAT-012 adds EXP (到期作废). */
-  action: OpeningAction | ClosingAction | 'EXP' | (string & {})
+  /** Open string type: FEAT-004 adds BTC / STC, FEAT-012 EXP (到期作废), FEAT-013 ASG (被指派). */
+  action: OpeningAction | ClosingAction | 'EXP' | 'ASG' | (string & {})
   contracts: number
   multiplier: number
   netAmount: MoneyString
@@ -211,14 +213,34 @@ export interface OptionTrade {
   hasAuditLog: boolean
   /** FEAT-012: direction of the expired position (SHORT / LONG) for EXP records; null otherwise. */
   expiredDirection: PositionDirection | null
+  /** FEAT-013: only ASG records (被指派); null otherwise. */
+  assignment: OptionTradeAssignment | null
+}
+
+/** FEAT-013: `assignment` of an ASG record; every value is the backend's (current replay). */
+export interface OptionTradeAssignment {
+  /** New York date; the record time is that date 16:00 NY. */
+  assignmentDate: LocalDateString
+  assignmentFee: MoneyString
+  /** Sum of the assigned lots' opening net amounts. */
+  premium: MoneyString
+  shares: number
+  /** strike × shares, rounded up to the cent (Q96). */
+  purchaseAmount: MoneyString
+  /** purchaseAmount − premium + assignmentFee. */
+  stockCost: MoneyString
+  /** HALF_UP to 4 decimals, display only (Q88). */
+  stockCostPerShare: PriceString
+  /** The generated ASSIGN_BUY stock record. */
+  stockTradeId: number
 }
 
 // ---------------------------------------------------------------------------
 // FEAT-002 交易列表与筛选
 // ---------------------------------------------------------------------------
 
-/** All trade actions accepted by the list filter (FEAT-012 adds EXP = 到期作废). */
-export type TradeAction = 'BTO' | 'STO' | 'BTC' | 'STC' | 'EXP'
+/** Trade actions accepted by the list filter (FEAT-012 adds EXP 到期作废, FEAT-013 ASG 被指派). */
+export type TradeAction = 'BTO' | 'STO' | 'BTC' | 'STC' | 'EXP' | 'ASG'
 
 /**
  * Contract: `GET /api/option-trades` query parameters. All filters optional; omitted = no filter.
@@ -294,6 +316,14 @@ export interface OptionPosition {
   expiryAt: InstantString
   /** FEAT-012: same instant as New York local "YYYY-MM-DDTHH:mm:ss". */
   expiryAtLocal: LocalDateTimeString
+  /** FEAT-013: short put (any time, incl. 到期待确认); the 被指派 button is shown only when true. */
+  assignable: boolean
+  /** FEAT-013: whole earliest-lot choices, ascending; [] when not assignable. */
+  assignChoices: AssignChoice[]
+  /** FEAT-013: latest selectable assignment date (NY); null when not assignable. */
+  assignmentDateMax: LocalDateString | null
+  /** FEAT-013: default assignment date (NY); null when not assignable. */
+  assignmentDateDefault: LocalDateString | null
   symbol: string
   expirationDate: LocalDateString
   /** Trailing zeros removed; usable as-is as the FEAT-002 `strike` filter. */
@@ -374,6 +404,41 @@ export interface CreateExpirationRequest {
   optionType: OptionType
   contracts: number
 }
+
+// ---------------------------------------------------------------------------
+// FEAT-013 卖出 put 被指派
+// ---------------------------------------------------------------------------
+
+/** Contract: `positions[].assignChoices[]`. */
+export interface AssignChoice {
+  contracts: number
+  /** contracts × multiplier. */
+  shares: number
+}
+
+/**
+ * Contract: `POST /api/option-trades/assignments` request body; 201 returns the ASG record
+ * (`OptionTrade` with `assignment`).
+ */
+export interface CreateAssignmentRequest {
+  symbol: string
+  expirationDate: LocalDateString
+  strike: string
+  optionType: OptionType
+  /** One of the position's `assignChoices[].contracts`. */
+  contracts: number
+  /** New York date; recorded at that date 16:00 NY. */
+  assignmentDate: LocalDateString
+  /** null / empty = "0.00"; ≥ 0, ≤ 2 decimals. */
+  assignmentFee: MoneyString | null
+  /** At most 500 characters; null / blank = no note. */
+  note: string | null
+}
+
+/** FEAT-013 error codes (HTTP 422; `message` is user-facing Chinese). */
+export const ASSIGNMENT_DATE_INVALID = 'ASSIGNMENT_DATE_INVALID'
+export const ASSIGNMENT_NOT_EDITABLE = 'ASSIGNMENT_NOT_EDITABLE'
+export const STOCK_TRADE_FROM_ASSIGNMENT = 'STOCK_TRADE_FROM_ASSIGNMENT'
 
 // ---------------------------------------------------------------------------
 // FEAT-005 修改 / 删除与审计
@@ -486,8 +551,11 @@ export interface ClosedOptionRecord extends ClosedRecordBase {
   strike: string
   optionType: OptionType
   contractLabel: string
-  /** FEAT-012 adds EXP (到期作废: close net "0.00", recorded at the expiration date 16:00 NY). */
-  action: ClosingAction | 'EXP' | (string & {})
+  /**
+   * FEAT-012 adds EXP (到期作废: close net "0.00", recorded at the expiration date 16:00 NY);
+   * FEAT-013 adds ASG (被指派: realized P&L always "0.00", the premium goes into the stock cost).
+   */
+  action: ClosingAction | 'EXP' | 'ASG' | (string & {})
   /** Direction of the closed position: BTC → SHORT, STC → LONG, EXP → the expired position's. */
   closedDirection: PositionDirection
   contracts: number
@@ -501,13 +569,23 @@ export interface ClosedOptionRecord extends ClosedRecordBase {
   pricePerShare: null
   coveredLots: CoveredLot[]
   soldLots: null
+  /** FEAT-013: only ASG rows; null otherwise. */
+  assignment: ClosedAssignment | null
+}
+
+/** FEAT-013: `assignment` of an ASG closed row (small text 权利金已计入股票成本…). */
+export interface ClosedAssignment {
+  shares: number
+  stockCost: MoneyString
+  /** The generated ASSIGN_BUY stock record. */
+  stockTradeId: number
 }
 
 /** Contract (FEAT-040): `GET /api/closed-trades` → `items[].soldLots[]` (FIFO, earliest first). */
 export interface ClosedSoldLot {
   /** Source stock record id (BUY or TRANSFER_IN). */
   tradeId: number
-  type: StockTradeType | (string & {})
+  type: StockRecordType | (string & {})
   tradedAt: InstantString
   /** TRANSFER_IN: that date 00:00 New York. */
   tradedAtLocal: LocalDateTimeString
@@ -541,6 +619,7 @@ export interface ClosedStockRecord extends ClosedRecordBase {
   pricePerShare: PriceString
   coveredLots: null
   soldLots: ClosedSoldLot[]
+  assignment: null
 }
 
 /** Contract: `GET /api/closed-trades` → `items[]`. Every amount is signed by cash direction. */
@@ -667,8 +746,11 @@ export interface SaveAccountRequest {
 // FEAT-011 股票交易与股票持仓
 // ---------------------------------------------------------------------------
 
-/** BUY 买入 / SELL 卖出 / TRANSFER_IN 转入（期初持仓）. */
+/** BUY 买入 / SELL 卖出 / TRANSFER_IN 转入（期初持仓） — the types that can be entered. */
 export type StockTradeType = 'BUY' | 'SELL' | 'TRANSFER_IN'
+
+/** Every stock record type: the entered ones plus FEAT-013 ASSIGN_BUY (指派买入, generated only). */
+export type StockRecordType = StockTradeType | 'ASSIGN_BUY'
 
 /** Decimal with scale 4 as a string, display only (e.g. "7.5033"). */
 export type PriceString = string
@@ -677,7 +759,7 @@ export type PriceString = string
 export interface StockSoldLot {
   /** Source record id (a BUY or TRANSFER_IN stock trade). */
   tradeId: number
-  type: StockTradeType | (string & {})
+  type: StockRecordType | (string & {})
   tradedAt: InstantString
   tradedAtLocal: LocalDateTimeString
   /** Only for TRANSFER_IN lots. */
@@ -691,7 +773,7 @@ export interface StockSoldLot {
 /** Contract: stock trade representation (POST / GET / PUT responses, list items). */
 export interface StockTrade {
   id: number
-  type: StockTradeType | (string & {})
+  type: StockRecordType | (string & {})
   symbol: string
   shares: number
   /** Positive: paid (BUY), received (SELL) or total cost (TRANSFER_IN). */
@@ -717,6 +799,12 @@ export interface StockTrade {
   realizedPnl: MoneyString | null
   /** Only SELL. */
   soldLots: StockSoldLot[] | null
+  /** FEAT-013: ASSIGN_BUY → the ASG record that generated it; null otherwise. */
+  assignmentTradeId: number | null
+  /** FEAT-013: false for ASSIGN_BUY (no 修改). */
+  editable: boolean
+  /** FEAT-013: false for ASSIGN_BUY (no 删除). */
+  deletable: boolean
 }
 
 /**
@@ -752,7 +840,7 @@ export interface UpdateStockTradeRequest {
 export interface StockTradeListParams {
   symbol?: string
   /** Multi-valued, sent as repeated `type=`. */
-  type?: StockTradeType[]
+  type?: StockRecordType[]
   /** New York date, inclusive. */
   startDate?: LocalDateString
   /** New York date, inclusive. */
@@ -773,7 +861,7 @@ export interface StockTradePage {
 /** Contract: `GET /api/stock-positions` → `positions[].lots[]` (FIFO order). */
 export interface StockPositionLot {
   tradeId: number
-  type: StockTradeType | (string & {})
+  type: StockRecordType | (string & {})
   tradedAt: InstantString
   tradedAtLocal: LocalDateTimeString
   tradeDate: LocalDateString | null

@@ -39,32 +39,51 @@ public final class TradeRejectionMessages {
      * "该开仓被 2026-11-20 16:00 的到期作废 3 张覆盖（删除后作废将超过当时持仓 2 张），请先删除该到期作废".
      */
     public static String expiredOpenChanged(ReplayedTrade expiry, ViolationKind kind, String verb) {
-        return "该开仓被 " + MarketTime.displayMinute(expiry.trade().tradedAt()) + " 的到期作废 "
-                + expiry.trade().contracts() + " 张覆盖（" + verb + "后作废将" + expiryReason(expiry, kind)
-                + "），请先删除该到期作废";
+        return coveredOpenChanged(expiry, kind, verb);
     }
 
-    /** Why an expiry is invalid at its point in the replay (no "将" prefix). */
-    private static String expiryReason(ReplayedTrade s, ViolationKind kind) {
+    /**
+     * FEAT-012 / FEAT-013: editing / deleting an open that an expiry (EXP) or an assignment (ASG) covers makes that
+     * record invalid: "该开仓被 2026-11-20 16:00 的被指派 3 张覆盖（删除后被指派将超过当时持仓 2 张），请先删除该被指派".
+     */
+    public static String coveredOpenChanged(ReplayedTrade record, ViolationKind kind, String verb) {
+        TradeAction a = record.trade().action();
+        String shortName = a == TradeAction.EXP ? "作废" : a.displayName();
+        return "该开仓被 " + MarketTime.displayMinute(record.trade().tradedAt()) + " 的" + a.displayName() + " "
+                + record.trade().contracts() + " 张覆盖（" + verb + "后" + shortName + "将" + recordReason(record, kind)
+                + "），请先删除该" + a.displayName();
+    }
+
+    /** Why an expiry / assignment is invalid at its point in the replay (no "将" prefix). */
+    private static String recordReason(ReplayedTrade s, ViolationKind kind) {
+        boolean assignment = s.trade().action() == TradeAction.ASG;
         return switch (kind) {
-            case NO_POSITION -> "没有持仓可作废";
+            case NO_POSITION -> assignment ? "没有持仓可被指派" : "没有持仓可作废";
             case CLOSE_EXCEEDS_POSITION -> "超过当时持仓 " + Math.abs(s.positionBefore()) + " 张";
             case CLOSE_NOT_WHOLE_LOTS -> "不是整笔批次（最早一笔是 " + s.earliestLotContracts() + " 张，"
                     + allowedText("可为 ", s.allowedCloseContracts()) + "）";
             case MULTIPLIER_MISMATCH -> "与当时持仓的 multiplier " + s.multiplierBefore() + " 不一致";
-            // an expiry has no side: these cannot happen; kept generic
-            case CLOSE_WRONG_DIRECTION, OPEN_AGAINST_POSITION -> "与持仓方向冲突";
+            // only an assignment has a side (it closes a short position); an expiry cannot get here
+            case CLOSE_WRONG_DIRECTION, OPEN_AGAINST_POSITION -> assignment
+                    ? "遇到多头持仓（" + Math.abs(s.positionBefore()) + " 张）"
+                    : "与持仓方向冲突";
         };
     }
 
-    private static String atLaterExpiry(ContractKey c, ReplayedTrade s, ViolationKind kind, String verb) {
+    private static String atLaterSystemRecord(ContractKey c, ReplayedTrade s, ViolationKind kind, String verb) {
+        String name = s.trade().action().displayName();
         String head = verb + "后该合约（" + c.label() + "）在 " + MarketTime.displayMinute(s.trade().tradedAt())
-                + " 的到期作废";
+                + " 的" + name;
         String body = kind == ViolationKind.MULTIPLIER_MISMATCH
                 ? " multiplier 为 " + s.effectiveMultiplier() + "，与当时持仓的 multiplier " + s.multiplierBefore()
                         + " 不一致"
-                : " " + s.trade().contracts() + " 张将" + expiryReason(s, kind);
-        return head + body + "，请先删除该到期作废";
+                : " " + s.trade().contracts() + " 张将" + recordReason(s, kind);
+        return head + body + "，请先删除该" + name;
+    }
+
+    /** FEAT-013 step 4: "2026-11-02 16:00 时该合约（XYZ 2026-11-20 45 P）没有持仓可被指派". */
+    public static String noPositionToAssign(ContractKey c, java.time.Instant at) {
+        return MarketTime.displayMinute(at) + " 时该合约（" + c.label() + "）没有持仓可被指派";
     }
 
     private static String closeReason(ReplayedTrade s, ViolationKind kind) {
@@ -85,7 +104,18 @@ public final class TradeRejectionMessages {
         if (s.trade().action() == TradeAction.EXP) {
             return kind == ViolationKind.NO_POSITION
                     ? noPositionToExpire(c)
-                    : "到期作废 " + s.trade().contracts() + " 张将" + expiryReason(s, kind);
+                    : "到期作废 " + s.trade().contracts() + " 张将" + recordReason(s, kind);
+        }
+        if (s.trade().action() == TradeAction.ASG) {
+            return switch (kind) {
+                case NO_POSITION -> noPositionToAssign(c, s.trade().tradedAt());
+                case CLOSE_WRONG_DIRECTION, OPEN_AGAINST_POSITION -> "多头持仓不能被指派（主动行权见 FEAT-014）";
+                case CLOSE_EXCEEDS_POSITION -> "被指派 " + s.trade().contracts() + " 张超过当时持仓 "
+                        + Math.abs(s.positionBefore()) + " 张";
+                case CLOSE_NOT_WHOLE_LOTS -> "必须一次被指派整笔开仓：最早一笔是 " + s.earliestLotContracts() + " 张，"
+                        + allowedText("可为 ", s.allowedCloseContracts());
+                case MULTIPLIER_MISMATCH -> "被指派 " + s.trade().contracts() + " 张将" + recordReason(s, kind);
+            };
         }
         int held = Math.abs(s.positionBefore());
         String side = s.positionBefore() > 0 ? "多头" : "空头";
@@ -107,8 +137,8 @@ public final class TradeRejectionMessages {
     }
 
     private static String atLaterTrade(ContractKey c, ReplayedTrade s, ViolationKind kind, String verb) {
-        if (s.trade().action() == TradeAction.EXP) {
-            return atLaterExpiry(c, s, kind, verb);
+        if (s.trade().action().isDeleteOnly()) {
+            return atLaterSystemRecord(c, s, kind, verb);
         }
         String when = MarketTime.displayMinute(s.trade().tradedAt());
         int held = Math.abs(s.positionBefore());

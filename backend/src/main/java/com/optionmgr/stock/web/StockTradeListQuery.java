@@ -23,7 +23,7 @@ import java.util.Set;
 final class StockTradeListQuery {
 
     static final int MAX_SIZE = 100;
-    static final String TYPE_MESSAGE = "类型只能是 BUY、SELL、TRANSFER_IN";
+    static final String TYPE_MESSAGE = "类型只能是 BUY、SELL、TRANSFER_IN、ASSIGN_BUY";
     private static final DateTimeFormatter DATE =
             DateTimeFormatter.ofPattern("uuuu-MM-dd").withResolverStyle(ResolverStyle.STRICT);
 

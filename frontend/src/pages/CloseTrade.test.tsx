@@ -65,6 +65,10 @@ const AAPL_POSITION: OptionPosition = {
   expiryContracts: 3,
   expiryAt: '2026-12-18T21:00:00Z',
   expiryAtLocal: '2026-12-18T16:00:00',
+  assignable: false,
+  assignChoices: [],
+  assignmentDateMax: null,
+  assignmentDateDefault: null,
   lots: [
     {
       ...L1,
@@ -136,6 +140,7 @@ const CLOSE_AC1: OptionTrade = {
   realizedPnl: '457.40',
   hasAuditLog: true,
   expiredDirection: null,
+  assignment: null,
 }
 
 // ---------------------------------------------------------------------------

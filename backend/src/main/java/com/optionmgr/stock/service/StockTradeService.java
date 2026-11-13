@@ -192,7 +192,7 @@ public class StockTradeService {
      * time. The first violation is rejected: the {@code subjectId} record itself with "持股不足：…", another sale with
      * "{@code verb}后 … 将超过当时持股 …".
      */
-    void checkHoldings(long accountId, String symbol, UnaryOperator<List<StockRecord>> change, long subjectId,
+    public void checkHoldings(long accountId, String symbol, UnaryOperator<List<StockRecord>> change, long subjectId,
                        String verb) {
         StockReplay.replay(change.apply(records(accountId, symbol))).firstViolation().ifPresent(step -> {
             throw new ApiException(ErrorCode.SHARES_INSUFFICIENT, step.record().id() == subjectId

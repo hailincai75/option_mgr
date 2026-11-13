@@ -1,22 +1,28 @@
-import type { StockTrade, StockTradeType } from '../../api/types'
+import type { StockRecordType, StockTrade, StockTradeType } from '../../api/types'
 import { formatLocalDateTime, formatMoney } from '../../utils/format'
 
+/** Types that can be entered (录入股票交易). */
 export const STOCK_TRADE_TYPES: readonly StockTradeType[] = ['BUY', 'SELL', 'TRANSFER_IN']
+
+/** Every record type, for the 股票 page type filter (FEAT-013 adds ASSIGN_BUY, generated only). */
+export const STOCK_RECORD_TYPES: readonly StockRecordType[] = [...STOCK_TRADE_TYPES, 'ASSIGN_BUY']
 
 const TYPE_LABELS: Record<string, string> = {
   BUY: '买入',
   SELL: '卖出',
   TRANSFER_IN: '转入',
+  ASSIGN_BUY: '指派买入',
 }
 
-/** Tag colors for the type column (买入 / 卖出 / 转入 are told apart by color). */
+/** Tag colors for the type column (买入 / 卖出 / 转入 / 指派买入 are told apart by color). */
 export const STOCK_TYPE_COLORS: Record<string, string> = {
   BUY: 'blue',
   SELL: 'orange',
   TRANSFER_IN: 'purple',
+  ASSIGN_BUY: 'magenta',
 }
 
-/** 买入 / 卖出 / 转入; unknown values are shown as-is. */
+/** 买入 / 卖出 / 转入 / 指派买入; unknown values are shown as-is. */
 export function stockTypeLabel(type: string): string {
   return TYPE_LABELS[type] ?? type
 }
@@ -24,6 +30,13 @@ export function stockTypeLabel(type: string): string {
 export function isStockTradeType(value: string): value is StockTradeType {
   return (STOCK_TRADE_TYPES as readonly string[]).includes(value)
 }
+
+export function isStockRecordType(value: string): value is StockRecordType {
+  return (STOCK_RECORD_TYPES as readonly string[]).includes(value)
+}
+
+/** FEAT-013: shown instead of 修改 / 删除 on 指派买入 rows. */
+export const ASSIGN_BUY_HINT = '由被指派生成，在交易列表删除'
 
 /** Amount field label by type (requirement: 金额标签随类型变化). */
 export function stockAmountLabel(type: string | undefined): string {

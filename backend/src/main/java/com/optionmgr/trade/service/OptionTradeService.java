@@ -11,6 +11,9 @@ import com.optionmgr.common.error.ErrorCode;
 import com.optionmgr.common.error.ErrorResponse;
 import com.optionmgr.common.money.Money;
 import com.optionmgr.common.time.MarketTime;
+import com.optionmgr.stock.repository.StockTradeEntity;
+import com.optionmgr.stock.repository.StockTradeRepository;
+import com.optionmgr.trade.domain.AssignmentTerms;
 import com.optionmgr.trade.domain.CloseMatch;
 import com.optionmgr.trade.domain.ContractHistory;
 import com.optionmgr.trade.domain.ContractKey;
@@ -62,7 +65,7 @@ public class OptionTradeService {
 
     /** Ledger source types written for option trades and expiries; all reference option_trade.id. */
     static final Set<CashSourceType> TRADE_SOURCE_TYPES = Set.of(CashSourceType.OPTION_OPEN, CashSourceType.OPTION_CLOSE,
-            CashSourceType.OPTION_EXPIRE);
+            CashSourceType.OPTION_EXPIRE, CashSourceType.OPTION_ASSIGN);
 
     /** Trade list order: newest first, same instant: later entered (higher id) first. */
     static final Sort LIST_ORDER = Sort.by(Sort.Order.desc("tradedAt"), Sort.Order.desc("id"));
@@ -73,11 +76,14 @@ public class OptionTradeService {
 
     private final OptionTradeRepository trades;
     private final CashLedgerService ledger;
+    private final StockTradeRepository stockTrades;
     private final Clock clock;
 
-    public OptionTradeService(OptionTradeRepository trades, CashLedgerService ledger, Clock clock) {
+    public OptionTradeService(OptionTradeRepository trades, CashLedgerService ledger, StockTradeRepository stockTrades,
+                              Clock clock) {
         this.trades = trades;
         this.ledger = ledger;
+        this.stockTrades = stockTrades;
         this.clock = clock;
     }
 
@@ -120,7 +126,21 @@ public class OptionTradeService {
      * expiry, the lots it currently covers (FIFO) with its realized P&amp;L. {@code ledgerEntry} is null only for an
      * expiry (EXP) that releases no frozen cash (FEAT-012).
      */
-    public record TradeView(OptionTradeEntity trade, CashLedgerEntryEntity ledgerEntry, Optional<CloseMatch> closeMatch) {
+    public record TradeView(OptionTradeEntity trade, CashLedgerEntryEntity ledgerEntry, Optional<CloseMatch> closeMatch,
+                            StockTradeEntity assignedLot) {
+
+        public TradeView(OptionTradeEntity trade, CashLedgerEntryEntity ledgerEntry, Optional<CloseMatch> closeMatch) {
+            this(trade, ledgerEntry, closeMatch, null);
+        }
+
+        /** FEAT-013: figures of an assignment (ASG) under its current match; empty for every other record. */
+        public Optional<AssignmentTerms> assignment() {
+            if (trade.getAction() != TradeAction.ASG || closeMatch.isEmpty()) {
+                return Optional.empty();
+            }
+            return Optional.of(AssignmentTerms.of(trade.contract(), trade.getContracts(), trade.getMultiplier(),
+                    trade.getAssignmentFee(), closeMatch.get()));
+        }
 
         public BigDecimal cashChange() {
             return ledgerEntry == null ? Money.ZERO : ledgerEntry.getAmount();
@@ -139,7 +159,16 @@ public class OptionTradeService {
      * All stored trades of one contract with their ledger entries, as replay input. An expiry without a ledger entry
      * (nothing released) is absent from {@code ledgerByTrade}.
      */
-    record ContractTrades(List<LotTrade> trades, Map<Long, CashLedgerEntryEntity> ledgerByTrade) {
+    record ContractTrades(List<LotTrade> trades, Map<Long, CashLedgerEntryEntity> ledgerByTrade,
+                          Map<Long, BigDecimal> assignmentFees) {
+    }
+
+    /**
+     * FEAT-013: a stored assignment whose generated stock lot gets another cost under a new history (its assigned
+     * lots or their premiums changed).
+     */
+    record CostCorrection(long assignmentId, ContractKey contract, StockTradeEntity lot, BigDecimal before,
+                          BigDecimal after) {
     }
 
     // ------------------------------------------------------------------ open (FEAT-001)
@@ -176,11 +205,15 @@ public class OptionTradeService {
         rejectFirstViolation(contract, history, NOT_MULTIPLIER);
         // 3. Q23 (FEAT-038: STO call is allowed - Q16 superseded; no share-coverage check before FEAT-011)
         rejectFirstViolation(contract, history, MULTIPLIER);
+        // FEAT-013: later assignments re-matched to other lots keep a positive stock cost
+        List<CostCorrection> costs = costCorrections(accountId, contract, existing, history, LotTrade.NOT_YET_ENTERED);
+        rejectNonPositiveCost(costs, "补录");
 
         // 4. cash (Q13, Q18 for STO put only, Q19), with later closes' re-matched frozen release.
         // A short call freezes nothing (OpenTradeTerms.freezesCollateral), so it only adds cash.
         Map<Long, BigDecimal> corrections = frozenCorrections(existing, history);
         checkOpenCash(accountId, terms, tradedAt, corrections);
+        applyCostCorrections(costs);
 
         OptionTradeEntity trade = trades.save(new OptionTradeEntity(accountId, contract, terms.action(), terms.contracts(),
                 terms.multiplier(), terms.netAmount(), tradedAt, note, clock.instant()));
@@ -225,6 +258,8 @@ public class OptionTradeService {
         ReplayedTrade step = history.step(LotTrade.NOT_YET_ENTERED);
         CloseMatch match = step.match().orElseThrow();
         BigDecimal frozenChange = match.releasedFrozen().negate();
+        List<CostCorrection> costs = costCorrections(accountId, contract, existing, history, LotTrade.NOT_YET_ENTERED);
+        rejectNonPositiveCost(costs, "补录");
 
         // 5. cash: release first, then check (Q20); Q19 replay for later points
         Map<Long, BigDecimal> corrections = frozenCorrections(existing, history);
@@ -249,6 +284,7 @@ public class OptionTradeService {
                 trade.getId(), cashChange, frozenChange,
                 OpenTradeTerms.describe(cmd.action(), cmd.contracts(), multiplier, contract), note));
         ledger.correctFrozenChanges(accountId, corrections);
+        applyCostCorrections(costs);
         return new TradeView(trade, entry, Optional.of(match));
     }
 
@@ -280,6 +316,8 @@ public class OptionTradeService {
     List<TradeView> views(long accountId, List<OptionTradeEntity> page) {
         Map<Long, CashLedgerEntryEntity> entries = ledger.findBySources(accountId, TRADE_SOURCE_TYPES,
                 page.stream().map(OptionTradeEntity::getId).toList());
+        Map<Long, StockTradeEntity> lots = assignedLots(accountId, page.stream()
+                .filter(t -> t.getAction() == TradeAction.ASG).map(OptionTradeEntity::getId).toList());
         // closes: their current FIFO match, one replay per contract
         Map<ContractKey, ContractHistory> histories = new HashMap<>();
         List<TradeView> out = new ArrayList<>(page.size());
@@ -291,9 +329,63 @@ public class OptionTradeService {
                         c -> ContractReplay.replay(load(accountId, c).trades()));
                 match = h.step(t.getId()).match();
             }
-            out.add(new TradeView(t, e, match));
+            out.add(new TradeView(t, e, match, lots.get(t.getId())));
         }
         return out;
+    }
+
+    /** FEAT-013: the ASSIGN_BUY lot of each given assignment record (by option trade id). */
+    Map<Long, StockTradeEntity> assignedLots(long accountId, List<Long> assignmentIds) {
+        Map<Long, StockTradeEntity> out = new HashMap<>();
+        if (!assignmentIds.isEmpty()) {
+            for (StockTradeEntity s : stockTrades.findByAccountIdAndOptionTradeIdIn(accountId, assignmentIds)) {
+                out.put(s.getOptionTradeId(), s);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * FEAT-013: stored assignments (other than {@code excludedId} and a record not stored yet) whose generated lot's
+     * cost differs under {@code history}: stock cost = strike x shares (rounded up) - premium of the assigned lots + fee.
+     */
+    List<CostCorrection> costCorrections(long accountId, ContractKey contract, ContractTrades existing,
+                                         ContractHistory history, long excludedId) {
+        List<ReplayedTrade> assignments = history.steps().stream()
+                .filter(s -> s.trade().action() == TradeAction.ASG && s.match().isPresent()
+                        && s.trade().tradeId() != LotTrade.NOT_YET_ENTERED && s.trade().tradeId() != excludedId)
+                .toList();
+        if (assignments.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, StockTradeEntity> lots = assignedLots(accountId,
+                assignments.stream().map(s -> s.trade().tradeId()).toList());
+        List<CostCorrection> out = new ArrayList<>();
+        for (ReplayedTrade s : assignments) {
+            long id = s.trade().tradeId();
+            StockTradeEntity lot = lots.get(id);
+            if (lot == null) {
+                throw new IllegalStateException("assigned stock lot missing for assignment " + id);
+            }
+            BigDecimal cost = AssignmentTerms.of(contract, s.trade().contracts(), s.trade().multiplier(),
+                    existing.assignmentFees().get(id), s.match().get()).stockCost();
+            if (cost.compareTo(lot.getAmount()) != 0) {
+                out.add(new CostCorrection(id, contract, lot, Money.of(lot.getAmount()), cost));
+            }
+        }
+        return out;
+    }
+
+    /** "<verb>后被指派 #9 的股票成本将为 −12.00，请先删除该被指派" for the first correction that is not &gt; 0. */
+    static void rejectNonPositiveCost(List<CostCorrection> costs, String verb) {
+        costs.stream().filter(c -> c.after().signum() <= 0).findFirst().ifPresent(c -> {
+            throw new ApiException(ErrorCode.STOCK_COST_NOT_POSITIVE, verb + "后被指派 #" + c.assignmentId()
+                    + " 的股票成本将为 " + Money.display(c.after()) + "，请先删除该被指派");
+        });
+    }
+
+    static void applyCostCorrections(List<CostCorrection> costs) {
+        costs.forEach(c -> c.lot().correctCost(c.after()));
     }
 
     // ------------------------------------------------------------------ helpers
@@ -305,15 +397,19 @@ public class OptionTradeService {
         Map<Long, CashLedgerEntryEntity> entries = ledger.findBySources(accountId, TRADE_SOURCE_TYPES,
                 entities.stream().map(OptionTradeEntity::getId).toList());
         Map<Long, CashLedgerEntryEntity> byTrade = new LinkedHashMap<>();
+        Map<Long, BigDecimal> fees = new HashMap<>();
         List<LotTrade> lotTrades = new ArrayList<>(entities.size());
         for (OptionTradeEntity t : entities) {
             CashLedgerEntryEntity e = entry(t, entries);
             if (e != null) {
                 byTrade.put(t.getId(), e);
             }
+            if (t.getAction() == TradeAction.ASG) {
+                fees.put(t.getId(), t.getAssignmentFee());
+            }
             lotTrades.add(toLotTrade(t, e));
         }
-        return new ContractTrades(lotTrades, byTrade);
+        return new ContractTrades(lotTrades, byTrade, fees);
     }
 
     /**
@@ -333,7 +429,8 @@ public class OptionTradeService {
      * without entry ({@code e} null) has no cash effect.
      */
     static LotTrade toLotTrade(OptionTradeEntity t, CashLedgerEntryEntity e) {
-        BigDecimal cash = e == null ? Money.ZERO : e.getAmount();
+        // an assignment's ledger amount pays for the shares; the option side itself has no cash (FEAT-013)
+        BigDecimal cash = e == null || t.getAction() == TradeAction.ASG ? Money.ZERO : e.getAmount();
         return new LotTrade(t.getId(), t.getTradedAt(), t.getAction(), t.getContracts(), t.getMultiplier(),
                 cash, t.getAction().isOpening() ? e.getFrozenChange() : Money.ZERO, t.getNote());
     }

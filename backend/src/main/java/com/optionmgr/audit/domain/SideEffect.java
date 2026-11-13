@@ -13,9 +13,20 @@ package com.optionmgr.audit.domain;
 public record SideEffect(long tradeId, String action, String contractLabel, String field, String before,
                          String after) {
 
-    /** "交易 #3 BTC 冻结变动 −24.70 → −24.69"; an expiry (FEAT-012): "到期作废 #17 冻结变动 −24.70 → −24.69". */
+    /** FEAT-013: {@link #field()} of a corrected assignment's stock cost. */
+    public static final String STOCK_COST = "stockCost";
+
+    /**
+     * "交易 #3 BTC 冻结变动 −24.70 → −24.69"; an expiry (FEAT-012): "到期作废 #17 冻结变动 −24.70 → −24.69"; an
+     * assignment (FEAT-013): "被指派 #9 冻结变动 …" / "被指派 #9 股票成本 13,130.00 → 13,125.00".
+     */
     public String text() {
-        String subject = "EXP".equals(action) ? "到期作废 #" + tradeId : "交易 #" + tradeId + " " + action;
-        return subject + " 冻结变动 " + before + " → " + after;
+        String subject = switch (action) {
+            case "EXP" -> "到期作废 #" + tradeId;
+            case "ASG" -> "被指派 #" + tradeId;
+            default -> "交易 #" + tradeId + " " + action;
+        };
+        String label = STOCK_COST.equals(field) ? "股票成本" : "冻结变动";
+        return subject + " " + label + " " + before + " → " + after;
     }
 }

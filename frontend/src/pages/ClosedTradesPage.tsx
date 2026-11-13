@@ -27,6 +27,10 @@ import { decimalSign, formatMoney } from '../utils/format'
 
 const EXPIRY_NOTE = '到期作废的平仓净额为 0.00，记在到期日 16:00（美东）。'
 
+/** FEAT-013: page note sentence about assignments (requirement wording). */
+const ASSIGNMENT_NOTE =
+  '被指派（卖出 put）的期权已实现盈亏为 0.00，权利金计入股票成本，股票卖出时体现在股票盈亏中。'
+
 /** FEAT-040: page note sentence about stock sales (requirement wording). */
 const STOCK_NOTE =
   '股票卖出：成本为按 FIFO 被卖出批次的成本（部分卖出按比例四舍五入到分），每股数字保留 4 位小数，仅供参考；股票转入和买入没有已实现盈亏。'
@@ -44,7 +48,7 @@ function serverFilterErrors(error: Error | null): Partial<Record<ClosedFilterFie
 }
 
 /**
- * 已平仓 page (FEAT-006): read-only closed trades (BTC / STC, FEAT-012 EXP) and (FEAT-040) stock
+ * 已平仓 page (FEAT-006): read-only closed trades (BTC / STC, FEAT-012 EXP, FEAT-013 ASG) and (FEAT-040) stock
  * sales, newest first, with the count and realized P&L total over ALL filtered results (Q46).
  * Filters, page and size live in the URL with the same parameter names and rules as the trade
  * list (FEAT-002) plus the record `type` (OPTION / STOCK). Every number is the backend's.
@@ -150,6 +154,7 @@ export function ClosedTradesPage() {
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           净额均已含手续费；空头开仓为实收、多头开仓为实付；每张平均四舍五入到分，仅供参考。展开行查看被平掉的开仓批次（FIFO）。
           <span data-testid="closed-expiry-note">{EXPIRY_NOTE}</span>
+          <span data-testid="closed-assignment-note">{ASSIGNMENT_NOTE}</span>
           <span data-testid="closed-stock-note">{STOCK_NOTE}</span>
         </Typography.Text>
         <ClosedTradeTable

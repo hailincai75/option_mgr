@@ -23,6 +23,9 @@ export function stockTrade(partial: Partial<StockTrade> & Pick<StockTrade, 'id'>
     soldCost: null,
     realizedPnl: null,
     soldLots: null,
+    assignmentTradeId: null,
+    editable: true,
+    deletable: true,
     ...partial,
   }
 }

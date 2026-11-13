@@ -74,7 +74,24 @@ public class OptionTradeEntity {
     @Column(name = "has_audit_log", nullable = false)
     private boolean hasAuditLog;
 
+    /** FEAT-013: assignment fee of an ASG record (&gt;= 0); null for every other action. */
+    @Column(name = "assignment_fee", precision = 19, scale = 2)
+    private BigDecimal assignmentFee;
+
     protected OptionTradeEntity() {
+    }
+
+    /** FEAT-013: an assignment record (ASG, net amount 0) with its fee. */
+    public static OptionTradeEntity assignment(long accountId, ContractKey contract, int contracts, int multiplier,
+                                               BigDecimal fee, Instant assignedAt, String note, Instant createdAt) {
+        OptionTradeEntity e = new OptionTradeEntity(accountId, contract, TradeAction.ASG, contracts, multiplier,
+                BigDecimal.ZERO.setScale(2), assignedAt, note, createdAt);
+        e.assignmentFee = fee;
+        return e;
+    }
+
+    public BigDecimal getAssignmentFee() {
+        return assignmentFee;
     }
 
     public OptionTradeEntity(long accountId, ContractKey contract, TradeAction action, int contracts, int multiplier,

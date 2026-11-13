@@ -5,7 +5,14 @@ import { Link } from 'react-router-dom'
 import { auditUrl } from '../audit/auditLinks'
 import type { OptionTrade } from '../../api/types'
 import { decimalSign, EMPTY_VALUE, formatDateTimeNY, formatMoney } from '../../utils/format'
-import { isExpiryAction, SIGNED_MONEY_COLORS, tradeActionLabel } from './tradeLabels'
+import {
+  assignmentRowText,
+  isAssignmentAction,
+  isDeleteOnlyAction,
+  SIGNED_MONEY_COLORS,
+  SPECIAL_ACTION_COLORS,
+  tradeActionLabel,
+} from './tradeLabels'
 
 interface TradeTableProps {
   trades: OptionTrade[]
@@ -20,7 +27,7 @@ interface TradeTableProps {
 
 /**
  * Trade rows in the order returned by the backend; values are only formatted. Each row has
- * 修改 / 删除 / 历史 (FEAT-005); 到期作废 rows (FEAT-012) have no 修改.
+ * 修改 / 删除 / 历史 (FEAT-005); 到期作废 (FEAT-012) and 被指派 (FEAT-013) rows have no 修改.
  */
 export function TradeTable({
   trades,
@@ -44,9 +51,13 @@ export function TradeTable({
       title: '方向',
       key: 'action',
       render: (_value: unknown, trade) =>
-        // FEAT-012: 到期作废 rows stand out with their own color.
-        isExpiryAction(trade.action) ? (
-          <Tag color="purple" data-testid="trade-cell-action" style={{ marginInlineEnd: 0 }}>
+        // FEAT-012 / FEAT-013: 到期作废 and 被指派 rows stand out with their own colors.
+        isDeleteOnlyAction(trade.action) ? (
+          <Tag
+            color={SPECIAL_ACTION_COLORS[trade.action]}
+            data-testid="trade-cell-action"
+            style={{ marginInlineEnd: 0 }}
+          >
             {tradeActionLabel(trade.action)}
           </Tag>
         ) : (
@@ -58,20 +69,36 @@ export function TradeTable({
     {
       title: '合约',
       key: 'contract',
-      render: (_value: unknown, trade) => (
-        <Button
-          type="link"
-          size="small"
-          style={{ padding: 0 }}
-          title="按此合约筛选"
-          onClick={() => {
-            onContractClick(trade)
-          }}
-          data-testid="trade-cell-contract"
-        >
-          {trade.contractLabel}
-        </Button>
-      ),
+      render: (_value: unknown, trade) => {
+        const assignmentText = assignmentRowText(trade)
+        return (
+          <>
+            <Button
+              type="link"
+              size="small"
+              style={{ padding: 0 }}
+              title="按此合约筛选"
+              onClick={() => {
+                onContractClick(trade)
+              }}
+              data-testid="trade-cell-contract"
+            >
+              {trade.contractLabel}
+            </Button>
+            {assignmentText !== null && (
+              <div>
+                <Typography.Text
+                  type="secondary"
+                  style={{ fontSize: 12, whiteSpace: 'nowrap' }}
+                  data-testid="trade-cell-assignment"
+                >
+                  {assignmentText}
+                </Typography.Text>
+              </div>
+            )}
+          </>
+        )
+      },
     },
     {
       title: '张数',
@@ -88,17 +115,24 @@ export function TradeTable({
       title: '净额',
       key: 'cashChange',
       align: 'right',
-      render: (_value: unknown, trade) => (
-        <span
-          data-testid="trade-cell-net-amount"
-          style={{
-            color: SIGNED_MONEY_COLORS[decimalSign(trade.cashChange)],
-            fontVariantNumeric: 'tabular-nums',
-          }}
-        >
-          {formatMoney(trade.cashChange, { signed: true })}
-        </span>
-      ),
+      render: (_value: unknown, trade) =>
+        // FEAT-013: a 被指派 has no option cash of its own — net 0.00 uncolored (its cash change,
+        // the stock purchase, is in the small text under the contract).
+        isAssignmentAction(trade.action) ? (
+          <span data-testid="trade-cell-net-amount" style={{ fontVariantNumeric: 'tabular-nums' }}>
+            {formatMoney(trade.netAmount)}
+          </span>
+        ) : (
+          <span
+            data-testid="trade-cell-net-amount"
+            style={{
+              color: SIGNED_MONEY_COLORS[decimalSign(trade.cashChange)],
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {formatMoney(trade.cashChange, { signed: true })}
+          </span>
+        ),
     },
     {
       title: '冻结变动',
@@ -134,8 +168,8 @@ export function TradeTable({
       key: 'actions',
       render: (_value: unknown, trade) => (
         <Space size={4} style={{ whiteSpace: 'nowrap' }}>
-          {/* FEAT-012: 到期作废 has nothing to edit (delete and re-expire instead). */}
-          {!isExpiryAction(trade.action) && (
+          {/* FEAT-012 / FEAT-013: 到期作废 and 被指派 cannot be edited (delete and re-record). */}
+          {!isDeleteOnlyAction(trade.action) && (
             <Button
               size="small"
               type="link"

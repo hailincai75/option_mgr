@@ -3,6 +3,7 @@ import { Card, Space, Spin, Typography } from 'antd'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getOptionPositions, optionPositionQueryKeys } from '../api/optionPositions'
+import { AssignPositionModal } from '../components/position/AssignPositionModal'
 import { ClosePositionModal } from '../components/position/ClosePositionModal'
 import { ExpirePositionModal } from '../components/position/ExpirePositionModal'
 import { PositionTable } from '../components/position/PositionTable'
@@ -14,12 +15,13 @@ import { formatMoney } from '../utils/format'
 /**
  * 持仓 page (FEAT-003): every current option position from `GET /api/option-positions`,
  * in backend order, with expandable FIFO lots, a 平仓 button (FEAT-004) on closable rows and a
- * 作废 button (FEAT-012) on expirable rows; below it the 股票持仓 section (FEAT-011). Every
+ * 作废 button (FEAT-012) on expirable rows and a 被指派 button (FEAT-013) on short puts; below it the 股票持仓 section (FEAT-011). Every
  * number comes from the backend.
  */
 export function PositionsPage() {
   const [closing, setClosing] = useState<OptionPosition | null>(null)
   const [expiring, setExpiring] = useState<OptionPosition | null>(null)
+  const [assigning, setAssigning] = useState<OptionPosition | null>(null)
   const { data, error, isPending, isFetching, refetch } = useAccountQuery({
     // FEAT-033: per-account key; runs only once the current account is known.
     queryKey: optionPositionQueryKeys.all,
@@ -65,6 +67,7 @@ export function PositionsPage() {
           loading={isFetching}
           onClosePosition={setClosing}
           onExpirePosition={setExpiring}
+          onAssignPosition={setAssigning}
           empty={
             <Space orientation="vertical" data-testid="positions-empty">
               <span>暂无持仓</span>
@@ -97,6 +100,15 @@ export function PositionsPage() {
             position={expiring}
             onDone={() => {
               setExpiring(null)
+            }}
+          />
+        )}
+        {assigning !== null && (
+          <AssignPositionModal
+            key={assigning.contractLabel}
+            position={assigning}
+            onDone={() => {
+              setAssigning(null)
             }}
           />
         )}

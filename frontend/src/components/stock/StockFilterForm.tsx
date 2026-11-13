@@ -1,11 +1,12 @@
 import { Button, Card, Checkbox, Col, Form, Input, Row, Space } from 'antd'
-import { STOCK_TRADE_TYPES, stockTypeLabel } from './stockLabels'
+import { STOCK_RECORD_TYPES, stockTypeLabel } from './stockLabels'
 import type { StockFilterField, StockFilterValues } from './stockListFilters'
 
 const TYPE_OPTION_LABELS: Record<string, string> = {
   BUY: '买入',
   SELL: '卖出',
   TRANSFER_IN: '转入（期初持仓）',
+  ASSIGN_BUY: '指派买入',
 }
 
 interface StockFilterFormProps {
@@ -52,7 +53,7 @@ export function StockFilterForm({ initialValues, errors, onApply, onClear }: Sto
           <Col xs={24} sm={12} lg={6}>
             <Form.Item label="类型（可多选）" {...itemProps('type')}>
               <Checkbox.Group data-testid="stock-filter-type">
-                {STOCK_TRADE_TYPES.map((type) => (
+                {STOCK_RECORD_TYPES.map((type) => (
                   <Checkbox
                     key={type}
                     value={type}

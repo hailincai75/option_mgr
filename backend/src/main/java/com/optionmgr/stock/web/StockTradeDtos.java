@@ -117,7 +117,12 @@ public final class StockTradeDtos {
             /* SELL only (null otherwise), from the current FIFO replay */
             BigDecimal soldCost,
             BigDecimal realizedPnl,
-            List<SoldLotResponse> soldLots) {
+            List<SoldLotResponse> soldLots,
+            /* FEAT-013: ASSIGN_BUY: the assignment (option trade id) that generated it; null otherwise */
+            Long assignmentTradeId,
+            /* FEAT-013: false for ASSIGN_BUY (edit / delete through its assignment) */
+            boolean editable,
+            boolean deletable) {
     }
 
     public record StockTradePageResponse(List<StockTradeResponse> items, int page, int size, long totalItems,

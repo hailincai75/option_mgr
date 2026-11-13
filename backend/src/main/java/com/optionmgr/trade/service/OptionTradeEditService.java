@@ -17,6 +17,10 @@ import com.optionmgr.common.error.ErrorCode;
 import com.optionmgr.common.error.ErrorResponse;
 import com.optionmgr.common.money.Money;
 import com.optionmgr.common.time.MarketTime;
+import com.optionmgr.stock.repository.StockTradeEntity;
+import com.optionmgr.stock.repository.StockTradeRepository;
+import com.optionmgr.stock.service.StockTradeService;
+import com.optionmgr.trade.domain.AssignmentTerms;
 import com.optionmgr.trade.domain.CloseMatch;
 import com.optionmgr.trade.domain.ContractHistory;
 import com.optionmgr.trade.domain.ContractKey;
@@ -57,6 +61,7 @@ public class OptionTradeEditService {
 
     public static final String NO_CHANGES_MESSAGE = "没有修改";
     public static final String EXPIRY_NOT_EDITABLE_MESSAGE = "到期作废不能修改，记错请删除后重新作废";
+    public static final String ASSIGNMENT_NOT_EDITABLE_MESSAGE = "被指派不能修改，记错请删除后重新记录";
 
     private static final DateTimeFormatter LOCAL_SECONDS = DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss");
 
@@ -64,10 +69,15 @@ public class OptionTradeEditService {
     private final OptionTradeService tradeService;
     private final CashLedgerService ledger;
     private final AuditService audit;
+    private final StockTradeService stocks;
+    private final StockTradeRepository stockTrades;
     private final Clock clock;
 
     public OptionTradeEditService(OptionTradeRepository trades, OptionTradeService tradeService,
-                                  CashLedgerService ledger, AuditService audit, Clock clock) {
+                                  CashLedgerService ledger, AuditService audit, StockTradeService stocks,
+                                  StockTradeRepository stockTrades, Clock clock) {
+        this.stocks = stocks;
+        this.stockTrades = stockTrades;
         this.trades = trades;
         this.tradeService = tradeService;
         this.ledger = ledger;
@@ -97,6 +107,9 @@ public class OptionTradeEditService {
         OptionTradeEntity trade = find(accountId, id);
         if (trade.getAction() == TradeAction.EXP) {
             throw new ApiException(ErrorCode.EXPIRY_NOT_EDITABLE, EXPIRY_NOT_EDITABLE_MESSAGE);
+        }
+        if (trade.getAction() == TradeAction.ASG) {
+            throw new ApiException(ErrorCode.ASSIGNMENT_NOT_EDITABLE, ASSIGNMENT_NOT_EDITABLE_MESSAGE);
         }
         ContractKey contract = trade.contract();
         boolean opening = trade.getAction().isOpening();
@@ -145,7 +158,10 @@ public class OptionTradeEditService {
             throw new ApiException(OptionTradeService.errorCode(kind),
                     TradeRejectionMessages.of(contract, step, kind, true));
         }
-        rejectFirstViolation(contract, history, "修改", expiryCovering(existing, id));
+        rejectFirstViolation(contract, history, "修改", systemRecordCovering(existing, id));
+        List<OptionTradeService.CostCorrection> costs = tradeService.costCorrections(accountId, contract, existing,
+                history, LotTrade.NOT_YET_ENTERED);
+        OptionTradeService.rejectNonPositiveCost(costs, "修改");
 
         int effectiveMultiplier = step.effectiveMultiplier();
         BigDecimal frozenChange = opening
@@ -170,12 +186,13 @@ public class OptionTradeEditService {
 
         // save
         Map<String, Object> before = snapshot(trade, entry.getAmount(), entry.getFrozenChange());
-        List<SideEffect> effects = sideEffects(existing, corrections);
+        List<SideEffect> effects = sideEffects(existing, corrections, costs);
         trade.update(cmd.contracts(), effectiveMultiplier, net, tradedAt, note);
         trade.markAudited(); // only the edited trade; records corrected as side effects keep their flag
         ledger.updateEntry(accountId, entry.getId(), tradedAt, entry.getSourceType(), cashChange, frozenChange,
                 OpenTradeTerms.describe(trade.getAction(), cmd.contracts(), effectiveMultiplier, contract), note);
         ledger.correctFrozenChanges(accountId, corrections);
+        OptionTradeService.applyCostCorrections(costs);
         Map<String, Object> after = snapshot(trade, cashChange, frozenChange);
         audit.record(new AuditService.NewAuditRecord(accountId, AuditOperation.UPDATE, AuditObjectType.OPTION_TRADE, id,
                 summary(trade), before, after, changes(before, after), effects));
@@ -201,14 +218,27 @@ public class OptionTradeEditService {
             ViolationKind kind = ContractHistory.primaryViolation(v, k -> true);
             boolean coveringRecord = coveredBy(existing, id).filter(closeId -> closeId == v.trade().tradeId()).isPresent();
             String message;
-            if (coveringRecord && v.trade().action() == TradeAction.EXP) {
-                message = TradeRejectionMessages.expiredOpenChanged(v, kind, "删除");
+            if (coveringRecord && v.trade().action().isDeleteOnly()) {
+                message = TradeRejectionMessages.coveredOpenChanged(v, kind, "删除");
             } else if (coveringRecord) {
                 message = TradeRejectionMessages.deletedOpenStillClosed(v, kind);
             } else {
                 message = TradeRejectionMessages.of(contract, v, kind, false, "删除");
             }
             throw new ApiException(OptionTradeService.errorCode(kind), message);
+        }
+        List<OptionTradeService.CostCorrection> costs = tradeService.costCorrections(accountId, contract, existing,
+                history, id);
+        OptionTradeService.rejectNonPositiveCost(costs, "删除");
+
+        // FEAT-013: deleting an assignment removes its generated lot; every later sale must stay covered (Q15)
+        boolean assignment = trade.getAction() == TradeAction.ASG;
+        StockTradeEntity lot = assignment
+                ? tradeService.assignedLots(accountId, List.of(id)).get(id)
+                : null;
+        if (lot != null) {
+            stocks.checkHoldings(accountId, lot.getSymbol(),
+                    records -> records.stream().filter(r -> r.id() != lot.getId()).toList(), -1, "删除");
         }
 
         Map<Long, BigDecimal> corrections = OptionTradeService.frozenCorrections(existing, history, id);
@@ -218,13 +248,27 @@ public class OptionTradeEditService {
         BigDecimal cashChange = entry == null ? Money.ZERO : entry.getAmount();
         BigDecimal frozenChange = entry == null ? Money.ZERO : entry.getFrozenChange();
         Map<String, Object> before = snapshot(trade, cashChange, frozenChange);
-        List<SideEffect> effects = sideEffects(existing, corrections);
+        if (assignment) {
+            AssignmentTerms terms = tradeService.views(accountId, List.of(trade)).get(0).assignment().orElseThrow();
+            before.put("assignmentDate", MarketTime.toLocal(trade.getTradedAt()).toLocalDate().toString());
+            before.put("assignmentFee", Money.of(trade.getAssignmentFee()));
+            before.put("shares", terms.shares());
+            before.put("purchaseAmount", terms.purchaseAmount());
+            before.put("stockCost", terms.stockCost());
+            before.put("stockTradeId", lot == null ? null : lot.getId());
+        }
+        List<SideEffect> effects = sideEffects(existing, corrections, costs);
         String summary = summary(trade);
         if (entry != null) {
             ledger.deleteEntry(accountId, entry.getId());
         }
+        if (lot != null) {
+            stockTrades.delete(lot);
+            stockTrades.flush();
+        }
         trades.delete(trade);
         ledger.correctFrozenChanges(accountId, corrections);
+        OptionTradeService.applyCostCorrections(costs);
         audit.record(new AuditService.NewAuditRecord(accountId, AuditOperation.DELETE, AuditObjectType.OPTION_TRADE, id,
                 summary, before, null, List.of(), effects));
     }
@@ -250,11 +294,11 @@ public class OptionTradeEditService {
         return Optional.empty();
     }
 
-    /** The expiry (EXP) that covers the open {@code openId} in the current (unchanged) history, if any. */
-    private static Optional<Long> expiryCovering(OptionTradeService.ContractTrades existing, long openId) {
+    /** The expiry (EXP) or assignment (ASG) that covers the open {@code openId} in the current history, if any. */
+    private static Optional<Long> systemRecordCovering(OptionTradeService.ContractTrades existing, long openId) {
         Optional<Long> record = coveredBy(existing, openId);
         return record.filter(rid -> existing.trades().stream()
-                .anyMatch(t -> t.tradeId() == rid && t.action() == TradeAction.EXP));
+                .anyMatch(t -> t.tradeId() == rid && t.action().isDeleteOnly()));
     }
 
     /**
@@ -268,7 +312,7 @@ public class OptionTradeEditService {
                 ViolationKind kind = ContractHistory.primaryViolation(s, k -> true);
                 boolean covering = coveringExpiry.filter(eid -> eid == s.trade().tradeId()).isPresent();
                 throw new ApiException(OptionTradeService.errorCode(kind), covering
-                        ? TradeRejectionMessages.expiredOpenChanged(s, kind, verb)
+                        ? TradeRejectionMessages.coveredOpenChanged(s, kind, verb)
                         : TradeRejectionMessages.of(contract, s, kind, false, verb));
             }
         }
@@ -293,8 +337,9 @@ public class OptionTradeEditService {
         return out;
     }
 
-    /** Q42: corrected frozen changes of other trades, for the audit record. */
-    private List<SideEffect> sideEffects(OptionTradeService.ContractTrades existing, Map<Long, BigDecimal> corrections) {
+    /** Q42: corrected frozen changes of other trades and (FEAT-013) corrected stock costs, for the audit record. */
+    private List<SideEffect> sideEffects(OptionTradeService.ContractTrades existing, Map<Long, BigDecimal> corrections,
+                                         List<OptionTradeService.CostCorrection> costs) {
         List<SideEffect> effects = new ArrayList<>();
         existing.ledgerByTrade().forEach((tradeId, e) -> {
             if (corrections.containsKey(e.getId())) {
@@ -303,6 +348,10 @@ public class OptionTradeEditService {
                         signed(e.getFrozenChange()), signed(corrections.get(e.getId()))));
             }
         });
+        for (OptionTradeService.CostCorrection c : costs) {
+            effects.add(new SideEffect(c.assignmentId(), TradeAction.ASG.name(), c.contract().label(),
+                    SideEffect.STOCK_COST, Money.display(c.before()), Money.display(c.after())));
+        }
         return effects;
     }
 
@@ -331,6 +380,11 @@ public class OptionTradeEditService {
     private static String summary(OptionTradeEntity t) {
         if (t.getAction() == TradeAction.EXP) {
             return t.getAction().displayName() + " " + t.contract().label() + " " + t.getContracts() + " 张";
+        }
+        if (t.getAction() == TradeAction.ASG) {
+            // "被指派 XYZ 2026-11-20 45 P 3 张（买入 300 股 XYZ）"
+            return t.getAction().displayName() + " " + t.contract().label() + " " + t.getContracts() + " 张（买入 "
+                    + t.getContracts() * t.getMultiplier() + " 股 " + t.getSymbol() + "）";
         }
         return t.getAction().name() + " " + t.contract().label();
     }

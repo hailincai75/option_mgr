@@ -533,7 +533,7 @@ class Feat040StockPnlInSummariesSystemTest extends OptionTradeSystemTestBase {
         Resp sell = get(CLOSED + "?action=SELL");
         assertErrorShape(sell, 400, "BAD_REQUEST", CLOSED);
         assertThat(detailFields(sell)).containsExactly("action");
-        assertThat(sell.body().get("details").get(0).get("message").asText()).isEqualTo("方向只能是 BTC、STC、EXP");
+        assertThat(sell.body().get("details").get(0).get("message").asText()).isEqualTo("方向只能是 BTC、STC、EXP、ASG");
     }
 
     @Test

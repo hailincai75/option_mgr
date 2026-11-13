@@ -33,6 +33,7 @@ function trade(partial: Partial<OptionTrade> & Pick<OptionTrade, 'id'>): OptionT
     realizedPnl: null,
     hasAuditLog: false,
     expiredDirection: null,
+    assignment: null,
   }
   const merged = { ...base, ...partial }
   const cp = merged.optionType === 'CALL' ? 'C' : 'P'
@@ -614,7 +615,7 @@ describe('TradeListPage', () => {
     ).toBeInTheDocument()
     expect(
       within(formItemOf(byTestId('trade-filter-action-bto'))).getByText(
-        '方向只能是 BTO、STO、BTC、STC、EXP',
+        '方向只能是 BTO、STO、BTC、STC、EXP、ASG',
       ),
     ).toBeInTheDocument()
     expect(byTestId('trade-filter-strike')).toHaveValue('abc')

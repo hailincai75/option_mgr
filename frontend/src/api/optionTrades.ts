@@ -1,5 +1,6 @@
 import { apiRequest } from './client'
 import type {
+  CreateAssignmentRequest,
   CreateCloseTradeRequest,
   CreateExpirationRequest,
   CreateOptionTradeRequest,
@@ -36,6 +37,17 @@ export function createCloseTrade(request: CreateCloseTradeRequest): Promise<Opti
  */
 export function createExpiration(request: CreateExpirationRequest): Promise<OptionTrade> {
   return apiRequest<OptionTrade>('/api/option-trades/expirations', {
+    method: 'POST',
+    body: request,
+  })
+}
+
+/**
+ * `POST /api/option-trades/assignments` → 201 (FEAT-013 被指派 of a short put: the ASG record with
+ * `assignment`; also creates the ASSIGN_BUY stock record and the OPTION_ASSIGN ledger entry).
+ */
+export function createAssignment(request: CreateAssignmentRequest): Promise<OptionTrade> {
+  return apiRequest<OptionTrade>('/api/option-trades/assignments', {
     method: 'POST',
     body: request,
   })

@@ -58,6 +58,10 @@ function position(partial: Partial<OptionPosition> & Pick<OptionPosition, 'lots'
     expiryContracts: partial.contracts ?? 1,
     expiryAt: '2026-12-18T21:00:00Z',
     expiryAtLocal: '2026-12-18T16:00:00',
+    assignable: false,
+    assignChoices: [],
+    assignmentDateMax: null,
+    assignmentDateDefault: null,
     ...partial,
   }
   const cp = merged.optionType === 'CALL' ? 'C' : 'P'
@@ -565,6 +569,7 @@ describe('PositionsPage', () => {
       realizedPnl: null,
       hasAuditLog: false,
       expiredDirection: null,
+      assignment: null,
     }
     startFakeServer({
       positions: () => jsonResponse(current),

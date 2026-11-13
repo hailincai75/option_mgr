@@ -459,7 +459,7 @@ class StockPnlInSummariesControllerTest {
             assertThat(empty.get("totalPages").asInt()).as(q).isZero();
         }
         JsonNode sell = call(get(URI.create("/api/closed-trades?action=SELL")), 400);
-        assertThat(sell.get("details").get(0).get("message").asText()).isEqualTo("方向只能是 BTC、STC、EXP");
+        assertThat(sell.get("details").get(0).get("message").asText()).isEqualTo("方向只能是 BTC、STC、EXP、ASG");
     }
 
     // ---------------------------------------------------------------- AC 5
