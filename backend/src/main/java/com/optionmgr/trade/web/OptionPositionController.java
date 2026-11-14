@@ -70,7 +70,9 @@ public class OptionPositionController {
                                    boolean exercisable, List<AssignChoice> exerciseChoices,
                                    LocalDate exerciseDateMax, LocalDate exerciseDateDefault,
                                    /* FEAT-014: long call rows: current available cash; null otherwise */
-                                   BigDecimal availableCash) {
+                                   BigDecimal availableCash,
+                                   /* FEAT-042: expires on an ACTIVE ad-hoc closure ("临时休市" tag) */
+                                   boolean expiresOnAdhocClosure, String adhocClosureEventName) {
     }
 
     /** FEAT-013: one selectable assignment size (earliest whole lots) and its shares. */
@@ -114,6 +116,7 @@ public class OptionPositionController {
         LocalDate latestExercise = exercisable ? AssignmentTerms.latestDate(c.expirationDate(), now) : null;
         CoverageTimeline.Shortfall sf = rc == null ? null : rc.shortfall();
         LocalDate latest = assignable ? AssignmentTerms.latestDate(c.expirationDate(), now) : null;
+        String adhocClosureName = s.adhocClosureEventName(p);
         return new PositionResponse(c.symbol(), c.expirationDate(), ContractKey.strikeText(c.strike()),
                 c.optionType(), c.label(), p.direction(), p.contracts(), p.multiplier(), p.openingNetTotal(),
                 p.averageNetPerContract(), p.frozenCash(), dte, s.remainingTradingDays(p), p.expirationStatus(today), Math.max(0, -dte),
@@ -132,7 +135,8 @@ public class OptionPositionController {
                         ? p.allowedCloseContracts().stream().map(n -> new AssignChoice(n, n * p.multiplier())).toList()
                         : List.of(),
                 latestExercise, latestExercise,
-                exercisable && c.optionType() == OptionType.CALL ? s.availableCash() : null);
+                exercisable && c.optionType() == OptionType.CALL ? s.availableCash() : null,
+                adhocClosureName != null, adhocClosureName);
     }
 
     private static LotResponse toResponse(PositionLot l, OptionPositionService.RowCoverage rc) {

@@ -1,17 +1,24 @@
 package com.optionmgr.calendar.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.optionmgr.calendar.domain.AdhocClosure;
+import com.optionmgr.calendar.domain.AdhocClosureDetector;
 import com.optionmgr.calendar.domain.ExchangeHoliday;
 import com.optionmgr.calendar.domain.FetchResult;
 import com.optionmgr.calendar.domain.FetchStatus;
+import com.optionmgr.calendar.domain.HolidayRules;
+import com.optionmgr.calendar.repository.AdhocClosureEntity;
+import com.optionmgr.calendar.repository.AdhocClosureRepository;
 import com.optionmgr.calendar.repository.FetchStatusEntity;
 import com.optionmgr.calendar.repository.FetchStatusRepository;
 import com.optionmgr.calendar.repository.MarketHolidayEntity;
 import com.optionmgr.calendar.repository.MarketHolidayRepository;
+import com.optionmgr.common.time.MarketTime;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -27,7 +34,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * FEAT-009 rules 2 and 5: fetches the Finnhub market holidays and stores them. On success the years present in the
  * response replace the stored years whole (Q127), other stored years are kept; on any failure the stored holidays
  * are untouched and only the status is recorded. The network call runs outside the database transaction. The key
- * is never logged or stored.
+ * is never logged or stored. FEAT-042: a successful fetch also detects ad-hoc closures against the data stored
+ * before its merge (same transaction); a failed one changes nothing.
  */
 @Service
 public class HolidayFetchService {
@@ -39,12 +47,17 @@ public class HolidayFetchService {
     private final FinnhubHolidayParser parser;
     private final MarketHolidayRepository holidays;
     private final FetchStatusRepository statuses;
+    private final AdhocClosureRepository adhocClosures;
+    private final HolidayRules rules;
     private final TransactionTemplate tx;
     private final Clock clock;
 
     public HolidayFetchService(FinnhubProperties props, FinnhubClient client, ObjectMapper mapper,
                                MarketHolidayRepository holidays, FetchStatusRepository statuses,
+                               AdhocClosureRepository adhocClosures, HolidayRules rules,
                                PlatformTransactionManager txManager, Clock clock) {
+        this.adhocClosures = adhocClosures;
+        this.rules = rules;
         this.props = props;
         this.client = client;
         this.parser = new FinnhubHolidayParser(mapper);
@@ -102,6 +115,7 @@ public class HolidayFetchService {
         } catch (FinnhubHolidayParser.InvalidResponseException e) {
             return before.after(now, FetchResult.INVALID_RESPONSE, e.getMessage());
         }
+        detectAdhocClosures(parsed, now);
         SortedSet<Integer> years = new TreeSet<>();
         parsed.forEach(h -> years.add(h.date().getYear()));
         for (int year : years) {
@@ -109,6 +123,30 @@ public class HolidayFetchService {
         }
         holidays.saveAll(parsed.stream().map(h -> new MarketHolidayEntity(h, now)).toList());
         return before.after(now, FetchResult.SUCCESS, null);
+    }
+
+    /** FEAT-042 rules 1-2, Q127: runs before the merge, so the stored data is still the previous fetch's. */
+    private void detectAdhocClosures(List<ExchangeHoliday> parsed, Instant now) {
+        List<ExchangeHoliday> storedBefore = holidays.findAll().stream().map(MarketHolidayEntity::toDomain).toList();
+        Map<LocalDate, AdhocClosureEntity> rows = new HashMap<>();
+        Map<LocalDate, AdhocClosure> existing = new HashMap<>();
+        for (AdhocClosureEntity e : adhocClosures.findAll()) {
+            AdhocClosure c = e.toDomain();
+            rows.put(c.date(), e);
+            existing.put(c.date(), c);
+        }
+        LocalDate today = MarketTime.toLocal(now).toLocalDate();
+        for (AdhocClosure c : AdhocClosureDetector.changes(parsed, storedBefore, rules, existing, today)) {
+            AdhocClosureEntity row = rows.get(c.date());
+            if (row == null) {
+                adhocClosures.save(new AdhocClosureEntity(c));
+                log.warn("Ad-hoc market closure detected: {} {}", c.date(), c.eventName());
+            } else {
+                row.update(c);
+                adhocClosures.save(row);
+                log.info("Ad-hoc market closure {} is now {}", c.date(), c.status());
+            }
+        }
     }
 
     private SortedSet<Integer> coveredYearsAfterSuccess() {

@@ -1,10 +1,11 @@
-import { Button, Space, Table, Tag, Tooltip, Typography } from 'antd'
+import { Button, Space, Table, Tag, theme, Tooltip, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { HTMLAttributes, ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { OptionPosition, OptionPositionLot } from '../../api/types'
 import { decimalSign, EMPTY_VALUE, formatDateTimeNY, formatMoney } from '../../utils/format'
 import { SIGNED_MONEY_COLORS, tradeActionLabel } from '../trade/tradeLabels'
+import { ADHOC_CLOSURE_TAG_TEXT } from './adhocClosure'
 import { coverageTags } from './coverageLabels'
 import { tradesUrlForPosition } from './positionLinks'
 
@@ -270,7 +271,22 @@ function positionColumns(
       title: '到期日',
       key: 'expirationDate',
       render: (_value: unknown, position) => (
-        <span data-testid="position-cell-expiration">{position.expirationDate}</span>
+        <span style={{ whiteSpace: 'nowrap' }}>
+          <span data-testid="position-cell-expiration">{position.expirationDate}</span>
+          {/* FEAT-042 rule 5: backend flag; hover shows the closure's eventName. */}
+          {position.expiresOnAdhocClosure === true && (
+            <Tooltip title={position.adhocClosureEventName}>
+              <Tag
+                color="error"
+                style={{ marginLeft: 6, marginInlineEnd: 0, cursor: 'help' }}
+                data-testid="position-adhoc-closure-tag"
+                data-event-name={position.adhocClosureEventName ?? ''}
+              >
+                {ADHOC_CLOSURE_TAG_TEXT}
+              </Tag>
+            </Tooltip>
+          )}
+        </span>
       ),
     },
     {
@@ -375,6 +391,8 @@ interface PositionTableProps {
   onAssignPosition: (position: OptionPosition) => void
   /** Opens the 行权 dialog for an exercisable long position (FEAT-014). */
   onExercisePosition: (position: OptionPosition) => void
+  /** FEAT-042: row highlighted after 去调整 (by contract label); null/omitted for none. */
+  highlightedContract?: string | null
 }
 
 /**
@@ -390,7 +408,9 @@ export function PositionTable({
   onExpirePosition,
   onAssignPosition,
   onExercisePosition,
+  highlightedContract = null,
 }: PositionTableProps) {
+  const { token } = theme.useToken()
   return (
     <Table<OptionPosition>
       rowKey="contractLabel"
@@ -408,6 +428,12 @@ export function PositionTable({
         ({
           'data-testid': 'position-row',
           'data-contract': position.contractLabel,
+          ...(position.contractLabel === highlightedContract
+            ? {
+                'data-highlighted': 'true',
+                style: { background: token.colorErrorBg },
+              }
+            : {}),
         }) as HTMLAttributes<HTMLElement>
       }
       expandable={{

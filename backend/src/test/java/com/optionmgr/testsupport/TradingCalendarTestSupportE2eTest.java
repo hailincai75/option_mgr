@@ -68,6 +68,21 @@ class TradingCalendarTestSupportE2eTest {
     }
 
     @Test
+    void feat042_simulatedFetchDetectsAdhocClosuresAndResetClearsThem() throws Exception {
+        setClock("2026-12-01T13:00:00Z");
+        fetch("{\"httpStatus\":200,\"body\":" + FakeFinnhub.response(
+                FakeFinnhub.entry("National Day of Mourning", "2026-12-04", "")) + "}");
+        JsonNode closures = body(call(get("/api/trading-calendar/adhoc-closures"))).get("closures");
+        assertThat(closures).hasSize(1);
+        assertThat(closures.get(0).get("date").asText()).isEqualTo("2026-12-04");
+        assertThat(closures.get(0).get("detectedOn").asText()).isEqualTo("2026-12-01");
+        fetch("{\"httpStatus\":500,\"body\":null}");
+        assertThat(body(call(get("/api/trading-calendar/adhoc-closures"))).get("closures")).hasSize(1);
+        reset();
+        assertThat(body(call(get("/api/trading-calendar/adhoc-closures"))).get("closures")).isEmpty();
+    }
+
+    @Test
     void clockIsSystemTimeUntilFixedAndBackAfterDeleteOrReset() throws Exception {
         assertThat(Duration.between(clock.instant(), Instant.now()).abs()).isLessThan(Duration.ofMinutes(1));
         setClock("2026-11-23T15:00:00Z");

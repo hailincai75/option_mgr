@@ -16,6 +16,7 @@ describe('refreshAfterChange', () => {
       ['pnl-summary'],
       ['stock-trades'],
       ['stock-positions'],
+      ['adhoc-closure-alerts'],
     ])
   })
 })

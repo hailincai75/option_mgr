@@ -443,6 +443,13 @@ export interface OptionPosition {
   uncoveredShortfallAtLocal?: LocalDateTimeString | null
   /** FEAT-039: shares held at that instant. */
   uncoveredShortfallHeldShares?: number | null
+  /**
+   * FEAT-042: the expiration date is an active ad-hoc closure (affected position); the 临时休市
+   * tag is shown beside the expiration date when true. Optional: older fixtures.
+   */
+  expiresOnAdhocClosure?: boolean
+  /** FEAT-042: that closure's `eventName` (tag tooltip) when `expiresOnAdhocClosure`; else null. */
+  adhocClosureEventName?: string | null
 }
 
 /** Contract: `GET /api/option-positions` → 200. */
@@ -1175,3 +1182,25 @@ export interface TradingCalendarStatus {
 
 /** FEAT-009 error code (HTTP 422 on BTO / STO; `message` is user-facing Chinese, shown verbatim). */
 export const EXPIRATION_NOT_TRADING_DAY = 'EXPIRATION_NOT_TRADING_DAY'
+
+// ---------------------------------------------------------------------------
+// FEAT-042 临时休市提醒
+// ---------------------------------------------------------------------------
+
+/** Contract: `GET /api/adhoc-closure-alerts` → `alerts[]` (one per active ad-hoc closure date). */
+export interface AdhocClosureAlert {
+  /** Ad-hoc closure date "YYYY-MM-DD". */
+  date: LocalDateString
+  /** Finnhub `eventName`, as-is. */
+  eventName: string
+  /** Affected positions of the current account (≥ 1). */
+  affectedPositionCount: number
+  /** Complete line to show verbatim (without the trailing 去调整 link). */
+  message: string
+}
+
+/** Contract: `GET /api/adhoc-closure-alerts` → 200 (current account; `[]` when none, Q129). */
+export interface AdhocClosureAlertsResponse {
+  /** Ascending by date; only dates with affected positions. */
+  alerts: AdhocClosureAlert[]
+}

@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Alert, Button, Descriptions, Modal, Space, Tag, Typography } from 'antd'
 import { useState } from 'react'
+import { adhocClosureAlertQueryKeys } from '../../api/adhocClosureAlerts'
 import { ApiError } from '../../api/client'
 import { optionPositionQueryKeys } from '../../api/optionPositions'
 import { createExpiration } from '../../api/optionTrades'
@@ -66,7 +67,10 @@ export function ExpirePositionModal({ position, onDone }: ExpirePositionModalPro
         message: `${error.message}${detail}`,
       })
       // The position may have changed (e.g. 持仓已变化): reload the list behind the dialog.
-      await queryClient.invalidateQueries({ queryKey: optionPositionQueryKeys.all })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: optionPositionQueryKeys.all }),
+        queryClient.invalidateQueries({ queryKey: adhocClosureAlertQueryKeys.all }),
+      ])
     },
   })
 

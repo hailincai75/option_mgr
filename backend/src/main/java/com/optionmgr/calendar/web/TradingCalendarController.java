@@ -1,10 +1,13 @@
 package com.optionmgr.calendar.web;
 
+import com.optionmgr.calendar.domain.AdhocClosure;
+import com.optionmgr.calendar.domain.AdhocClosureStatus;
 import com.optionmgr.calendar.domain.FetchResult;
 import com.optionmgr.calendar.domain.FetchStatus;
 import com.optionmgr.calendar.domain.HolidaySource;
 import com.optionmgr.calendar.domain.NonTradingDay;
 import com.optionmgr.calendar.domain.NonTradingDayType;
+import com.optionmgr.calendar.service.AdhocClosureService;
 import com.optionmgr.calendar.service.TradingCalendarService;
 import com.optionmgr.common.error.ApiException;
 import com.optionmgr.common.error.ErrorCode;
@@ -18,6 +21,7 @@ import java.time.format.ResolverStyle;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -36,9 +40,36 @@ public class TradingCalendarController {
     private static final DateTimeFormatter LOCAL_SECONDS = DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss");
 
     private final TradingCalendarService calendar;
+    private final AdhocClosureService adhocClosures;
 
-    public TradingCalendarController(TradingCalendarService calendar) {
+    public TradingCalendarController(TradingCalendarService calendar, AdhocClosureService adhocClosures) {
         this.calendar = calendar;
+        this.adhocClosures = adhocClosures;
+    }
+
+    /** FEAT-042: all detected ad-hoc closures (REVOKED included). */
+    public record AdhocClosuresResponse(List<AdhocClosureResponse> closures) {
+    }
+
+    public record AdhocClosureResponse(LocalDate date, String eventName, LocalDate detectedOn,
+                                       AdhocClosureStatus status, LocalDate revokedOn) {
+        static AdhocClosureResponse of(AdhocClosure c) {
+            return new AdhocClosureResponse(c.date(), c.eventName(), c.detectedOn(), c.status(), c.revokedOn());
+        }
+    }
+
+    @GetMapping("/adhoc-closures")
+    public AdhocClosuresResponse adhocClosures(@RequestParam(required = false) String status) {
+        Optional<AdhocClosureStatus> filter = Optional.empty();
+        if (status != null) {
+            try {
+                filter = Optional.of(AdhocClosureStatus.valueOf(status));
+            } catch (IllegalArgumentException e) {
+                throw new ApiException(ErrorCode.BAD_REQUEST, "Invalid parameter value",
+                        List.of(new ErrorResponse.FieldError("status", "must be one of ACTIVE, REVOKED")));
+            }
+        }
+        return new AdhocClosuresResponse(adhocClosures.list(filter).stream().map(AdhocClosureResponse::of).toList());
     }
 
     public record NonTradingDaysResponse(LocalDate from, LocalDate to, List<DayResponse> days) {

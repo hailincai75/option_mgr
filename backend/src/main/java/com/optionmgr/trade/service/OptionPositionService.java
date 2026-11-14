@@ -1,6 +1,8 @@
 package com.optionmgr.trade.service;
 
+import com.optionmgr.calendar.domain.AdhocClosureAlerts;
 import com.optionmgr.calendar.domain.TradingCalendar;
+import com.optionmgr.calendar.service.AdhocClosureService;
 import com.optionmgr.calendar.service.TradingCalendarService;
 import com.optionmgr.cash.repository.CashLedgerEntryEntity;
 import com.optionmgr.cash.service.CashLedgerService;
@@ -42,11 +44,14 @@ public class OptionPositionService {
     private final StockPositionService stockPositions;
     private final CoverageService coverage;
     private final TradingCalendarService tradingCalendar;
+    private final AdhocClosureService adhocClosures;
     private final Clock clock;
 
     public OptionPositionService(OptionTradeRepository trades, CashLedgerService ledger,
                                  StockPositionService stockPositions, CoverageService coverage,
-                                 TradingCalendarService tradingCalendar, Clock clock) {
+                                 TradingCalendarService tradingCalendar, AdhocClosureService adhocClosures,
+                                 Clock clock) {
+        this.adhocClosures = adhocClosures;
         this.tradingCalendar = tradingCalendar;
         this.coverage = coverage;
         this.stockPositions = stockPositions;
@@ -67,7 +72,18 @@ public class OptionPositionService {
                                   BigDecimal frozenTotal, Map<ContractKey, Integer> expiryContracts,
                                   Map<String, Long> stockShares, Map<ContractKey, RowCoverage> coverage,
                                   BigDecimal availableCash, Map<String, Long> availableShares,
-                                  TradingCalendar calendar) {
+                                  TradingCalendar calendar, Map<LocalDate, String> adhocClosures) {
+
+        /** FEAT-042 rule 3/5: eventName of the ACTIVE ad-hoc closure the position expires on; null when none. */
+        public String adhocClosureEventName(OptionPosition p) {
+            return adhocClosures.get(p.contract().expirationDate());
+        }
+
+        /** FEAT-042 rule 4: alerts of this account (same data as the row tags). */
+        public List<AdhocClosureAlerts.Alert> adhocClosureAlerts() {
+            return AdhocClosureAlerts.alerts(adhocClosures,
+                    positions.stream().map(p -> p.contract().expirationDate()).toList());
+        }
 
         /** FEAT-009 Q125: trading days in (asOfDate, expiration]; 0 on the expiration date, null once expired. */
         public Integer remainingTradingDays(OptionPosition p) {
@@ -159,7 +175,8 @@ public class OptionPositionService {
         }
         BigDecimal availableCash = ledger.currentBalance(accountId).available();
         return new PositionSummary(now, today, positions, frozenTotal, Map.copyOf(expiryContracts),
-                Map.copyOf(stockShares), Map.copyOf(rows), availableCash, Map.copyOf(availableShares), tradingCalendar.calendar());
+                Map.copyOf(stockShares), Map.copyOf(rows), availableCash, Map.copyOf(availableShares), tradingCalendar.calendar(),
+                Map.copyOf(adhocClosures.activeClosures()));
     }
 
     static RowCoverage rowCoverage(OptionPosition p, CoverageTimeline timeline) {

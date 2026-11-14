@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Alert, Button, Checkbox, Descriptions, Modal, Space, Table, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useState, type HTMLAttributes } from 'react'
+import { adhocClosureAlertQueryKeys } from '../../api/adhocClosureAlerts'
 import { ApiError } from '../../api/client'
 import { optionPositionQueryKeys } from '../../api/optionPositions'
 import {
@@ -98,9 +99,10 @@ export function BatchExpireModal({ positions, onDone }: BatchExpireModalProps) {
       })
       // Positions may have changed (e.g. 持仓已变化): reload the table behind the dialog. The
       // dialog keeps its snapshot; reopening it shows the new values.
-      await queryClient.invalidateQueries({
-        queryKey: optionPositionQueryKeys.all,
-      })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: optionPositionQueryKeys.all }),
+        queryClient.invalidateQueries({ queryKey: adhocClosureAlertQueryKeys.all }),
+      ])
     },
   })
 

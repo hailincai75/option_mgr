@@ -1,5 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query'
 import type { RuleObject } from 'antd/es/form'
+import { adhocClosureAlertQueryKeys } from '../../api/adhocClosureAlerts'
 import { auditLogQueryKeys } from '../../api/auditLog'
 import { cashQueryKeys } from '../../api/cash'
 import { closedTradeQueryKeys } from '../../api/closedTrades'
@@ -77,6 +78,8 @@ export async function refreshAfterChange(queryClient: QueryClient): Promise<void
     // change them, but refreshing every domain keeps one rule for every write).
     queryClient.invalidateQueries({ queryKey: stockTradeQueryKeys.all }),
     queryClient.invalidateQueries({ queryKey: stockPositionQueryKeys.all }),
+    // FEAT-042: ad-hoc closure alerts count option positions, so they refresh with them.
+    queryClient.invalidateQueries({ queryKey: adhocClosureAlertQueryKeys.all }),
   ])
 }
 

@@ -154,6 +154,7 @@ class TradingCalendarControllerTest {
         jdbc.update("DELETE FROM cash_ledger_entry");
         jdbc.update("DELETE FROM cash_transfer");
         jdbc.update("DELETE FROM market_holiday");
+        jdbc.update("DELETE FROM adhoc_closure");
         jdbc.update("UPDATE market_holiday_fetch_status SET last_attempt_at = NULL, last_attempt_result = NULL, "
                 + "last_failure_detail = NULL, last_success_at = NULL");
     }

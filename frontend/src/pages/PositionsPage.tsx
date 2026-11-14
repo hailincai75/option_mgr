@@ -1,6 +1,6 @@
 import { useAccountQuery } from '../account/useAccountQuery'
 import { Button, Card, Radio, Space, Spin, Typography } from 'antd'
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { getOptionPositions, optionPositionQueryKeys } from '../api/optionPositions'
 import { AssignPositionModal } from '../components/position/AssignPositionModal'
@@ -22,11 +22,13 @@ import {
   withExpirySearch,
   type ExpiryFilter,
 } from '../components/position/expiryFilter'
+import { AdhocClosureAlerts } from '../components/calendar/AdhocClosureAlerts'
 import { TradingCalendarStaleAlert } from '../components/calendar/TradingCalendarStaleAlert'
+import { firstAdhocClosureRow } from '../components/position/adhocClosure'
 import { PositionTable } from '../components/position/PositionTable'
 import { QueryError } from '../components/QueryError'
 import { StockPositionsCard } from '../components/stock/StockPositionsCard'
-import type { OptionPosition } from '../api/types'
+import type { AdhocClosureAlert, OptionPosition } from '../api/types'
 import { formatMoney } from '../utils/format'
 
 /**
@@ -52,6 +54,38 @@ export function PositionsPage() {
     queryKey: optionPositionQueryKeys.all,
     queryFn: ({ signal }) => getOptionPositions(signal),
   })
+  /** FEAT-042 去调整: highlighted row and a pending scroll to it (cleared once scrolled). */
+  const [highlighted, setHighlighted] = useState<string | null>(null)
+  const pendingScroll = useRef<string | null>(null)
+  const [scrollRequest, setScrollRequest] = useState(0)
+  const shownPositions = useMemo(
+    () => (data ? filterPositionsByExpiry(data.positions, expiryFilter) : null),
+    [data, expiryFilter],
+  )
+
+  useEffect(() => {
+    const contract = pendingScroll.current
+    if (contract === null || shownPositions === null) return
+    // Waits for the row when the 到期 filter was just cleared (runs again with the new rows).
+    const row = Array.from(document.querySelectorAll('[data-testid="position-row"]')).find(
+      (element) => element.getAttribute('data-contract') === contract,
+    )
+    if (row === undefined) return
+    pendingScroll.current = null
+    row.scrollIntoView({ block: 'center' })
+  }, [scrollRequest, shownPositions])
+
+  const adjustTo = (alert: AdhocClosureAlert) => {
+    const target = data ? firstAdhocClosureRow(data.positions, alert.date) : undefined
+    if (target === undefined) return
+    // The 到期 filter may hide the row: show every position so it can be scrolled to.
+    if (filterPositionsByExpiry([target], expiryFilter).length === 0) {
+      setSearchParams(withExpirySearch(searchParams, 'all'))
+    }
+    setHighlighted(target.contractLabel)
+    pendingScroll.current = target.contractLabel
+    setScrollRequest((count) => count + 1)
+  }
 
   let content
   if (isPending) {
@@ -71,7 +105,7 @@ export function PositionsPage() {
       />
     )
   } else {
-    const shown = filterPositionsByExpiry(data.positions, expiryFilter)
+    const shown = shownPositions ?? []
     const filteredEmpty = expiryEmptyMessage(expiryFilter)
     // FEAT-015 rule 1 (Q118): 已过期未处理 / 今天到期 only; N = shown rows the backend lets expire.
     const batchRows = showsBatchExpire(expiryFilter) ? batchExpirableRows(shown) : []
@@ -116,6 +150,7 @@ export function PositionsPage() {
           onExpirePosition={setExpiring}
           onAssignPosition={setAssigning}
           onExercisePosition={setExercising}
+          highlightedContract={highlighted}
           empty={
             filteredEmpty !== null && data.positions.length > 0 ? (
               <span data-testid="positions-expiry-empty">{filteredEmpty}</span>
@@ -135,6 +170,8 @@ export function PositionsPage() {
 
   return (
     <Space orientation="vertical" size={16} style={{ width: '100%' }}>
+      {/* FEAT-042 rule 4: 去调整 scrolls to (and highlights) the first affected row. */}
+      <AdhocClosureAlerts onAdjust={adjustTo} />
       {/* FEAT-009 rule 6: shown only while the holiday data is stale. */}
       <TradingCalendarStaleAlert />
       <Card title="期权持仓" data-testid="positions-page">

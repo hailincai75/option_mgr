@@ -7,6 +7,7 @@ import { ApiError } from '../api/client'
 import { dashboardQueryKeys, getDashboard } from '../api/dashboard'
 import { getHealth, healthQueryKey } from '../api/health'
 import type { Dashboard } from '../api/types'
+import { AdhocClosureAlerts } from '../components/calendar/AdhocClosureAlerts'
 import { CashSummaryCard } from '../components/cash/CashSummaryCard'
 import { positionsUrlForExpiry } from '../components/position/expiryFilter'
 import { STOCK_POSITIONS_URL } from '../components/stock/stockPositionsAnchor'
@@ -179,6 +180,8 @@ export function HomePage() {
 
   return (
     <Space orientation="vertical" size={16} style={{ width: '100%' }} data-testid="dashboard">
+      {/* FEAT-042 rule 4: 去调整 opens the positions page. */}
+      <AdhocClosureAlerts />
       <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
         <Typography.Title level={4} style={{ margin: 0 }}>
           概览
