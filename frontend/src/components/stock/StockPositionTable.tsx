@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom'
 import type { StockPosition, StockPositionLot } from '../../api/types'
 import { EMPTY_VALUE, formatInteger, formatMoney } from '../../utils/format'
 import { QuoteTimeCell, UnderlyingPriceCell } from '../quote/QuoteCells'
+import { MarketValueCell, UnrealizedPnlCell } from '../unrealized/UnrealizedCells'
 import { stockTimeText, stockTypeLabel } from './stockLabels'
 import { stocksUrlForSymbol } from './stockListFilters'
 
@@ -142,6 +143,23 @@ export function StockPositionTable({ positions, loading, empty, onSell }: StockP
           quote={position.quote}
           testId="stock-position-price"
         />
+      ),
+    },
+    // FEAT-017: market value and unrealized P&L from the backend (无报价 when no price).
+    {
+      title: '市值',
+      key: 'marketValue',
+      align: 'right',
+      render: (_value: unknown, position) => (
+        <MarketValueCell row={position} testIdPrefix="stock-position" />
+      ),
+    },
+    {
+      title: '未实现盈亏',
+      key: 'unrealizedPnl',
+      align: 'right',
+      render: (_value: unknown, position) => (
+        <UnrealizedPnlCell row={position} testIdPrefix="stock-position" />
       ),
     },
     {

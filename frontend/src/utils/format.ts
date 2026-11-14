@@ -76,6 +76,15 @@ export function formatMoney(
   return signed ? `+${body}` : body
 }
 
+/**
+ * FEAT-017: a percent number from the backend (already ×100, e.g. "-5.31", "22.80") as
+ * "−5.31%" / "+22.80%" / "0.00%". String formatting only (no rounding); null / invalid → "—".
+ */
+export function formatPercent(value: string | null | undefined): string {
+  const formatted = formatMoney(value, { signed: true })
+  return formatted === EMPTY_VALUE ? EMPTY_VALUE : `${formatted}%`
+}
+
 /** Sign of a decimal string without converting it to a number: 1, -1 or 0 (also for invalid). */
 export function decimalSign(value: string | null | undefined): -1 | 0 | 1 {
   if (value == null) return 0

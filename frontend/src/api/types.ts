@@ -358,7 +358,7 @@ export interface OptionPositionLot {
 export type CoverageStatus = 'CHECKED' | 'LEGACY' | (string & {})
 
 /** Contract: `GET /api/option-positions` → `positions[]`. Every value is display-ready. */
-export interface OptionPosition {
+export interface OptionPosition extends UnrealizedFields {
   /** FEAT-004: action that closes this position (short → BTC, long → STC). */
   closeAction: ClosingAction
   /** FEAT-004: contract counts that can be closed now (cumulative whole earliest lots), ascending. */
@@ -1141,7 +1141,7 @@ export interface StockPositionLot {
 }
 
 /** Contract: `GET /api/stock-positions` → `positions[]`. */
-export interface StockPosition {
+export interface StockPosition extends UnrealizedFields {
   symbol: string
   shares: number
   /** FEAT-039: shares currently covering CHECKED short calls (optional: older fixtures). */
@@ -1404,3 +1404,46 @@ export interface OptionOverrideRequest extends OptionContractKey {
 
 /** FEAT-016 (422): no account holds the symbol / contract; `message` is Chinese, shown verbatim. */
 export const QUOTE_TARGET_NOT_HELD = 'QUOTE_TARGET_NOT_HELD'
+
+// ---------------------------------------------------------------------------
+// FEAT-017 未实现盈亏与市值（只读，后端实时计算）
+
+/** FEAT-017 per-row status (`EXPIRED_PENDING` is option-only). */
+export type UnrealizedStatus = 'OK' | 'NO_QUOTE' | 'EXPIRED_PENDING'
+
+/**
+ * FEAT-017 fields on `positions[]` of `GET /api/option-positions` and `GET /api/stock-positions`.
+ * Optional here for older fixtures / responses (missing → shown as "—").
+ */
+export interface UnrealizedFields {
+  /** Scale-2 money; options signed (long +, short −), stocks non-negative. null unless OK. */
+  marketValue?: MoneyString | null
+  /** Scale-2 money, signed. null unless OK. */
+  unrealizedPnl?: MoneyString | null
+  /** Percent already ×100, signed without "+" / "%" ("-5.31", "22.80"); null when not OK or denominator 0.00. */
+  unrealizedPnlPercent?: string | null
+  unrealizedStatus?: UnrealizedStatus
+  /** `无报价` / `已到期，待处理` — shown verbatim; null when OK. */
+  unrealizedLabel?: string | null
+}
+
+/** One group (`option` / `stock` / `total`) of `GET /api/positions/unrealized-summary`. */
+export interface UnrealizedSummaryGroup {
+  /** Sum of OK rows' market values, scale 2 ("0.00" when none); options signed. */
+  marketValue: MoneyString
+  /** Sum of OK rows' unrealized P&L, scale 2. */
+  unrealizedPnl: MoneyString
+  includedCount: number
+  noQuoteCount: number
+  expiredPendingCount: number
+}
+
+/** Contract: `GET /api/positions/unrealized-summary` → 200 (current account, never filtered). */
+export interface UnrealizedSummaryResponse {
+  asOfDate: LocalDateString
+  option: UnrealizedSummaryGroup
+  stock: UnrealizedSummaryGroup
+  total: UnrealizedSummaryGroup
+  /** Whole sentence from the backend (e.g. `1 个持仓无报价，未计入`); null when none excluded. */
+  excludedLabel: string | null
+}

@@ -7,6 +7,7 @@ import { closedTradeQueryKeys } from '../../api/closedTrades'
 import { dashboardQueryKeys, pnlSummaryQueryKeys } from '../../api/dashboard'
 import { ApiError } from '../../api/client'
 import { optionPositionQueryKeys } from '../../api/optionPositions'
+import { unrealizedSummaryQueryKeys } from '../../api/unrealizedSummary'
 import { optionTradeQueryKeys } from '../../api/optionTrades'
 import { stockPositionQueryKeys, stockTradeQueryKeys } from '../../api/stockTrades'
 import type { ClosingAction, OptionTrade } from '../../api/types'
@@ -70,6 +71,8 @@ export async function refreshAfterChange(queryClient: QueryClient): Promise<void
     queryClient.invalidateQueries({ queryKey: cashQueryKeys.all }),
     queryClient.invalidateQueries({ queryKey: optionTradeQueryKeys.all }),
     queryClient.invalidateQueries({ queryKey: optionPositionQueryKeys.all }),
+    // FEAT-017: the account totals follow the positions.
+    queryClient.invalidateQueries({ queryKey: unrealizedSummaryQueryKeys.all }),
     queryClient.invalidateQueries({ queryKey: auditLogQueryKeys.all }),
     queryClient.invalidateQueries({ queryKey: closedTradeQueryKeys.all }),
     queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.all }),

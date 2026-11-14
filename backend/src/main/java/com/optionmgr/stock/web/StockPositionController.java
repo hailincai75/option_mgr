@@ -10,6 +10,8 @@ import com.optionmgr.stock.web.StockTradeDtos.StockPositionsResponse;
 import com.optionmgr.quote.service.QuoteQueryService;
 import com.optionmgr.quote.service.QuoteViews;
 import com.optionmgr.trade.service.CoverageService;
+import com.optionmgr.valuation.domain.RowValuation;
+import com.optionmgr.valuation.service.UnrealizedValuationService;
 import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -39,9 +41,12 @@ public class StockPositionController {
     }
 
     private static StockPositionResponse toResponse(StockPosition p, long covered, QuoteViews.QuoteBook book) {
+        QuoteViews.UnderlyingQuote quote = book.underlying(p.symbol());
+        RowValuation v = UnrealizedValuationService.stock(p, quote);
         return new StockPositionResponse(p.symbol(), p.shares(), covered, p.shares() - covered, p.totalCost(),
                 p.averageCost(), p.lots().size(),
-                p.lots().stream().map(StockPositionController::toLot).toList(), book.underlying(p.symbol()));
+                p.lots().stream().map(StockPositionController::toLot).toList(), quote,
+                v.marketValue(), v.unrealizedPnl(), v.percent(), v.status(), v.label());
     }
 
     private static StockLotResponse toLot(StockLot l) {

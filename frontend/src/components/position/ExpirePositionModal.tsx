@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { adhocClosureAlertQueryKeys } from '../../api/adhocClosureAlerts'
 import { ApiError } from '../../api/client'
 import { optionPositionQueryKeys } from '../../api/optionPositions'
+import { unrealizedSummaryQueryKeys } from '../../api/unrealizedSummary'
 import { createExpiration } from '../../api/optionTrades'
 import type { OptionPosition, OptionTrade } from '../../api/types'
 import { decimalSign, EMPTY_VALUE, formatLocalDateTime, formatMoney } from '../../utils/format'
@@ -69,6 +70,8 @@ export function ExpirePositionModal({ position, onDone }: ExpirePositionModalPro
       // The position may have changed (e.g. 持仓已变化): reload the list behind the dialog.
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: optionPositionQueryKeys.all }),
+        // FEAT-017: the account totals follow the positions.
+        queryClient.invalidateQueries({ queryKey: unrealizedSummaryQueryKeys.all }),
         queryClient.invalidateQueries({ queryKey: adhocClosureAlertQueryKeys.all }),
       ])
     },

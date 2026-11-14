@@ -5,6 +5,7 @@ import { useState, type HTMLAttributes } from 'react'
 import { adhocClosureAlertQueryKeys } from '../../api/adhocClosureAlerts'
 import { ApiError } from '../../api/client'
 import { optionPositionQueryKeys } from '../../api/optionPositions'
+import { unrealizedSummaryQueryKeys } from '../../api/unrealizedSummary'
 import {
   createExpirationBatch,
   expirationBatchFailures,
@@ -101,6 +102,8 @@ export function BatchExpireModal({ positions, onDone }: BatchExpireModalProps) {
       // dialog keeps its snapshot; reopening it shows the new values.
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: optionPositionQueryKeys.all }),
+        // FEAT-017: the account totals follow the positions.
+        queryClient.invalidateQueries({ queryKey: unrealizedSummaryQueryKeys.all }),
         queryClient.invalidateQueries({ queryKey: adhocClosureAlertQueryKeys.all }),
       ])
     },

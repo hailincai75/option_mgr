@@ -6,6 +6,7 @@ import type { OptionPosition, OptionPositionLot } from '../../api/types'
 import { decimalSign, EMPTY_VALUE, formatDateTimeNY, formatMoney } from '../../utils/format'
 import { BidAskCell, OptionMarkCell, QuoteTimeCell, UnderlyingPriceCell } from '../quote/QuoteCells'
 import { SIGNED_MONEY_COLORS, tradeActionLabel } from '../trade/tradeLabels'
+import { MarketValueCell, UnrealizedPnlCell } from '../unrealized/UnrealizedCells'
 import { ADHOC_CLOSURE_TAG_TEXT } from './adhocClosure'
 import { coverageTags } from './coverageLabels'
 import { ADJUST_EXPIRATION_BUTTON_TEXT, isExpirationAdjustable } from './expirationAdjustment'
@@ -267,6 +268,23 @@ function positionColumns(
       key: 'mark',
       align: 'right',
       render: (_value: unknown, position) => <OptionMarkCell position={position} />,
+    },
+    // FEAT-017: market value and unrealized P&L from the backend (labels when not computable).
+    {
+      title: '市值',
+      key: 'marketValue',
+      align: 'right',
+      render: (_value: unknown, position) => (
+        <MarketValueCell row={position} testIdPrefix="position" />
+      ),
+    },
+    {
+      title: '未实现盈亏',
+      key: 'unrealizedPnl',
+      align: 'right',
+      render: (_value: unknown, position) => (
+        <UnrealizedPnlCell row={position} testIdPrefix="position" />
+      ),
     },
     {
       title: '报价时间',

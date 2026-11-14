@@ -141,7 +141,12 @@ public final class StockTradeDtos {
                                         BigDecimal totalCost, BigDecimal averageCost,
                                         int lotCount, List<StockLotResponse> lots,
                                         /* FEAT-016: current price (one set for all accounts) */
-                                        com.optionmgr.quote.service.QuoteViews.UnderlyingQuote quote) {
+                                        com.optionmgr.quote.service.QuoteViews.UnderlyingQuote quote,
+                                        /* FEAT-017: valued with quote.price (null unless unrealizedStatus = OK) */
+                                        BigDecimal marketValue, BigDecimal unrealizedPnl,
+                                        BigDecimal unrealizedPnlPercent,
+                                        com.optionmgr.valuation.domain.ValuationStatus unrealizedStatus,
+                                        String unrealizedLabel) {
     }
 
     public record StockPositionsResponse(int positionCount, List<StockPositionResponse> positions) {

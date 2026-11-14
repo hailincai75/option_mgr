@@ -3,6 +3,7 @@ import { Alert, App, Button, Descriptions, Form, Input, Modal, Space, Typography
 import { useState } from 'react'
 import { adhocClosureAlertQueryKeys } from '../../api/adhocClosureAlerts'
 import { optionPositionQueryKeys } from '../../api/optionPositions'
+import { unrealizedSummaryQueryKeys } from '../../api/unrealizedSummary'
 import { createExpirationAdjustment } from '../../api/optionTrades'
 import type { OptionPosition } from '../../api/types'
 import { nowLocalDateTimeNY } from '../../utils/format'
@@ -79,6 +80,8 @@ export function AdjustExpirationModal({ position, onDone }: AdjustExpirationModa
       // The row may have changed meanwhile: reload the table behind the dialog.
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: optionPositionQueryKeys.all }),
+        // FEAT-017: the account totals follow the positions.
+        queryClient.invalidateQueries({ queryKey: unrealizedSummaryQueryKeys.all }),
         queryClient.invalidateQueries({ queryKey: adhocClosureAlertQueryKeys.all }),
       ])
     },

@@ -30,6 +30,7 @@ import { PositionTable } from '../components/position/PositionTable'
 import { QueryError } from '../components/QueryError'
 import { MarketDataBar } from '../components/quote/MarketDataBar'
 import { StockPositionsCard } from '../components/stock/StockPositionsCard'
+import { UnrealizedSummaryBar } from '../components/unrealized/UnrealizedSummaryBar'
 import type { AdhocClosureAlert, OptionPosition } from '../api/types'
 import { formatMoney } from '../utils/format'
 
@@ -131,6 +132,8 @@ export function PositionsPage() {
             </Typography.Text>
           )}
         </Space>
+        {/* FEAT-017: account totals (whole account, not filtered by 到期, Q158). */}
+        <UnrealizedSummaryBar />
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           开仓净额：空头为实收、多头为实付，均已含手续费；每张平均净额四舍五入到分，仅供参考。点击合约查看该合约的交易。
         </Typography.Text>

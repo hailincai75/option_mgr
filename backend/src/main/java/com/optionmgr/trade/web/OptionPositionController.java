@@ -16,6 +16,9 @@ import com.optionmgr.trade.domain.PositionDirection;
 import com.optionmgr.trade.domain.PositionLot;
 import com.optionmgr.trade.domain.TradeAction;
 import com.optionmgr.trade.service.OptionPositionService;
+import com.optionmgr.valuation.domain.RowValuation;
+import com.optionmgr.valuation.domain.ValuationStatus;
+import com.optionmgr.valuation.service.UnrealizedValuationService;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -82,7 +85,10 @@ public class OptionPositionController {
                                    LocalDate defaultNewExpirationDate, LocalDate newExpirationDateMin,
                                    LocalDate newExpirationDateMax,
                                    /* FEAT-016: quotes (one set for all accounts) */
-                                   QuoteViews.UnderlyingQuote underlyingQuote, QuoteViews.OptionQuote optionQuote) {
+                                   QuoteViews.UnderlyingQuote underlyingQuote, QuoteViews.OptionQuote optionQuote,
+                                   /* FEAT-017: valued with optionQuote.mark (null unless unrealizedStatus = OK) */
+                                   BigDecimal marketValue, BigDecimal unrealizedPnl, BigDecimal unrealizedPnlPercent,
+                                   ValuationStatus unrealizedStatus, String unrealizedLabel) {
     }
 
     /** FEAT-013: one selectable assignment size (earliest whole lots) and its shares. */
@@ -131,6 +137,8 @@ public class OptionPositionController {
         LocalDate latest = assignable ? AssignmentTerms.latestDate(c.expirationDate(), now) : null;
         String adhocClosureName = s.adhocClosureEventName(p);
         OptionPositionService.Adjustability adj = s.adjustability(p);
+        QuoteViews.OptionQuote optionQuote = book.option(c);
+        RowValuation v = UnrealizedValuationService.option(p, today, optionQuote);
         return new PositionResponse(c.symbol(), c.expirationDate(), ContractKey.strikeText(c.strike()),
                 c.optionType(), c.label(), p.direction(), p.contracts(), p.multiplier(), p.openingNetTotal(),
                 p.averageNetPerContract(), p.frozenCash(), dte, s.remainingTradingDays(p), p.expirationStatus(today), Math.max(0, -dte),
@@ -152,7 +160,8 @@ public class OptionPositionController {
                 exercisable && c.optionType() == OptionType.CALL ? s.availableCash() : null,
                 adhocClosureName != null, adhocClosureName, adj != null, adj == null ? 0 : adj.recordCount(),
                 adj == null ? null : adj.defaultDate(), adj == null ? null : adj.minDate(),
-                adj == null ? null : adj.maxDate(), book.underlying(c.symbol()), book.option(c));
+                adj == null ? null : adj.maxDate(), book.underlying(c.symbol()), optionQuote,
+                v.marketValue(), v.unrealizedPnl(), v.percent(), v.status(), v.label());
     }
 
     private static LotResponse toResponse(PositionLot l, OptionPositionService.RowCoverage rc) {

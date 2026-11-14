@@ -1,6 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { marketDataQueryKeys } from '../../api/marketData'
 import { optionPositionQueryKeys } from '../../api/optionPositions'
+import { unrealizedSummaryQueryKeys } from '../../api/unrealizedSummary'
 import { stockPositionQueryKeys } from '../../api/stockTrades'
 
 /**
@@ -10,6 +11,8 @@ import { stockPositionQueryKeys } from '../../api/stockTrades'
 export async function refreshQuotes(queryClient: QueryClient): Promise<void> {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: optionPositionQueryKeys.all }),
+    // FEAT-017: the account totals follow the positions.
+    queryClient.invalidateQueries({ queryKey: unrealizedSummaryQueryKeys.all }),
     queryClient.invalidateQueries({ queryKey: stockPositionQueryKeys.all }),
     queryClient.invalidateQueries({ queryKey: marketDataQueryKeys.all }),
   ])
