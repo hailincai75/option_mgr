@@ -134,6 +134,16 @@ abstract class OptionTradeSystemTestBase extends CashSystemTestBase {
         return t;
     }
 
+    /**
+     * FEAT-009 (Q126): a new opening can no longer expire on a weekend / NYSE holiday. Tests that need such a stored
+     * position ("entered before FEAT-009", not re-checked) open it on a trading day and then move the expiration via
+     * JDBC; nothing else stored depends on the expiration date.
+     */
+    void moveExpiration(long tradeId, String expirationDate) {
+        assertThat(jdbc.update("UPDATE option_trade SET expiration_date = CAST(? AS DATE) WHERE id = ?",
+                expirationDate, tradeId)).isEqualTo(1);
+    }
+
     String coverageStatus(long tradeId) {
         return jdbc.queryForObject("SELECT coverage_status FROM option_trade WHERE id = ?", String.class, tradeId);
     }

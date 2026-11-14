@@ -2,7 +2,7 @@ import type { Locator, Page } from '@playwright/test'
 import { apiLedger, apiTransfer, CashPage, expect, MINUS, nyLocal, test } from '../support/fixtures'
 import { apiTrade, TradeForm } from '../support/trade'
 import { BACKEND_URL } from '../support/backend'
-import { stablePhase } from '../support/ny'
+import { fixNow } from '../support/clock'
 
 /**
  * FEAT-004 平仓 E2E: both entries (positions-page 平仓 button → modal, and the 录入交易 page with BTC / STC).
@@ -362,21 +362,23 @@ test.describe('FEAT-004 平仓', () => {
   })
 
   test('AC9 今天到期的多头：美东 16:00 前显示平仓按钮，方向预填 STC（卖出平仓）；16:00 起（FEAT-012）没有平仓按钮', async ({ page }) => {
-    const d = today()
+    // FEAT-009 (Q126): the 0DTE expiration must be a trading day → fixed today Mon 2026-11-23 (backend + browser)
+    const d = '2026-11-23'
+    await fixNow(page, '2026-11-23T15:00:00Z') // 10:00 NY
     await apiTransfer('DEPOSIT', '1000.00', '2026-10-26T10:00')
     await apiTrade({ action: 'BTO', symbol: 'SPY', expiration: d, strike: '600', type: 'CALL', netAmount: '50.00', time: '2026-11-02T10:00' })
     const ui = new CloseUi(page)
-    const phase = await stablePhase()
     await ui.openPositions()
     await expect(ui.row(`SPY ${d} 600 C`).getByTestId('position-cell-dte-today')).toBeVisible()
-    if (phase !== 'closable') {
-      // FEAT-012 (Q10 / Q83): from 16:00 NY on the expiration date the position can no longer be closed
-      await expect(ui.row(`SPY ${d} 600 C`).getByTestId('position-close')).toHaveCount(0)
-      return
-    }
     await ui.openModal(`SPY ${d} 600 C`)
     await expect(ui.m('close-trade-action')).toHaveText('STC（卖出平仓）')
     await expect(ui.m('close-trade-contracts-1')).toBeChecked()
+
+    // FEAT-012 (Q10 / Q83): from 16:00 NY on the expiration date the position can no longer be closed
+    await fixNow(page, '2026-11-23T21:30:00Z') // 16:30 NY
+    await ui.openPositions()
+    await expect(ui.row(`SPY ${d} 600 C`).getByTestId('position-cell-dte-today')).toBeVisible()
+    await expect(ui.row(`SPY ${d} 600 C`).getByTestId('position-close')).toHaveCount(0)
   })
 
   test('AC10 补录平仓：使之后平仓无持仓 → 拒绝并指出时间；BTC 1 张成功，之后那笔改平 L2（+260.00）', async ({ page, trade }) => {

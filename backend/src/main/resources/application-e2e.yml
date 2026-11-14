@@ -5,3 +5,10 @@
 spring:
   datasource:
     url: jdbc:h2:mem:e2e;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1
+optionmgr:
+  finnhub:
+    # FEAT-009: never call the real Finnhub in E2E runs (POST /api/test-support/trading-calendar/fetch simulates it)
+    fetch-enabled: false
+    read-system-env: false
+    env-files: ["build/no-env-in-e2e/.env"]
+    base-url: http://127.0.0.1:9

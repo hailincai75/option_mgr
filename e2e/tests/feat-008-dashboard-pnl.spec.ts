@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test'
 import { apiTransfer, CashPage, expect, MINUS, nyLocal, test } from '../support/fixtures'
 import { apiTrade } from '../support/trade'
 import { BACKEND_URL } from '../support/backend'
+import { fixNow } from '../support/clock'
 
 /**
  * FEAT-008 首页概览 + 盈亏汇总 E2E (real clock). "Today" / "this month" come from the run day's NY date;
@@ -69,8 +70,10 @@ async function expectSummary(page: Page, count: string, total: string) {
 
 test.describe('FEAT-008 首页概览与盈亏汇总', () => {
   test('AC1 首页：截至今天、现金、总计 +703.05（6 笔）、本月、持仓 3 个 / 冻结 44,000 / 7 天内 1 / 已过期 1（红）、底部后端状态、各链接', async ({ page }) => {
+    // FEAT-009 (Q126): expirations d+1 / d+8 must be trading days → fixed today Mon 2026-11-23 10:00 NY
+    await fixNow(page, '2026-11-23T15:00:00Z')
     await scenarioQ()
-    const d = today()
+    const d = '2026-11-23'
     await apiTrade({ action: 'STO', symbol: 'TSLA', expiration: '2026-11-06', strike: '250', type: 'PUT', netAmount: '300.00', time: '2026-11-02T09:00' })
     await apiTrade({ action: 'BTO', symbol: 'SPY', expiration: addDays(d, 1), strike: '600', type: 'CALL', netAmount: '80.00', time: '2026-11-09T10:00' })
     await apiTrade({ action: 'STO', symbol: 'AAPL', expiration: addDays(d, 8), strike: '190', type: 'PUT', netAmount: '120.00', time: '2026-11-09T10:00' })
@@ -79,7 +82,7 @@ test.describe('FEAT-008 首页概览与盈亏汇总', () => {
     await new CashPage(page).expectSummary('101,043.05', '44,000.00', '57,043.05')
     await expect(page.getByTestId('dashboard-realized-total')).toHaveText('+703.05')
     await expect(page.getByTestId('dashboard-realized-count')).toHaveText('6')
-    const m = monthExpect('+633.05', '4')
+    const m = { total: '+633.05', count: '4' } // fixed today is in 2026-11
     await expect(page.getByTestId('dashboard-month')).toHaveText(d.slice(0, 7))
     await expect(page.getByTestId('dashboard-month-total')).toHaveText(m.total)
     await expect(page.getByTestId('dashboard-month-count')).toHaveText(m.count)

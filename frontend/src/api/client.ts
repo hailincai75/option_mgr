@@ -73,7 +73,13 @@ async function readJson(response: Response): Promise<unknown> {
 export const ACCOUNT_HEADER = 'X-Account-Id'
 
 /** Endpoints that are not account-scoped (the header is not sent to them). */
-const ACCOUNT_FREE_PREFIXES = ['/api/health', '/api/accounts', '/api/test-support'] as const
+const ACCOUNT_FREE_PREFIXES = [
+  '/api/health',
+  '/api/accounts',
+  '/api/test-support',
+  // FEAT-009: one calendar for the whole system (Q53); usable before an account is resolved.
+  '/api/trading-calendar',
+] as const
 
 let currentAccountId: number | null = null
 

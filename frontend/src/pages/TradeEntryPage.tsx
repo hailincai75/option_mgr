@@ -1,4 +1,5 @@
 import { Space } from 'antd'
+import { TradingCalendarStaleAlert } from '../components/calendar/TradingCalendarStaleAlert'
 import { CashSummaryCard } from '../components/cash/CashSummaryCard'
 import { TradeEntryForm } from '../components/trade/TradeEntryForm'
 
@@ -11,6 +12,8 @@ export function TradeEntryPage() {
       style={{ width: '100%', maxWidth: 720 }}
       data-testid="open-trade-page"
     >
+      {/* FEAT-009 rule 6: shown only while the holiday data is stale. */}
+      <TradingCalendarStaleAlert />
       <CashSummaryCard size="small" />
       <TradeEntryForm />
     </Space>

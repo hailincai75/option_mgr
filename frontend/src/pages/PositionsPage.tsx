@@ -22,6 +22,7 @@ import {
   withExpirySearch,
   type ExpiryFilter,
 } from '../components/position/expiryFilter'
+import { TradingCalendarStaleAlert } from '../components/calendar/TradingCalendarStaleAlert'
 import { PositionTable } from '../components/position/PositionTable'
 import { QueryError } from '../components/QueryError'
 import { StockPositionsCard } from '../components/stock/StockPositionsCard'
@@ -134,6 +135,8 @@ export function PositionsPage() {
 
   return (
     <Space orientation="vertical" size={16} style={{ width: '100%' }}>
+      {/* FEAT-009 rule 6: shown only while the holiday data is stale. */}
+      <TradingCalendarStaleAlert />
       <Card title="期权持仓" data-testid="positions-page">
         <div
           style={{ marginBottom: 12 }}

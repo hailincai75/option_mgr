@@ -75,6 +75,8 @@ public enum ErrorCode {
     STOCK_TRADE_FROM_EXERCISE(HttpStatus.UNPROCESSABLE_ENTITY),
     /** FEAT-039: not enough uncovered shares for a short call, a sale of covered shares, or a change leaving short calls uncovered. */
     COVERAGE_INSUFFICIENT(HttpStatus.UNPROCESSABLE_ENTITY),
+    /** FEAT-009 Q126: a new opening trade's expiration date is a weekend or a full-day market closure. */
+    EXPIRATION_NOT_TRADING_DAY(HttpStatus.UNPROCESSABLE_ENTITY),
     /** FEAT-033: an account-scoped endpoint was called without the X-Account-Id header. */
     ACCOUNT_REQUIRED(HttpStatus.BAD_REQUEST),
     /** FEAT-033: the X-Account-Id / path account does not exist. */

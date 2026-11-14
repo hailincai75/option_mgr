@@ -401,6 +401,11 @@ export interface OptionPosition {
   expirationStatus: ExpirationStatus
   /** N in "已过期 N 天"; 0 when not expired. */
   daysPastExpiration: number
+  /**
+   * FEAT-009 (Q125): trading days in (asOfDate, expirationDate]; 0 on the expiry day, null once
+   * expired (shown as "—"). Optional: older fixtures.
+   */
+  remainingTradingDays?: number | null
   lotCount: number
   lots: OptionPositionLot[]
   /**
@@ -1124,3 +1129,49 @@ export interface StockPositionsResponse {
 /** FEAT-011 error codes (HTTP 422; `message` is user-facing Chinese). */
 export const SHARES_INSUFFICIENT = 'SHARES_INSUFFICIENT'
 export const STOCK_TRADE_IDENTITY_NOT_EDITABLE = 'STOCK_TRADE_IDENTITY_NOT_EDITABLE'
+
+/** FEAT-009: `WEEKEND` (Sat / Sun) or `HOLIDAY` (weekday full-day market closure). */
+export type NonTradingDayType = 'WEEKEND' | 'HOLIDAY'
+
+/** FEAT-009: where a HOLIDAY comes from; null for WEEKEND. */
+export type NonTradingDaySource = 'FINNHUB' | 'RULES'
+
+export interface NonTradingDay {
+  date: LocalDateString
+  type: NonTradingDayType | (string & {})
+  /** Display only (Finnhub eventName / Jollyday name / 星期六 / 星期日); never branched on. */
+  name: string
+  source: NonTradingDaySource | (string & {}) | null
+}
+
+/** Contract: `GET /api/trading-calendar/non-trading-days?from=&to=` → 200. */
+export interface NonTradingDaysResponse {
+  from: LocalDateString
+  to: LocalDateString
+  /** Ascending by date, at most one per date; [] when none. */
+  days: NonTradingDay[]
+}
+
+export type TradingCalendarFetchResult =
+  | 'SUCCESS'
+  | 'NO_KEY'
+  | 'NETWORK_ERROR'
+  | 'HTTP_ERROR'
+  | 'INVALID_RESPONSE'
+
+/** Contract: `GET /api/trading-calendar/status` → 200. */
+export interface TradingCalendarStatus {
+  /** The page shows the warning only when true. */
+  stale: boolean
+  /** Complete user-facing text when stale (shown verbatim); null otherwise. */
+  warning: string | null
+  lastAttemptAt: InstantString | null
+  lastAttemptResult: TradingCalendarFetchResult | (string & {}) | null
+  lastFailureDetail: string | null
+  lastSuccessAt: InstantString | null
+  lastSuccessAtLocal: LocalDateTimeString | null
+  coveredYears: number[]
+}
+
+/** FEAT-009 error code (HTTP 422 on BTO / STO; `message` is user-facing Chinese, shown verbatim). */
+export const EXPIRATION_NOT_TRADING_DAY = 'EXPIRATION_NOT_TRADING_DAY'

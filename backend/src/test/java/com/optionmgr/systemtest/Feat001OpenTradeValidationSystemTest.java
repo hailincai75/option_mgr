@@ -143,12 +143,15 @@ class Feat001OpenTradeValidationSystemTest extends OptionTradeSystemTestBase {
     }
 
     @Test
-    @DisplayName("补录已过期合约的开仓（2026-10-01 开仓、到期 2026-10-17）允许；周末到期日不检查")
+    @DisplayName("补录已过期合约的开仓（2026-10-01 开仓、到期 2026-10-16）允许；周末到期日被拒（FEAT-009 Q126，原为不检查）")
     void expiredContractAndWeekendExpiry() {
         deposit("100000.00", "2026-09-01T10:00");
-        okTrade(trade("BTO", 1, "AAPL", "2026-10-17", "210", "CALL", "1.00", "2026-10-01T10:00", 100));
-        okTrade(trade("BTO", 1, "AAPL", "2026-12-19", "210", "CALL", "1.00", "2026-11-07T10:00", 100)); // Sat/Sat
-        assertSummary("99998.00", "0.00", "99998.00");
+        okTrade(trade("BTO", 1, "AAPL", "2026-10-16", "210", "CALL", "1.00", "2026-10-01T10:00", 100));
+        assertThat(rejectedTrade(trade("BTO", 1, "AAPL", "2026-10-17", "210", "CALL", "1.00", "2026-10-01T10:00", 100),
+                "EXPIRATION_NOT_TRADING_DAY")).isEqualTo("到期日 2026-10-17 不是美股交易日（星期六）");
+        assertThat(rejectedTrade(trade("BTO", 1, "AAPL", "2026-12-19", "210", "CALL", "1.00", "2026-11-07T10:00", 100),
+                "EXPIRATION_NOT_TRADING_DAY")).isEqualTo("到期日 2026-12-19 不是美股交易日（星期六）");
+        assertSummary("99999.00", "0.00", "99999.00");
     }
 
     @Test

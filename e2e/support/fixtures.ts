@@ -1,5 +1,6 @@
 import { test as base, expect, type Locator, type Page } from '@playwright/test'
 import { BACKEND_URL, backendIsUp, e2eBackend, setApiAccount, startBackend, type E2EBackend } from './backend'
+import { releaseBackendClock } from './clock'
 import { TradeForm } from './trade'
 
 export { expect }
@@ -27,6 +28,8 @@ export const test = base.extend<Fixtures>({
       const s = (await (await fetch(`${BACKEND_URL}/api/cash/summary`)).json()) as { totalCash?: string }
       if (s.totalCash !== '0.00') throw new Error(`database not empty after reset: ${JSON.stringify(s)}`)
       await use(e2eBackend)
+      // FEAT-009: a test may have fixed the backend clock; give the next test (and a reused backend) the real one.
+      await releaseBackendClock().catch(() => undefined)
     },
     { auto: true, timeout: 30_000 },
   ],

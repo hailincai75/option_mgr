@@ -29,6 +29,10 @@ dependencies {
     implementation("org.flywaydb:flyway-core")
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.17")
 
+    // FEAT-009: NYSE holiday rules for years Finnhub does not cover (JAXB flavour: no Jackson 3 on the classpath)
+    implementation("de.focus-shift:jollyday-core:2.22.1")
+    runtimeOnly("de.focus-shift:jollyday-jaxb:2.22.1")
+
     runtimeOnly("com.h2database:h2")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")

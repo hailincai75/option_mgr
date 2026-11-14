@@ -36,7 +36,7 @@ com.optionmgr
 - 测试：`build.gradle.kts` 为所有测试设置 `spring.profiles.active=test`，`application-test.yml` 换成内存库 `jdbc:h2:mem:optionmgr-test`，不碰开发数据。QA 的 `systemtest/` 同样适用
 - E2E：`application-e2e.yml`（profile `e2e`）内存库 `jdbc:h2:mem:e2e` + 重置端点，见下"E2E 测试支持"
 - JPA `ddl-auto: validate`，`open-in-view: false`。**schema 只由 Flyway 管理**：`src/main/resources/db/migration/V<n>__<desc>.sql`，只新增，不修改已有迁移。`V1__init.sql` 是空基线
-- 时间：`Clock` bean（UTC）是"现在"的唯一来源，测试可替换；JSON 时区 UTC；Hibernate JDBC 时区 UTC
+- 时间：`Clock` bean（UTC）是"现在"的唯一来源，测试可替换（`e2e` profile 下为可设置的 `SettableClock`，FEAT-009）；JSON 时区 UTC；Hibernate JDBC 时区 UTC
 - JSON：`BigDecimal` 输出为普通写法字符串（`JacksonConfig`）；`Instant`/`LocalDate` 输出 ISO-8601 字符串
 - OpenAPI：`/v3/api-docs`，Swagger UI：`/swagger-ui.html`，只收录 `/api/**`
 
@@ -158,6 +158,12 @@ com.optionmgr
 - e2e 重置：快照包含 `account`（只有 1 号）和 `cash_account`（只有 1 号），所以重置后只剩"默认账户"、下一个账户 id 为 2；重置时锁全部账户行（`lockAllAccounts`）
 - 测试：`account/MigrationFromM1Test` 用 Flyway `target=4` 建 M1 结构的文件库、写入场景 M（通过 API 在临时内存库生成后按 id 原样拷贝），再启动应用执行备份 + V5（+ V6），逐个接口比较迁移前后的 JSON 完全相同（含 V6 回填的 `hasAuditLog`）；另有迁移失败（测试专用 `db/failing-migration/V9__simulated_failure.sql`，版本号始终比最新的真实迁移大 1，新增真实迁移时要一起改名，并更新这两个测试里写死的备份名 `before-V<最新真实版本>`）、备份失败两个场景。`account/MigrationV6HasAuditLogTest` 用 `target=5` 建库、直接写入交易/入金和各种审计记录，验证 V6 回填（同类型、同 id、同账户才算）与列表上的 `hasAuditLog`
 
+### 美股交易日历（FEAT-009）
+- **包** `calendar/`：`domain/TradingCalendar`（纯 Java 快照：周一至五且非全天休市 = 交易日；Finnhub 覆盖年份只看 Finnhub，`tradingHour` 为空 = 全天休市，非空 = 提前收盘仍是交易日；其余年份用 `HolidayRules`；`nonTradingDays`、`remainingTradingDays`（Q125 (今天, 到期日]，过期 `null`））、`FetchStatus`（`stale` / `warning` 文案）、`TradingDayMessages`；`service/JollydayHolidayRules`（`de.focus-shift:jollyday-core` + `jollyday-jaxb` 2.22.1，NYSE 日历，取 observed 日期，按年缓存）、`FinnhubClient`（`java.net.http`，key 只放 `X-Finnhub-Token`）、`FinnhubHolidayParser`、`FinnhubKeyResolver`、`HolidayFetchService`（网络调用在事务外；`process(FetchAttempt)` 在一个事务里锁状态行、Q127 整年替换、记状态）、`HolidayFetchScheduler`（启动后后台拉一次 + cron `0 0 8 * * *` 美东；`optionmgr.finnhub.fetch-enabled=false` 时整个 bean 不存在）、`TradingCalendarService`（从库建快照、`requireTradingDayForOpen`）；`web/TradingCalendarController`（不取 `AccountRef`，所以不要求账户头）
+- **存储（`V13__trading_calendar.sql`）**：`market_holiday`（只存 Finnhub 数据，主键日期）、`market_holiday_fetch_status`（单行 id=1）。规则年份不落库
+- **接入**：`OptionTradeService.open` 在字段校验之后、加锁与其它 422 之前调用 `requireTradingDayForOpen`（`legacy` 测试支持路径不查）；`OptionPositionService.PositionSummary` 带日历快照，`OptionPositionController` 输出 `remainingTradingDays`
+- **key 与测试**：key 优先级 `optionmgr.finnhub.api-key` > 环境变量 `FINNHUB_API_KEY`（`read-system-env`）> `env-files`（默认 `.env`、`../.env`）。`test` / `e2e` profile：`fetch-enabled=false`、`read-system-env=false`、`env-files` 指向不存在的文件、`base-url` 不可达，所以测试不会读真实 key 或访问 Finnhub。后端测试用 `calendar/FakeFinnhub`（本地 `HttpServer`）+ `base-url` / `api-key` / `env-files` 属性；e2e 用 `POST /api/test-support/trading-calendar/fetch` 与 `PUT|DELETE /api/test-support/clock`（`config/SettableClock`，e2e profile 下的 `Clock` bean；`reset` 时恢复）
+
 ### E2E 测试支持（`e2e` profile）
 - 用途：Playwright 套件只启动一个后端，每个测试前调用 `POST /api/test-support/reset` 得到干净的库，代替每个测试重启后端
 - 启用：`SPRING_PROFILES_ACTIVE=e2e` 或 `--spring.profiles.active=e2e`（例如 `java -jar build/libs/<boot jar> --spring.profiles.active=e2e`，或 `gradlew.bat bootRun --args="--spring.profiles.active=e2e"`）。不启用时 `testsupport` 的 bean（`TestSupportController`、`DatabaseResetService`，都标 `@Profile("e2e")`）不存在，路径返回 404
@@ -200,12 +206,13 @@ frontend/
     ├── api/
     │   ├── types.ts      按 API 契约手写的请求/响应类型（含统一错误格式 ApiErrorResponse）
     │   ├── client.ts     fetch 封装 apiRequest<T>() 与 ApiError；`setApiAccountId()` 后给账户范围内的请求加 `X-Account-Id`（FEAT-033）
-    │   └── <feature>.ts  每个领域一个文件：请求函数 + queryKey（health.ts；cash.ts: getCashSummary/getCashLedger/createCashTransfer、cashQueryKeys；optionTrades.ts: createOptionTrade/createCloseTrade/createExpiration（FEAT-012）/createAssignment（FEAT-013）/createExercise（FEAT-014）/getOptionTrade/listOptionTrades/updateOptionTrade/deleteOptionTrade；cash.ts 另有 updateCashTransfer/deleteCashTransfer；auditLog.ts: getAuditLog、auditLogQueryKeys；closedTrades.ts: listClosedTrades、closedTradeListQuery（FEAT-040 加 `type`）、closedTradeQueryKeys；dashboard.ts: getDashboard、getPnlSummary 及其 queryKey；accounts.ts: listAccounts/createAccount/updateAccount、accountQueryKeys、optionTradeQueryKeys；optionPositions.ts: getOptionPositions、optionPositionQueryKeys；stockTrades.ts（FEAT-011）: createStockTrade/getStockTrade/listStockTrades/updateStockTrade/deleteStockTrade/getStockPositions、stockTradeQueryKeys、stockPositionQueryKeys）
+    │   └── <feature>.ts  每个领域一个文件：请求函数 + queryKey（health.ts；cash.ts: getCashSummary/getCashLedger/createCashTransfer、cashQueryKeys；optionTrades.ts: createOptionTrade/createCloseTrade/createExpiration（FEAT-012）/createAssignment（FEAT-013）/createExercise（FEAT-014）/getOptionTrade/listOptionTrades/updateOptionTrade/deleteOptionTrade；cash.ts 另有 updateCashTransfer/deleteCashTransfer；auditLog.ts: getAuditLog、auditLogQueryKeys；closedTrades.ts: listClosedTrades、closedTradeListQuery（FEAT-040 加 `type`）、closedTradeQueryKeys；dashboard.ts: getDashboard、getPnlSummary 及其 queryKey；accounts.ts: listAccounts/createAccount/updateAccount、accountQueryKeys、optionTradeQueryKeys；optionPositions.ts: getOptionPositions、optionPositionQueryKeys；tradingCalendar.ts（FEAT-009，不按账户）: getNonTradingDays/getTradingCalendarStatus、tradingCalendarQueryKeys；stockTrades.ts（FEAT-011）: createStockTrade/getStockTrade/listStockTrades/updateStockTrade/deleteStockTrade/getStockPositions、stockTradeQueryKeys、stockPositionQueryKeys）
     ├── pages/            路由级页面组件（HomePage、CashPage、TradeEntryPage、TradeListPage、PositionsPage、StockTradesPage、StockTradeEntryPage、ClosedTradesPage、PnlSummaryPage、AuditLogPage、AccountsPage、NotFoundPage）
     ├── components/       跨页面复用组件：QueryError（查询错误 + 重试）、DeleteConfirmModal（删除确认，FEAT-005）
+    │   ├── calendar/     FEAT-009 交易日历：tradingCalendar（月份范围、`useNonTradingDays` 按月取非交易日、`useTradingCalendarStatus`、文案）、TradingCalendarStaleAlert（"休市日数据未更新"提示，持仓页与录入页顶部）
     │   ├── account/      AccountSwitcher（顶部账户切换器，FEAT-033）
     │   ├── cash/         CashSummaryCard（可复用现金汇总）、CashTransferForm + cashTransferValidation、CashLedgerTable
-    │   └── trade/        TradeEntryForm（录入交易，开仓 + 平仓）、EditTradeModal（修改交易，FEAT-005）+ openTradeValidation、TradeConfirmation（开/平仓确认，含被平批次与已实现盈亏；导出 CoveredLotTable，作废结果共用）、tradeFormSupport（字段错误映射、保存后刷新、净额标签）；TradeFilterForm、TradeTable、tradeListFilters（FEAT-002 列表筛选与 URL 状态）；tradeLabels（方向文案、`isExpiryAction`、正负颜色，共用）
+    │   └── trade/        TradeEntryForm（录入交易，开仓 + 平仓）、ExpirationDatePicker（FEAT-009 到期日选择器：antd DatePicker，禁用后端返回的非交易日，表单值仍为 `YYYY-MM-DD` 字符串）、EditTradeModal（修改交易，FEAT-005）+ openTradeValidation、TradeConfirmation（开/平仓确认，含被平批次与已实现盈亏；导出 CoveredLotTable，作废结果共用）、tradeFormSupport（字段错误映射、保存后刷新、净额标签）；TradeFilterForm、TradeTable、tradeListFilters（FEAT-002 列表筛选与 URL 状态）；tradeLabels（方向文案、`isExpiryAction`、正负颜色，共用）
     │   ├── audit/        AuditTable（可展开修改前后）、auditSearch（审计页 URL 状态与校验）、auditLinks（各行"历史"链接）（FEAT-005）
     │   ├── pnl/          pnlSummarySearch（盈亏汇总页 URL 状态、月份范围交集、到已平仓页的链接）（FEAT-008）
     │   ├── closed/       ClosedTradeTable（已平仓记录，可展开被平批次；FEAT-040 股票卖出行可展开被卖出批次，行 key = 类型 + id）（FEAT-006）、closedListFilters（FEAT-040：已平仓页 URL 状态 = 交易列表筛选 + `type`，校验、API 参数）
@@ -252,7 +259,8 @@ frontend/
 - 用户录入的时间：原生 `datetime-local` 输入美东本地时间，原样以 `YYYY-MM-DDTHH:mm` 发给后端（`occurredAtLocal` 之类字段），前端不做时区换算；默认值用 `nowLocalDateTimeNY()`
 - 交互元素和关键显示值加 `data-testid`，供 E2E 使用。已有：`nav-home`、`nav-cash`、`health-card`、`health-loading`、`health-status`、`health-version`、`health-time`、`health-error`、`health-retry`、`not-found`
 - FEAT-007 资金页的 testid 列表见 `docs/requirements/FEAT-007-cash-account.md` 的 Frontend Implementation Notes；FEAT-001 录入开仓页见 `docs/requirements/FEAT-001-open-option-trade.md`；FEAT-002 交易列表见 `docs/requirements/FEAT-002-trade-list.md`；FEAT-003 持仓见 `docs/requirements/FEAT-003-option-positions.md`
-- 用户录入的日期（如到期日）用原生 `type="date"`，原样以 `YYYY-MM-DD` 发送
+- 用户录入的日期用原生 `type="date"`，原样以 `YYYY-MM-DD` 发送；例外：录入交易页的到期日用 `ExpirationDatePicker`（FEAT-009，开仓时禁用后端 `non-trading-days` 返回的日期，输入非交易日提示"所选日期不是美股交易日"；平仓不限制），值同样是 `YYYY-MM-DD` 字符串
+- 交易日历（FEAT-009）：前端不判断周末 / 假日，只用后端 `non-trading-days`；`/api/trading-calendar/**` 不带 `X-Account-Id`（`client.ts` 免账户前缀），用普通 `useQuery`；"休市日数据未更新"只按 `status.stale` 显示后端 `warning` 原文；持仓"剩余交易日"取 `remainingTradingDays`，`null` 显示 `—`
 - 表单只做格式校验，文案尽量与后端 `details[].message` 一致；业务校验（担保、现金、持仓方向、multiplier）只在后端，422 的 `message` 原文显示
 - 交易方向显示 `代码（中文）`：BTO 买入开仓、STO 卖出开仓、BTC 买入平仓、STC 卖出平仓；FEAT-012 的 `EXP` 只显示"到期作废"（交易列表、已平仓用紫色标签）；FEAT-013 的 `ASG` 只显示"被指派"（洋红标签，`SPECIAL_ACTION_COLORS`）；未知值原样显示
 - 平仓：张数只能从后端 `allowedCloseContracts` 中选，按钮按 `closable` 显示，方向取 `closeAction`；已实现盈亏、被平批次、冻结释放全部取后端值

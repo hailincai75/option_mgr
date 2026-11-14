@@ -87,6 +87,20 @@ function DteCell({ position }: { position: OptionPosition }) {
   return <span data-testid="position-cell-dte">{position.dte}</span>
 }
 
+/** FEAT-009 requirement: hover text of the 剩余交易日 column header. */
+const REMAINING_TRADING_DAYS_HINT =
+  '今天之后到到期日（含）的美股交易日数，不含周末和休市日'
+
+/** FEAT-009 (Q125): the backend's count; null (expired) or missing → "—". No client-side math. */
+function RemainingTradingDaysCell({ position }: { position: OptionPosition }) {
+  const value = position.remainingTradingDays
+  return (
+    <span data-testid="position-cell-remaining-trading-days">
+      {value == null ? EMPTY_VALUE : value}
+    </span>
+  )
+}
+
 const EXPIRY_PENDING_HINT = '16:00 已停止交易；17:30 前仍可能被指派，17:30（美东）起可作废'
 
 /**
@@ -264,6 +278,16 @@ function positionColumns(
       key: 'dte',
       align: 'right',
       render: (_value: unknown, position) => <DteCell position={position} />,
+    },
+    {
+      title: (
+        <Tooltip title={REMAINING_TRADING_DAYS_HINT}>
+          <span>剩余交易日</span>
+        </Tooltip>
+      ),
+      key: 'remainingTradingDays',
+      align: 'right',
+      render: (_value: unknown, position) => <RemainingTradingDaysCell position={position} />,
     },
     {
       title: '批次数',

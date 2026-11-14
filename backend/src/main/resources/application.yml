@@ -39,3 +39,11 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
   paths-to-match: /api/**
+
+optionmgr:
+  finnhub:
+    # FEAT-009: market holidays. The key is FINNHUB_API_KEY from the environment or the project-root .env
+    # (never put the key here). Fetched at startup and daily at 08:00 New York.
+    base-url: https://finnhub.io
+    env-files: [".env", "../.env"]
+    fetch-enabled: true

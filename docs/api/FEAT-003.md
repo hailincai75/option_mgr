@@ -124,6 +124,7 @@
 | `dte` | number | 到期日 − `asOfDate` 的日历天数（含周末、假日）。到期日当天 `0`，已过期为负数 |
 | `expirationStatus` | string | `ACTIVE`（`dte` > 0）/ `EXPIRES_TODAY`（`dte` = 0，"今天到期"）/ `EXPIRED`（`dte` < 0，"已过期 N 天"） |
 | `daysPastExpiration` | number | 已过期天数 N（= −`dte`）；未过期为 `0` |
+| `remainingTradingDays` | number \| null | **FEAT-009 新增**：(`asOfDate`, `expirationDate`] 内的美股交易日数；到期日当天 `0`，已过期 `null`。定义见 [FEAT-009.md](FEAT-009.md) |
 | `lotCount` | number | 批次数（= `lots` 长度） |
 | `lots` | array | 剩余张数 > 0 的批次，FIFO 顺序（最早的在前） |
 

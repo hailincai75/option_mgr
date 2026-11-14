@@ -9,7 +9,7 @@
 - **时间点**（交易时间等 `Instant`）：ISO-8601 UTC，带 `Z` 后缀，如 `"2026-11-10T14:30:00Z"`；小数秒位数不固定（0~9 位），解析时不要假设位数
 - 字段名 camelCase；值为空时字段输出 `null`（不省略）
 - 在线文档：运行后端后访问 `/swagger-ui.html`（OpenAPI JSON：`/v3/api-docs`）。以本文件为准，两者冲突时报告给 backend-dev
-- **账户（FEAT-033 起）**：除 `/api/health`、`/api/accounts/**`、`/api/test-support/**` 外，所有接口都必须带请求头 `X-Account-Id: <账户 id>`，只读写该账户的数据；规则与错误见下方「FEAT-033 多账户」。本文件中 FEAT-007 ~ FEAT-008 的示例省略了这个请求头
+- **账户（FEAT-033 起）**：除 `/api/health`、`/api/accounts/**`、`/api/test-support/**`、`/api/trading-calendar/**`（FEAT-009，全系统一份）外，所有接口都必须带请求头 `X-Account-Id: <账户 id>`，只读写该账户的数据；规则与错误见下方「FEAT-033 多账户」。本文件中 FEAT-007 ~ FEAT-008 的示例省略了这个请求头
 
 ## 统一错误格式
 所有 `/api/**` 接口出错时（HTTP 4xx/5xx）返回同一结构：
@@ -142,3 +142,4 @@
 | [FEAT-014.md](FEAT-014.md) | FEAT-014 主动行权（`EXR`，多头 call / put；股票类型 `EXERCISE_BUY` / `EXERCISE_SELL`，流水 `OPTION_EXERCISE`） |
 | [FEAT-015.md](FEAT-015.md) | FEAT-015 到期批量作废（`POST /api/option-trades/expirations/batch`，全部成功或全部不保存；422 `BATCH_EXPIRATION_REJECTED` 带 `failures` 扩展字段） |
 | [FEAT-039.md](FEAT-039.md) | FEAT-039 covered call 股票覆盖检查与锁定（**行为变化：STO call、股票卖出及多种修改 / 删除可能被 `COVERAGE_INSUFFICIENT` 拒绝**） |
+| [FEAT-009.md](FEAT-009.md) | FEAT-009 美股交易日历（`GET /api/trading-calendar/non-trading-days`、`/status`；持仓新增 `remainingTradingDays`；**行为变化：开仓到期日非交易日被 422 `EXPIRATION_NOT_TRADING_DAY` 拒绝**；测试支持假拉取与假时钟） |

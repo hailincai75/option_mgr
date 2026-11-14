@@ -2,7 +2,8 @@ import type { Locator, Page } from '@playwright/test'
 import { apiTransfer, CashPage, expect, MINUS, test } from '../support/fixtures'
 import { apiTrade } from '../support/trade'
 import { BACKEND_URL, setApiAccount } from '../support/backend'
-import { addDays, nyToday, stablePhase } from '../support/ny'
+import { fixNow, PHASES, phaseInstant } from '../support/clock'
+import { addDays } from '../support/ny'
 
 /**
  * FEAT-014 主动行权 E2E (real clock). As FEAT-013 / FEAT-041, dates are relative to today's New York date T: the
@@ -166,7 +167,8 @@ const TEXT = {
 // ------------------------------------------------------------------------------------------------ dates & data
 
 const BACKEND = BACKEND_URL
-const T = nyToday()
+/** "Today" (FEAT-009, Q126: expirations relative to it must be trading days): fixed, backend and browser at 10:00 New York. */
+const T = '2026-11-23'
 /** Scenario E expiration: always 3 days in the past. */
 const EXP = addDays(T, -3)
 /** Expiration of the not-yet-expired short call S1. */
@@ -342,7 +344,14 @@ class Ui {
     await d.getByTestId(S.exContracts).click()
     const opts = this.page.locator('.ant-select-dropdown:visible .ant-select-item-option')
     await expect(opts.first()).toBeVisible()
-    const texts = (await opts.allTextContents()).map((t) => t.trim())
+    // the dropdown may still be animating in (or a previous one out): read once the option list is non-empty
+    let texts: string[] = []
+    await expect
+      .poll(async () => {
+        texts = (await opts.allTextContents()).map((t) => t.trim())
+        return texts.length
+      })
+      .toBeGreaterThan(0)
     await this.page.keyboard.press('Escape')
     return texts
   }
@@ -414,6 +423,10 @@ class Ui {
 // ------------------------------------------------------------------------------------------------ tests
 
 test.describe('FEAT-014 主动行权', () => {
+  test.beforeEach(async ({ page }) => {
+    await fixNow(page, phaseInstant(T, 'closable'))
+  })
+
   test('AC1 按钮与对话框：已过期多头 作废+行权、S1 无行权；QRTV 选项 2 张 / 3 张、默认 3、日期默认 / 最晚 EXP、可用现金 11,510.00；XYZ put 当前持股 200 股，可用 100 股', async ({ page }) => {
     await scenarioE()
     const ui = new Ui(page)
@@ -453,11 +466,13 @@ test.describe('FEAT-014 主动行权', () => {
     await expect(ui.dialog(S.exModal)).toBeHidden()
   })
 
-  test('AC1 / Q81（真实时钟）：今天到期的多头 call 任何时刻都有行权；到期前与平仓并列、到期待确认期间唯一按钮、17:30 起与作废并列', async ({ page }) => {
+  for (const p of PHASES) {
+  test(`AC1 / Q81：今天到期的多头 call 任何时刻都有行权；到期前与平仓并列、到期待确认期间唯一按钮、17:30 起与作废并列 [固定时钟 2026-11-23 ${p}]`, async ({ page }) => {
+    await fixNow(page, phaseInstant(T, p))
     await apiTransfer('DEPOSIT', '5000.00', at(addDays(T, -5)))
     await apiTrade({ action: 'BTO', symbol: 'QRTV', expiration: T, strike: '30', type: 'CALL', netAmount: '160.00', time: at(addDays(T, -2)) })
     const ui = new Ui(page)
-    const phase = await stablePhase()
+    const phase = p
     await ui.openPositions()
     const call = `QRTV ${T} 30 C`
     await expect(ui.posRow(call).getByTestId(S.posDteToday)).toHaveText('今天到期')
@@ -470,6 +485,7 @@ test.describe('FEAT-014 主动行权', () => {
       await expect.poll(() => ui.rowButtons(call)).toEqual(['作废', '行权'])
     }
   })
+  }
 
   test('AC1 S1 行权被拒（API）：空头持仓不能行权（被行权请用"被指派"）', async () => {
     await scenarioE()

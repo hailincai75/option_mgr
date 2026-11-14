@@ -2,7 +2,8 @@ import type { Locator, Page } from '@playwright/test'
 import { apiTransfer, CashPage, expect, MINUS, test } from '../support/fixtures'
 import { apiTrade, apiTransferInShares } from '../support/trade'
 import { BACKEND_URL } from '../support/backend'
-import { addDays, nyToday, stablePhase } from '../support/ny'
+import { fixNow } from '../support/clock'
+import { addDays, nyToday } from '../support/ny'
 
 /**
  * FEAT-012 到期作废 E2E (real clock). The UI flows use scenario E shifted to an expiration date that is always in
@@ -558,34 +559,40 @@ test.describe('FEAT-012 到期作废', () => {
     )
   })
 
-  test('AC4 E2E（真实时钟）：今天到期的 QRTV <T> 30 C 按美东时刻显示 平仓 / 到期待确认 / 作废；昨天到期的 QRTV <T−1> 25 C 已过期 1 天，作废 −40.00 记在 T−1 16:00', async ({ page }) => {
-    const T = nyToday()
+  test('AC4 E2E（固定时钟 T = 2026-11-24，FEAT-009）：今天到期的 QRTV <T> 30 C 在 10:00 / 16:30 / 17:45 分别显示 平仓 / 到期待确认 / 作废；昨天到期的 QRTV <T−1> 25 C 已过期 1 天，作废 −40.00 记在 T−1 16:00', async ({ page }) => {
+    // FEAT-009 (Q126): expirations must be trading days → fixed today Tue 2026-11-24 (T − 1 = Mon 11-23)
+    const T = '2026-11-24'
+    await fixNow(page, '2026-11-24T15:00:00Z') // 10:00 New York
     await apiTransfer('DEPOSIT', '1000.00', `${addDays(T, -3)}T10:00`)
     await apiTrade({ action: 'BTO', symbol: 'QRTV', expiration: T, strike: '30', type: 'CALL', netAmount: '50.00', time: `${addDays(T, -1)}T10:00` })
     await apiTrade({ action: 'BTO', symbol: 'QRTV', expiration: addDays(T, -1), strike: '25', type: 'CALL', netAmount: '40.00', time: `${addDays(T, -2)}T10:00` })
     const ui = new Ui(page)
-    const phase = await stablePhase()
-    await ui.openPositions()
-
     const today = ui.posRow(`QRTV ${T} 30 C`)
+
+    // 10:00: closable
+    await ui.openPositions()
     await expect(today.getByTestId('position-cell-dte-today')).toHaveText('今天到期')
-    if (phase === 'closable') {
-      await expect(today.getByTestId('position-close')).toBeVisible()
-      await expect(today.getByTestId('position-expire')).toHaveCount(0)
-      await expect(today.getByTestId('position-expiry-pending')).toHaveCount(0)
-    } else if (phase === 'pending') {
-      await expect(today.getByTestId('position-expiry-pending')).toHaveText('到期待确认')
-      await expect(today.getByTestId('position-close')).toHaveCount(0)
-      await expect(today.getByTestId('position-expire')).toHaveCount(0)
-      // no action button (the row's 批次 expand toggle is also a button, so match by name)
-      await expect(today.getByRole('button', { name: /平\s*仓|作\s*废|被\s*指\s*派/ })).toHaveCount(0)
-      await today.getByTestId('position-expiry-pending').hover()
-      await expect(page.getByRole('tooltip')).toHaveText('16:00 已停止交易；17:30 前仍可能被指派，17:30（美东）起可作废')
-    } else {
-      await expect(today.getByTestId('position-expire')).toBeVisible()
-      await expect(today.getByTestId('position-close')).toHaveCount(0)
-      await expect(today.getByTestId('position-expiry-pending')).toHaveCount(0)
-    }
+    await expect(today.getByTestId('position-close')).toBeVisible()
+    await expect(today.getByTestId('position-expire')).toHaveCount(0)
+    await expect(today.getByTestId('position-expiry-pending')).toHaveCount(0)
+
+    // 16:30: 到期待确认, no action button
+    await fixNow(page, '2026-11-24T21:30:00Z')
+    await ui.openPositions()
+    await expect(today.getByTestId('position-expiry-pending')).toHaveText('到期待确认')
+    await expect(today.getByTestId('position-close')).toHaveCount(0)
+    await expect(today.getByTestId('position-expire')).toHaveCount(0)
+    // no action button (the row's 批次 expand toggle is also a button, so match by name)
+    await expect(today.getByRole('button', { name: /平s*仓|作s*废|被s*指s*派/ })).toHaveCount(0)
+    await today.getByTestId('position-expiry-pending').hover()
+    await expect(page.getByRole('tooltip')).toHaveText('16:00 已停止交易；17:30 前仍可能被指派，17:30（美东）起可作废')
+
+    // 17:45: expirable
+    await fixNow(page, '2026-11-24T22:45:00Z')
+    await ui.openPositions()
+    await expect(today.getByTestId('position-expire')).toBeVisible()
+    await expect(today.getByTestId('position-close')).toHaveCount(0)
+    await expect(today.getByTestId('position-expiry-pending')).toHaveCount(0)
 
     const yesterday = ui.posRow(`QRTV ${addDays(T, -1)} 25 C`)
     await expect(yesterday.getByTestId('position-cell-dte')).toHaveText('已过期 1 天')
@@ -598,18 +605,18 @@ test.describe('FEAT-012 到期作废', () => {
     await d.getByTestId('expire-done').click()
     await expect(yesterday).toHaveCount(0)
 
-    if (phase === 'expirable') {
-      const d2 = await ui.openExpire(`QRTV ${T} 30 C`)
-      await ui.confirmExpire(d2)
-      await expect(d2.getByTestId('expire-result-pnl')).toHaveText(`${MINUS}50.00`)
-      await expect(d2.getByTestId('expire-result-time')).toHaveText(`${T} 16:00（美东）`)
-      await d2.getByTestId('expire-done').click()
-      await expect(ui.id('position-row')).toHaveCount(0)
-    }
+    const d2 = await ui.openExpire(`QRTV ${T} 30 C`)
+    await ui.confirmExpire(d2)
+    await expect(d2.getByTestId('expire-result-pnl')).toHaveText(`${MINUS}50.00`)
+    await expect(d2.getByTestId('expire-result-time')).toHaveText(`${T} 16:00（美东）`)
+    await d2.getByTestId('expire-done').click()
+    await expect(ui.id('position-row')).toHaveCount(0)
   })
 
-  test('AC9 E2E（真实时钟）：录入 STC 成交 T−1 16:01 → 成交时间字段显示"不能晚于到期日 16:00"；改为 16:00 成功 −20.00', async ({ page, trade }) => {
-    const T = nyToday()
+  test('AC9 E2E（固定时钟 T = 2026-11-24，FEAT-009）：录入 STC 成交 T−1 16:01 → 成交时间字段显示"不能晚于到期日 16:00"；改为 16:00 成功 −20.00', async ({ page, trade }) => {
+    // FEAT-009 (Q126): the expiration T − 1 must be a trading day → fixed today Tue 2026-11-24
+    const T = '2026-11-24'
+    await fixNow(page, '2026-11-24T15:00:00Z')
     const exp = addDays(T, -1)
     await apiTransfer('DEPOSIT', '1000.00', `${addDays(T, -3)}T10:00`)
     await apiTrade({ action: 'BTO', symbol: 'QRTV', expiration: exp, strike: '20', type: 'CALL', netAmount: '30.00', time: `${addDays(T, -2)}T10:00` })

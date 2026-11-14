@@ -2,16 +2,16 @@ import type { Locator, Page } from '@playwright/test'
 import { apiTransfer, expect, MINUS, test } from '../support/fixtures'
 import { apiTrade } from '../support/trade'
 import { BACKEND_URL, setApiAccount } from '../support/backend'
-import { addDays, nyToday, stablePhase } from '../support/ny'
+import { fixNow } from '../support/clock'
+import { addDays } from '../support/ny'
 
 /**
- * FEAT-010 持仓页到期过滤 E2E (frontend only; real clock).
+ * FEAT-010 持仓页到期过滤 E2E (frontend only).
  *
- * Scenario R is seeded relative to a base date B that stands for the requirement's 2026-11-18 (all other dates keep the
- * same day offsets). B = today's New York date T for "the clock is 2026-11-18"; B = T − 1 simulates "the clock is
- * 2026-11-19" (AC4 next day); B = T − 3 simulates "the clock is 2026-11-21" (AC8 Saturday: DTE is calendar days, Q34,
- * so the result only depends on the day difference). Time-of-day checks (16:00–17:30 到期待确认, from 17:30 作废) are
- * chosen by the current New York phase, like FEAT-012 / FEAT-013.
+ * FEAT-009 (Q126: expirations must be trading days): fixed clock instead of the real one. Backend and browser are at
+ * the requirement's 2026-11-18 10:00 New York (beforeEach); scenario R uses its real dates (base date B = T =
+ * 2026-11-18, all expirations are trading days). "Next day" (AC4) and "Saturday" (AC8) move the clock to 2026-11-19 /
+ * 2026-11-21; the 16:00–17:30 到期待确认 / from-17:30 作废 phases (AC4) are set explicitly.
  *
  * Testids (FEAT-010): positions-expiry-filter (container; data-value = all / expired / today / 7 / 14 / 30) with
  * options positions-expiry-filter-<value>; positions-expiry-empty, positions-filter-count, positions-stock-hidden
@@ -19,7 +19,9 @@ import { addDays, nyToday, stablePhase } from '../support/ny'
  */
 
 const BACKEND = BACKEND_URL
-const T = nyToday()
+const T = '2026-11-18'
+/** T 10:00 New York. */
+const NOW_T = '2026-11-18T15:00:00Z'
 
 type FilterLabel = '全部' | '已过期未处理' | '今天到期' | '7 天内' | '14 天内' | '30 天内'
 
@@ -196,6 +198,10 @@ class Ui {
 }
 
 test.describe('FEAT-010 持仓页到期过滤', () => {
+  test.beforeEach(async ({ page }) => {
+    await fixNow(page, NOW_T)
+  })
+
   test('AC1 默认"全部"：8 行按 Q35 排序，共 8 个持仓、冻结 19,700.00，没有"显示 M / N"，股票部分照常显示', async ({ page }) => {
     const R = await scenarioR(T)
     const ui = new Ui(page)
@@ -289,25 +295,26 @@ test.describe('FEAT-010 持仓页到期过滤', () => {
     }
   })
 
-  test('AC4（真实时钟，到期日当天）：R3 在"今天到期"，按钮按美东时刻（平仓+被指派 / 只有被指派且到期待确认 / 作废+被指派）；"已过期未处理"只有 R2、R1', async ({ page }) => {
+  test('AC4 到期日当天：R3 在"今天到期"，按钮按美东时刻（10:00 平仓+被指派 / 16:30 只有被指派且到期待确认 / 17:45 作废+被指派）；"已过期未处理"只有 R2、R1', async ({ page }) => {
     const R = await scenarioR(T)
     const ui = new Ui(page)
-    const phase = await stablePhase()
     await ui.openPositions('?expiry=today')
     await ui.expectRows([R.R3])
     await expect(ui.posRow(R.R3).getByTestId('position-cell-dte-today')).toHaveText('今天到期')
-    if (phase === 'closable') {
-      await expect.poll(() => ui.rowButtons(R.R3)).toEqual(['平仓', '被指派'])
-      await expect(ui.posRow(R.R3).getByTestId('position-expiry-pending')).toHaveCount(0)
-    } else if (phase === 'pending') {
-      // requirement: clock 2026-11-18 16:30
-      await expect(ui.posRow(R.R3).getByTestId('position-expiry-pending')).toHaveText('到期待确认')
-      await expect.poll(() => ui.rowButtons(R.R3)).toEqual(['被指派'])
-    } else {
-      // requirement: clock 2026-11-18 17:45
-      await expect.poll(() => ui.rowButtons(R.R3)).toEqual(['作废', '被指派'])
-      await expect(ui.posRow(R.R3).getByTestId('position-expiry-pending')).toHaveCount(0)
-    }
+    await expect.poll(() => ui.rowButtons(R.R3)).toEqual(['平仓', '被指派'])
+    await expect(ui.posRow(R.R3).getByTestId('position-expiry-pending')).toHaveCount(0)
+
+    await fixNow(page, '2026-11-18T21:30:00Z') // 16:30 New York
+    await ui.openPositions('?expiry=today')
+    await ui.expectRows([R.R3])
+    await expect(ui.posRow(R.R3).getByTestId('position-expiry-pending')).toHaveText('到期待确认')
+    await expect.poll(() => ui.rowButtons(R.R3)).toEqual(['被指派'])
+
+    await fixNow(page, '2026-11-18T22:45:00Z') // 17:45 New York
+    await ui.openPositions('?expiry=today')
+    await ui.expectRows([R.R3])
+    await expect.poll(() => ui.rowButtons(R.R3)).toEqual(['作废', '被指派'])
+    await expect(ui.posRow(R.R3).getByTestId('position-expiry-pending')).toHaveCount(0)
 
     await ui.choose('已过期未处理')
     await ui.expectExpiryParam('expired')
@@ -317,8 +324,9 @@ test.describe('FEAT-010 持仓页到期过滤', () => {
     await expect(ui.id('dashboard-expired-count')).toHaveText('2')
   })
 
-  test('AC4 次日（场景 R 整体前移 1 天 = 时钟 2026-11-19）：R3 进入"已过期未处理"（已过期 1 天），首页已过期未处理 3 个；"今天到期"为空', async ({ page }) => {
-    const R = await scenarioR(addDays(T, -1))
+  test('AC4 次日（时钟 2026-11-19）：R3 进入"已过期未处理"（已过期 1 天），首页已过期未处理 3 个；"今天到期"为空', async ({ page }) => {
+    const R = await scenarioR(T)
+    await fixNow(page, '2026-11-19T15:00:00Z')
     const ui = new Ui(page)
     await page.goto('/')
     await expect(ui.id('dashboard-expired-count')).toHaveText('3')
@@ -356,16 +364,15 @@ test.describe('FEAT-010 持仓页到期过滤', () => {
     await ui.expectSelected('已过期未处理')
     await ui.expectExpiryParam('expired')
 
-    // 被指派 R3, 2 张. The requirement's date is 2026-11-18 (= T); on the real clock T is only allowed from 16:00
-    // (before that the latest assignment date is T − 1, FEAT-013), so expect the dialog's default = latest date.
+    // 被指派 R3, 2 张. At 10:00 New York the assignment date T is only allowed from 16:00 (FEAT-013), so the
+    // dialog's default is the latest allowed date T − 1.
     await ui.choose('今天到期')
     await ui.expectExpiryParam('today')
     await ui.expectRows([R.R3])
-    const phase = await stablePhase()
     await ui.posRow(R.R3).getByTestId('position-assign').click()
     const ad = ui.dialog('assign-modal')
     await expect(ad).toBeVisible()
-    await expect(ad.getByTestId('assign-date')).toHaveValue(phase === 'closable' ? addDays(T, -1) : T)
+    await expect(ad.getByTestId('assign-date')).toHaveValue(addDays(T, -1))
     await ad.getByTestId('assign-contracts').click()
     await page.locator('.ant-select-dropdown:visible').getByTestId('assign-contracts-option-2').click()
     await ad.getByTestId('assign-submit').click()
@@ -481,8 +488,9 @@ test.describe('FEAT-010 持仓页到期过滤', () => {
     await ui.expectFiltered(0, 1, '0.00')
   })
 
-  test('AC8 周末按日历天（场景 R 整体前移 3 天 = 时钟 2026-11-21 周六）：已过期未处理 R2、R1、R3、R4 = 首页 4 个；7 天内 R5（DTE 4）、R6（DTE 6）', async ({ page }) => {
-    const R = await scenarioR(addDays(T, -3))
+  test('AC8 周末按日历天（时钟 2026-11-21 周六）：已过期未处理 R2、R1、R3、R4 = 首页 4 个；7 天内 R5（DTE 4）、R6（DTE 6）', async ({ page }) => {
+    const R = await scenarioR(T)
+    await fixNow(page, '2026-11-21T15:00:00Z') // Saturday
     const ui = new Ui(page)
     await page.goto('/')
     await expect(ui.id('dashboard-expired-count')).toHaveText('4')

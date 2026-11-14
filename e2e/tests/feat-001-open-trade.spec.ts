@@ -1,4 +1,5 @@
 import { apiLedger, apiTransfer, CashPage, expect, MINUS, nyLocal, test } from '../support/fixtures'
+import { fixNow } from '../support/clock'
 import { apiGetTrade, apiTrade, apiTradeCount, apiTransferInShares, TradeForm } from '../support/trade'
 
 /**
@@ -329,12 +330,13 @@ test.describe('FEAT-001 录入开仓', () => {
       expect(await apiTradeCount()).toBe(0)
     })
 
-    test('0DTE：到期日等于成交日（今天）允许保存', async ({ trade }) => {
+    test('0DTE：到期日等于成交日（今天）允许保存', async ({ page, trade }) => {
+      // FEAT-009 (Q126): an expiration must be a trading day, so "today" is fixed (Mon 2026-11-23 10:00 NY) on the
+      // backend and in the browser instead of the real clock (which may be a weekend / holiday).
+      await fixNow(page, '2026-11-23T15:00:00Z')
       await apiTransfer('DEPOSIT', '100000.00', DEP)
-      // Today 00:00 NY: never in the future and never after the 16:00 cutoff of a same-day expiration (FEAT-012 Q83),
-      // whatever time of day the suite runs (now − 1 h failed after 17:00 NY).
-      const today = nyLocal(new Date()).slice(0, 10)
-      const time = `${today}T00:00`
+      const today = '2026-11-23'
+      const time = `${today}T09:30`
       await trade.open()
       await trade.submitAndExpectSaved(
         TradeForm.base({ action: 'BTO', strike: '210', type: 'CALL', netAmount: '1.00', time, expiration: today }),

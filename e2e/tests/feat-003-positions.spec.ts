@@ -1,7 +1,7 @@
 import type { Locator, Page } from '@playwright/test'
 import { apiLedger, apiTransfer, CashPage, expect, MINUS, nyLocal, test } from '../support/fixtures'
 import { apiTrade, TradeForm } from '../support/trade'
-import { stablePhase } from '../support/ny'
+import { fixNow } from '../support/clock'
 
 /**
  * FEAT-003 期权持仓 E2E. Real clock: "today" is the New York date at run time; DTE expectations are computed
@@ -186,13 +186,13 @@ test.describe('FEAT-003 期权持仓', () => {
   })
 
   test('AC6 已过期与今天到期：TSLA 2026-11-06 红色"已过期 N 天"；今天到期的 SPY 显示 0 + 今天到期；冻结合计 25,000.00', async ({ page }) => {
-    const d = today()
+    // FEAT-009 (Q126): the 0DTE expiration must be a trading day → fixed today Mon 2026-11-23 10:00 NY (before 16:00)
+    await fixNow(page, '2026-11-23T15:00:00Z')
+    const d = '2026-11-23'
     await apiTransfer('DEPOSIT', '50000.00', '2026-10-26T10:00')
     await apiTrade({ action: 'STO', symbol: 'TSLA', expiration: '2026-11-06', strike: '250', type: 'PUT', netAmount: '300.00', time: '2026-11-02T10:00' })
     await apiTrade({ action: 'BTO', symbol: 'SPY', expiration: d, strike: '600', type: 'CALL', netAmount: '50.00', time: '2026-11-02T10:00' })
     const pos = new Positions(page)
-    // FEAT-012: between 16:00 and 17:30 NY a position expiring today also shows the 到期待确认 tag in the DTE cell
-    const phase = await stablePhase()
     await pos.open()
     await expect(pos.asOf).toHaveText(`截至 ${d}（美东）`)
     await expect(pos.count).toHaveText('共 2 个持仓')
@@ -200,7 +200,7 @@ test.describe('FEAT-003 期权持仓', () => {
     const n = days('2026-11-06', d)
     expect(await pos.cells()).toEqual([
       { contract: 'TSLA 2026-11-06 250 P', direction: '空头', contracts: '1', openingNet: '+300.00', average: '+300.00', frozen: '25,000.00', expiration: '2026-11-06', dte: `已过期 ${n} 天`, lots: '1' },
-      { contract: `SPY ${d} 600 C`, direction: '多头', contracts: '1', openingNet: `${MINUS}50.00`, average: `${MINUS}50.00`, frozen: '—', expiration: d, dte: phase === 'pending' ? '0 今天到期 到期待确认' : '0 今天到期', lots: '1' },
+      { contract: `SPY ${d} 600 C`, direction: '多头', contracts: '1', openingNet: `${MINUS}50.00`, average: `${MINUS}50.00`, frozen: '—', expiration: d, dte: '0 今天到期', lots: '1' },
     ])
     const expiredCell = pos.row('TSLA 2026-11-06 250 P').getByTestId('position-cell-dte')
     const color = await expiredCell.evaluate((el) => getComputedStyle(el).color)

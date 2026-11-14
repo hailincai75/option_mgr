@@ -1,5 +1,7 @@
 package com.optionmgr.trade.service;
 
+import com.optionmgr.calendar.domain.TradingCalendar;
+import com.optionmgr.calendar.service.TradingCalendarService;
 import com.optionmgr.cash.repository.CashLedgerEntryEntity;
 import com.optionmgr.cash.service.CashLedgerService;
 import com.optionmgr.common.money.Money;
@@ -39,10 +41,13 @@ public class OptionPositionService {
     private final CashLedgerService ledger;
     private final StockPositionService stockPositions;
     private final CoverageService coverage;
+    private final TradingCalendarService tradingCalendar;
     private final Clock clock;
 
     public OptionPositionService(OptionTradeRepository trades, CashLedgerService ledger,
-                                 StockPositionService stockPositions, CoverageService coverage, Clock clock) {
+                                 StockPositionService stockPositions, CoverageService coverage,
+                                 TradingCalendarService tradingCalendar, Clock clock) {
+        this.tradingCalendar = tradingCalendar;
         this.coverage = coverage;
         this.stockPositions = stockPositions;
         this.trades = trades;
@@ -61,7 +66,13 @@ public class OptionPositionService {
     public record PositionSummary(Instant now, LocalDate asOfDate, List<OptionPosition> positions,
                                   BigDecimal frozenTotal, Map<ContractKey, Integer> expiryContracts,
                                   Map<String, Long> stockShares, Map<ContractKey, RowCoverage> coverage,
-                                  BigDecimal availableCash, Map<String, Long> availableShares) {
+                                  BigDecimal availableCash, Map<String, Long> availableShares,
+                                  TradingCalendar calendar) {
+
+        /** FEAT-009 Q125: trading days in (asOfDate, expiration]; 0 on the expiration date, null once expired. */
+        public Integer remainingTradingDays(OptionPosition p) {
+            return calendar.remainingTradingDays(asOfDate, p.contract().expirationDate());
+        }
 
         /** FEAT-014: current available shares (held - covered by CHECKED short calls) of a long put's underlying. */
         public long availableShares(OptionPosition p) {
@@ -148,7 +159,7 @@ public class OptionPositionService {
         }
         BigDecimal availableCash = ledger.currentBalance(accountId).available();
         return new PositionSummary(now, today, positions, frozenTotal, Map.copyOf(expiryContracts),
-                Map.copyOf(stockShares), Map.copyOf(rows), availableCash, Map.copyOf(availableShares));
+                Map.copyOf(stockShares), Map.copyOf(rows), availableCash, Map.copyOf(availableShares), tradingCalendar.calendar());
     }
 
     static RowCoverage rowCoverage(OptionPosition p, CoverageTimeline timeline) {

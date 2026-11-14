@@ -2,7 +2,8 @@ import type { Locator, Page } from '@playwright/test'
 import { apiTransfer, CashPage, expect, MINUS, test } from '../support/fixtures'
 import { apiTrade, apiTransferInShares } from '../support/trade'
 import { BACKEND_URL, setApiAccount } from '../support/backend'
-import { addDays, nyToday, stablePhase } from '../support/ny'
+import { fixNow, PHASES, phaseInstant } from '../support/clock'
+import { addDays } from '../support/ny'
 
 /**
  * FEAT-015 到期批量作废 E2E (real clock).
@@ -33,7 +34,8 @@ import { addDays, nyToday, stablePhase } from '../support/ny'
  */
 
 const BACKEND = BACKEND_URL
-const T = nyToday()
+/** "Today" (FEAT-009, Q126: expirations relative to it must be trading days): fixed, backend and browser at 10:00 New York. */
+const T = '2026-11-23'
 
 const at = (date: string, hm = '10:00') => `${date}T${hm}`
 
@@ -271,6 +273,10 @@ class Ui {
 const rowsS = (s: ScenarioS) => [s.IXQZ, s.QRTV, s.XYZ42, s.XYZ45]
 
 test.describe('FEAT-015 到期批量作废', () => {
+  test.beforeEach(async ({ page }) => {
+    await fixNow(page, phaseInstant(T, 'closable'))
+  })
+
   test('AC1 按钮与确认框：已过期未处理 4 行、批量作废（4）；全部 / 7 天内 / 空的今天到期没有按钮；确认框全部勾选、已选 4 / 4 个、行内容与说明', async ({ page }) => {
     const s = await scenarioS(addDays(T, -3))
     const ui = new Ui(page)
@@ -470,10 +476,12 @@ test.describe('FEAT-015 到期批量作废', () => {
     await ui.expectButton(1)
   })
 
-  test('AC6（真实时钟，到期日当天）：今天到期 S1–S4；16:00–17:30 到期待确认、没有批量按钮；17:30 起批量作废（4），结果同 AC2，没有今天到期的持仓', async ({ page }) => {
+  for (const p of PHASES) {
+  test(`AC6（到期日当天）：今天到期 S1–S4；16:00–17:30 到期待确认、没有批量按钮；17:30 起批量作废（4），结果同 AC2，没有今天到期的持仓 [固定时钟 2026-11-23 ${p}]`, async ({ page }) => {
+    await fixNow(page, phaseInstant(T, p))
     const s = await scenarioS(T)
     const ui = new Ui(page)
-    const phase = await stablePhase()
+    const phase = p
     await ui.openPositions('?expiry=today')
     await ui.expectRows(rowsS(s))
     if (phase === 'closable') {
@@ -504,6 +512,7 @@ test.describe('FEAT-015 到期批量作废', () => {
       await ui.expectButton(null)
     }
   })
+  }
 
   test('AC7 不同到期日一起作废（场景 S 前移 = 时钟 2026-11-30）：批量作废（5）→ 作废 5 个 +355.00 −17,200.00；4 条记在 EXP 16:00、XYZ 40 P 记在 EXP+7 16:00；冻结 0.00', async ({ page }) => {
     const s = await scenarioS(addDays(T, -10))

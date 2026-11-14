@@ -1,9 +1,16 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Alert, Button, Card, Form, Input, Radio, Space, Typography } from 'antd'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createCloseTrade, createOptionTrade } from '../../api/optionTrades'
 import type { OptionTrade, OptionType, TradeAction } from '../../api/types'
 import { nowLocalDateTimeNY } from '../../utils/format'
+import {
+  CALENDAR_LOOKUP_FAILED_HINT,
+  NOT_TRADING_DAY_MESSAGE,
+  useNonTradingDays,
+  type YearMonth,
+} from '../calendar/tradingCalendar'
+import { ExpirationDatePicker } from './ExpirationDatePicker'
 import {
   normalizeDecimal,
   NOTE_MAX_LENGTH,
@@ -120,6 +127,20 @@ export function TradeEntryForm() {
   // FEAT-038 (Q61): selling a call freezes no cash; one line of guidance, no confirm, no block.
   const shortCall = action === 'STO' && optionType === 'CALL'
   const closing = isClosingAction(action)
+  // FEAT-009: the month on screen in the 到期日 panel; its non-trading days come from the backend.
+  const [todayMonth] = useState<YearMonth>(() => nowLocalDateTimeNY().slice(0, 7))
+  const [viewMonth, setViewMonth] = useState<YearMonth>(todayMonth)
+  const calendar = useNonTradingDays(viewMonth)
+  // Opens only (Q126); closes of legacy positions may still carry a non-trading expiry.
+  const restrictExpiry = !closing
+
+  // A typed date may belong to a month that was still loading when the rule ran: re-check it
+  // once that month's calendar arrives (only for a field the user already touched).
+  useEffect(() => {
+    if (form.isFieldTouched('expirationDate')) {
+      form.validateFields(['expirationDate']).catch(() => undefined)
+    }
+  }, [calendar.version, form])
 
   const mutation = useMutation({
     mutationFn: submitTrade,
@@ -213,9 +234,33 @@ export function TradeEntryForm() {
                     : getFieldValue('tradedAtLocal'),
                 ),
               ),
+            ({ getFieldValue }) =>
+              // FEAT-009 rule 8: a typed non-trading day (opens only); the backend has the final
+              // say (422 EXPIRATION_NOT_TRADING_DAY, shown verbatim above the buttons).
+              toRule((value) =>
+                !isClosingAction(getFieldValue('action') as string | undefined) &&
+                typeof value === 'string' &&
+                calendar.days.has(value)
+                  ? NOT_TRADING_DAY_MESSAGE
+                  : null,
+              ),
           ]}
+          extra={
+            restrictExpiry && calendar.currentMonthFailed ? (
+              <span data-testid="open-trade-expiration-calendar-error">
+                {CALENDAR_LOOKUP_FAILED_HINT}
+              </span>
+            ) : undefined
+          }
         >
-          <Input type="date" data-testid="open-trade-expiration" />
+          <ExpirationDatePicker
+            data-testid="open-trade-expiration"
+            nonTradingDays={calendar.days}
+            restrict={restrictExpiry}
+            viewMonth={viewMonth}
+            onViewMonthChange={setViewMonth}
+            defaultMonth={todayMonth}
+          />
         </Form.Item>
         <Form.Item label="行权价" name="strike" required rules={[toRule(validateStrike)]}>
           <Input

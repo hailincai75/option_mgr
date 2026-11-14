@@ -604,7 +604,8 @@ class Feat012ExpireWorthlessSystemTest extends OptionTradeSystemTestBase {
     void holidayExpiration() {
         clock.set(Instant.parse("2026-11-30T15:00:00Z"));
         deposit("5000.00", "2026-11-16T10:00");
-        open("STO", 1, "XYZ", "2026-11-26", "30", "PUT", "40.00", "2026-11-24T10:00", 100);
+        // FEAT-009 (Q126): a holiday expiration only exists as data stored before FEAT-009
+        moveExpiration(open("STO", 1, "XYZ", "2026-11-25", "30", "PUT", "40.00", "2026-11-24T10:00", 100), "2026-11-26");
         JsonNode t = okExpire("XYZ", "2026-11-26", "30", "PUT", 1);
         assertThat(t.get("tradedAt").asText()).isEqualTo("2026-11-26T21:00:00Z");
         assertThat(t.get("realizedPnl").asText()).isEqualTo("40.00");

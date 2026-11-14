@@ -846,7 +846,8 @@ class Feat015BatchExpirationSystemTest extends OptionTradeSystemTestBase {
         clock.set(Instant.parse("2026-11-30T15:00:00Z"));
         accountId = String.valueOf(newAccount("假日账户"));
         deposit("5000.00", "2026-11-16T10:00");
-        open("STO", 1, "XYZ", "2026-11-26", "30", "PUT", "40.00", "2026-11-24T10:00");
+        // FEAT-009 (Q126): a holiday expiration only exists as data stored before FEAT-009
+        moveExpiration(open("STO", 1, "XYZ", "2026-11-25", "30", "PUT", "40.00", "2026-11-24T10:00"), "2026-11-26");
         okTrade(trade("STO", 2, "QFZ", "2026-11-20", "12.345", "PUT", "1.00", "2026-11-17T10:00", 1));
         JsonNode b = okBatch(batch(item("XYZ", "2026-11-26", "30", "PUT", 1),
                 item("QFZ", "2026-11-20", "12.345", "PUT", 2)));

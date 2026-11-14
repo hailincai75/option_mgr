@@ -43,7 +43,9 @@ public class OptionPositionController {
     public record PositionResponse(String symbol, LocalDate expirationDate, String strike, OptionType optionType,
                                    String contractLabel, PositionDirection direction, int contracts,
                                    int multiplier, BigDecimal openingNetTotal, BigDecimal averageNetPerContract,
-                                   BigDecimal frozenCash, long dte, ExpirationStatus expirationStatus,
+                                   BigDecimal frozenCash, long dte,
+                                   /* FEAT-009 Q125: (asOfDate, expiration] trading days; 0 on the day; null once expired */
+                                   Integer remainingTradingDays, ExpirationStatus expirationStatus,
                                    long daysPastExpiration, int lotCount, List<LotResponse> lots,
                                    TradeAction closeAction, List<Integer> allowedCloseContracts,
                                    /* FEAT-012: now < 16:00 New York on the expiration date */
@@ -114,7 +116,7 @@ public class OptionPositionController {
         LocalDate latest = assignable ? AssignmentTerms.latestDate(c.expirationDate(), now) : null;
         return new PositionResponse(c.symbol(), c.expirationDate(), ContractKey.strikeText(c.strike()),
                 c.optionType(), c.label(), p.direction(), p.contracts(), p.multiplier(), p.openingNetTotal(),
-                p.averageNetPerContract(), p.frozenCash(), dte, p.expirationStatus(today), Math.max(0, -dte),
+                p.averageNetPerContract(), p.frozenCash(), dte, s.remainingTradingDays(p), p.expirationStatus(today), Math.max(0, -dte),
                 p.lots().size(), p.lots().stream().map(l -> toResponse(l, rc)).toList(),
                 p.closeAction(), p.allowedCloseContracts(), p.closable(now), p.expiryPending(now), p.expirable(now),
                 s.expiryContracts(p), cutoff, LOCAL_SECONDS.format(MarketTime.toLocal(cutoff)), assignable,

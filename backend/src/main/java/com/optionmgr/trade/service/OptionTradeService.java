@@ -1,5 +1,6 @@
 package com.optionmgr.trade.service;
 
+import com.optionmgr.calendar.service.TradingCalendarService;
 import com.optionmgr.cash.domain.CashShortfallMessages;
 import com.optionmgr.cash.domain.CashSourceType;
 import com.optionmgr.cash.domain.InsertionCheck;
@@ -83,10 +84,12 @@ public class OptionTradeService {
     private final CashLedgerService ledger;
     private final StockTradeRepository stockTrades;
     private final CoverageService coverage;
+    private final TradingCalendarService calendar;
     private final Clock clock;
 
     public OptionTradeService(OptionTradeRepository trades, CashLedgerService ledger, StockTradeRepository stockTrades,
-                              CoverageService coverage, Clock clock) {
+                              CoverageService coverage, TradingCalendarService calendar, Clock clock) {
+        this.calendar = calendar;
         this.coverage = coverage;
         this.trades = trades;
         this.ledger = ledger;
@@ -230,6 +233,10 @@ public class OptionTradeService {
             checkNotAfterCutoff(cmd.contract(), tradedAt, errors);
         }
         checkNotFuture(tradedAt, errors);
+        // FEAT-009 Q126: a new opening trade must expire on a US trading day (not for test-support legacy rows)
+        if (!legacy) {
+            calendar.requireTradingDayForOpen(cmd.contract().expirationDate());
+        }
         OpenTradeTerms terms = new OpenTradeTerms(cmd.contract(), cmd.action(), cmd.contracts(), cmd.multiplier(),
                 cmd.netAmount());
         String note = blankToNull(cmd.note());

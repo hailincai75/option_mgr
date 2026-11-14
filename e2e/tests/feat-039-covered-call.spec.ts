@@ -2,7 +2,8 @@ import type { Locator, Page } from '@playwright/test'
 import { apiTransfer, expect, test } from '../support/fixtures'
 import { apiLegacyTrade, apiTrade, TradeForm } from '../support/trade'
 import { BACKEND_URL } from '../support/backend'
-import { addDays, nyToday } from '../support/ny'
+import { fixNow, phaseInstant } from '../support/clock'
+import { addDays } from '../support/ny'
 
 /**
  * FEAT-039 covered call 股票覆盖检查与锁定 E2E (real clock). As the requirement says, the acceptance dates are relative:
@@ -104,7 +105,8 @@ const TEXT = {
 
 // ------------------------------------------------------------------------------------------------ dates & data
 
-const T = nyToday()
+/** "Today" (FEAT-009, Q126: expirations relative to it must be trading days): fixed, backend and browser at 10:00 New York. */
+const T = '2026-11-13'
 const B = addDays(T, -12)
 /** B + n days (B plays 2026-11-02). */
 const d = (n: number) => addDays(B, n)
@@ -357,6 +359,10 @@ class Ui {
 // ------------------------------------------------------------------------------------------------ tests
 
 test.describe('FEAT-039 covered call 覆盖检查与锁定', () => {
+  test.beforeEach(async ({ page }) => {
+    await fixNow(page, phaseInstant(T, 'closable'))
+  })
+
   test('AC8 录入页提示（Q61 新文案）：STO + Call 显示全文；BTO + Call、STO + Put、平仓不显示；不阻止提交', async ({ page }) => {
     const ui = new Ui(page)
     await ui.openEntry()
