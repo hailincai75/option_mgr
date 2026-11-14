@@ -77,6 +77,20 @@ public enum ErrorCode {
     COVERAGE_INSUFFICIENT(HttpStatus.UNPROCESSABLE_ENTITY),
     /** FEAT-009 Q126: a new opening trade's expiration date is a weekend or a full-day market closure. */
     EXPIRATION_NOT_TRADING_DAY(HttpStatus.UNPROCESSABLE_ENTITY),
+    /** FEAT-043: the contract does not expire on an ACTIVE ad-hoc closure. */
+    EXPIRATION_NOT_ADHOC_CLOSURE(HttpStatus.UNPROCESSABLE_ENTITY),
+    /** FEAT-043 Q131: the contract was adjusted before. */
+    EXPIRATION_ALREADY_ADJUSTED(HttpStatus.UNPROCESSABLE_ENTITY),
+    /** FEAT-043 Q133: the contract has an expiry, assignment or exercise record. */
+    CONTRACT_ALREADY_SETTLED(HttpStatus.UNPROCESSABLE_ENTITY),
+    /** FEAT-043: the new expiration date is not a US trading day. */
+    NEW_EXPIRATION_NOT_TRADING_DAY(HttpStatus.UNPROCESSABLE_ENTITY),
+    /** FEAT-043 Q131: the new date is not before the current one, or before the last trade date. */
+    NEW_EXPIRATION_OUT_OF_RANGE(HttpStatus.UNPROCESSABLE_ENTITY),
+    /** FEAT-043 Q83: a record of the contract is later than 16:00 on the new date. */
+    TRADE_AFTER_NEW_EXPIRATION(HttpStatus.UNPROCESSABLE_ENTITY),
+    /** FEAT-043 Q132: the contract on the new date already has records. */
+    TARGET_CONTRACT_EXISTS(HttpStatus.UNPROCESSABLE_ENTITY),
     /** FEAT-033: an account-scoped endpoint was called without the X-Account-Id header. */
     ACCOUNT_REQUIRED(HttpStatus.BAD_REQUEST),
     /** FEAT-033: the X-Account-Id / path account does not exist. */

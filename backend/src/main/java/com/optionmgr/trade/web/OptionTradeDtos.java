@@ -259,6 +259,36 @@ public final class OptionTradeDtos {
         }
     }
 
+    /** FEAT-043: adjust a contract's expiration date off an ad-hoc closure; other properties are ignored. */
+    public record AdjustExpirationRequest(
+            @NotEmpty(message = "标的不能为空")
+            @Size(max = Symbols.MAX_LENGTH, message = "标的最多 10 个字符")
+            @Pattern(regexp = Symbols.NORMALIZED_PATTERN, message = "标的只能包含字母、数字和点")
+            String symbol,
+
+            @NotNull(message = "到期日不能为空")
+            LocalDate expirationDate,
+
+            @NotNull(message = "行权价不能为空")
+            @Positive(message = "行权价必须大于 0")
+            @Digits(integer = 100, fraction = 3, message = "行权价最多 3 位小数")
+            @DecimalMax(value = "9999999.999", message = "行权价过大")
+            BigDecimal strike,
+
+            @NotNull(message = "请选择 Call 或 Put")
+            OptionType optionType,
+
+            @NotNull(message = "新到期日不能为空")
+            LocalDate newExpirationDate,
+
+            @Size(max = 500, message = "备注最多 500 个字符")
+            String note) {
+
+        public AdjustExpirationRequest {
+            symbol = Symbols.normalize(symbol);
+        }
+    }
+
     /**
      * FEAT-015 batch expiry: the items are validated one by one in the controller (so that duplicate contracts and
      * field errors are reported together, with {@code items[i].field} names); other properties are ignored.

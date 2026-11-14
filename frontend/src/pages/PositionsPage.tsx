@@ -3,6 +3,7 @@ import { Button, Card, Radio, Space, Spin, Typography } from 'antd'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { getOptionPositions, optionPositionQueryKeys } from '../api/optionPositions'
+import { AdjustExpirationModal } from '../components/position/AdjustExpirationModal'
 import { AssignPositionModal } from '../components/position/AssignPositionModal'
 import { BatchExpireModal } from '../components/position/BatchExpireModal'
 import {
@@ -44,6 +45,8 @@ export function PositionsPage() {
   const [expiring, setExpiring] = useState<OptionPosition | null>(null)
   const [assigning, setAssigning] = useState<OptionPosition | null>(null)
   const [exercising, setExercising] = useState<OptionPosition | null>(null)
+  /** FEAT-043: row whose 调整到期日 dialog is open. */
+  const [adjusting, setAdjusting] = useState<OptionPosition | null>(null)
   /** FEAT-015: snapshot of the batch-expirable rows when 批量作废 was clicked. */
   const [batchExpiring, setBatchExpiring] = useState<OptionPosition[] | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
@@ -150,6 +153,7 @@ export function PositionsPage() {
           onExpirePosition={setExpiring}
           onAssignPosition={setAssigning}
           onExercisePosition={setExercising}
+          onAdjustExpiration={setAdjusting}
           highlightedContract={highlighted}
           empty={
             filteredEmpty !== null && data.positions.length > 0 ? (
@@ -245,6 +249,15 @@ export function PositionsPage() {
             position={exercising}
             onDone={() => {
               setExercising(null)
+            }}
+          />
+        )}
+        {adjusting !== null && (
+          <AdjustExpirationModal
+            key={adjusting.contractLabel}
+            position={adjusting}
+            onDone={() => {
+              setAdjusting(null)
             }}
           />
         )}

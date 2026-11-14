@@ -4,7 +4,9 @@ import type {
   CreateCloseTradeRequest,
   CreateExerciseRequest,
   CreateExpirationBatchRequest,
+  CreateExpirationAdjustmentRequest,
   CreateExpirationRequest,
+  ExpirationAdjustmentResponse,
   ExpirationBatchFailure,
   ExpirationBatchResponse,
   CreateOptionTradeRequest,
@@ -55,6 +57,19 @@ export function createExpirationBatch(
   request: CreateExpirationBatchRequest,
 ): Promise<ExpirationBatchResponse> {
   return apiRequest<ExpirationBatchResponse>('/api/option-trades/expirations/batch', {
+    method: 'POST',
+    body: request,
+  })
+}
+
+/**
+ * `POST /api/option-trades/expiration-adjustments` → 200 (FEAT-043 调整到期日: every record of the
+ * contract in the current account moves to `newExpirationDate`; all or nothing).
+ */
+export function createExpirationAdjustment(
+  request: CreateExpirationAdjustmentRequest,
+): Promise<ExpirationAdjustmentResponse> {
+  return apiRequest<ExpirationAdjustmentResponse>('/api/option-trades/expiration-adjustments', {
     method: 'POST',
     body: request,
   })

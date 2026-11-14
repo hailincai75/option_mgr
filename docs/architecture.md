@@ -172,6 +172,13 @@ com.optionmgr
 - **Jollyday 基线**：`calendar/service/JollydayFinnhubAgreementTest` 用 `src/test/resources/finnhub/market-holiday-us-2023-2027.json`（按 NYSE 公布日历构造，不来自真实调用）锁定 jollyday 2.22.1 与 Finnhub 2023–2027 全天休市完全一致（含 2025-01-09）
 - **Q134 每年固定 vs 一次性**：`HolidayRules.recurringClosures(year)`（默认 = `closures`）；`JollydayHolidayRules` 判定：同一 properties key 在前一年或后一年也出现 = 每年固定（Jollyday 公共 API 不暴露 validFrom / validTo；一次性特殊日在其 NYSE 文件里是 `validFrom = validTo`）。检测只用 `recurringClosures`；交易日历（FEAT-009、Q126）仍用 `closures`，所以 2025-01-09 仍是非交易日。`JollydayHolidayRulesTest` 锁定分类
 
+### 临时休市时调整到期日（FEAT-043）
+- **规则**：`trade/domain/ExpirationAdjustmentRules`（纯 Java）：检查 3–9 及顺序（临时休市 → 已调整过 → 已结束 → 新日期是交易日 → 范围 → 16:00 → 目标合约已存在）、默认新日期（前一个交易日）、最后成交日、审计摘要
+- **写入**：`trade/service/ExpirationAdjustmentService`（`POST /api/option-trades/expiration-adjustments`，`trade/web/ExpirationAdjustmentController`）：持 `cash_account` 锁；规则通过后仍按 Q130 重放（合约重放、call 的覆盖不变量、现金流水），再改每条 `option_trade.expiration_date`（`OptionTradeEntity.changeExpiration`）、置 `has_audit_log`，流水 `description` 里的合约文字换成新合约，写一条 `ADJUST_EXPIRATION` 审计，写 `expiration_adjustment`（唯一键在新合约上 = 只能调一次，Q131）
+- **审计扩展（`V15__expiration_adjustment.sql`）**：`audit_record.detail_json`（操作专属数据，API 字段 `expirationAdjustment`）；`audit_record_object`（审计记录的其它对象 id）。`AuditService.record(r, detail, relatedObjectIds)`；`AuditRecordRepository.findByObject` 让 `objectType + objectId` 筛选同时匹配主对象和其它对象，所以每条被调整交易的"历史"都能看到这次调整。其它审计写入不变
+- **持仓**：`OptionPositionService.PositionSummary.adjustability(p)`（`Adjustability`：记录条数、默认 / 最小 / 最大新日期），输出为 `expirationAdjustable` 等字段；不可调整时为 `null`
+- **测试支持**：`legacy-option-trades` 接受任意开仓（BTO / STO，call / put），不查 Q126
+
 ### E2E 测试支持（`e2e` profile）
 - 用途：Playwright 套件只启动一个后端，每个测试前调用 `POST /api/test-support/reset` 得到干净的库，代替每个测试重启后端
 - 启用：`SPRING_PROFILES_ACTIVE=e2e` 或 `--spring.profiles.active=e2e`（例如 `java -jar build/libs/<boot jar> --spring.profiles.active=e2e`，或 `gradlew.bat bootRun --args="--spring.profiles.active=e2e"`）。不启用时 `testsupport` 的 bean（`TestSupportController`、`DatabaseResetService`，都标 `@Profile("e2e")`）不存在，路径返回 404
@@ -270,6 +277,7 @@ frontend/
 - 用户录入的日期用原生 `type="date"`，原样以 `YYYY-MM-DD` 发送；例外：录入交易页的到期日用 `ExpirationDatePicker`（FEAT-009，开仓时禁用后端 `non-trading-days` 返回的日期，输入非交易日提示"所选日期不是美股交易日"；平仓不限制），值同样是 `YYYY-MM-DD` 字符串
 - 交易日历（FEAT-009）：前端不判断周末 / 假日，只用后端 `non-trading-days`；`/api/trading-calendar/**` 不带 `X-Account-Id`（`client.ts` 免账户前缀），用普通 `useQuery`；"休市日数据未更新"只按 `status.stale` 显示后端 `warning` 原文；持仓"剩余交易日"取 `remainingTradingDays`，`null` 显示 `—`
 - 临时休市提醒（FEAT-042）：`AdhocClosureAlerts`（`useAccountQuery`，按账户缓存，切换账户自动取新账户）在首页、持仓页顶部每个日期一行红色 Alert，`message` 原样显示，无关闭按钮（Q128），`alerts` 为空 / 加载中 / 请求失败时不渲染（Q129）。行末"去调整"：首页是到 `/positions` 的链接；持仓页是按钮，用 `position/adhocClosure.firstAdhocClosureRow` 找后端顺序第一个 `expiresOnAdhocClosure` 且 `expirationDate` = 该行 `date` 的持仓，到期过滤隐藏该行时先切回"全部"，再 `scrollIntoView` 并高亮该行（`data-highlighted="true"`）。持仓行到期日旁红色 `临时休市` 标签按 `expiresOnAdhocClosure`，悬停显示 `adhocClosureEventName`。前端不判断日期、不计数；`refreshAfterChange` 和单个 / 批量作废失败路径都让 `adhoc-closure-alerts` 与持仓一起失效
+- 调整到期日（FEAT-043）：持仓操作列"调整到期日"只按后端 `expirationAdjustable`；`AdjustExpirationModal` 复用 `ExpirationDatePicker`（`minDate` / `maxDate` 取 `newExpirationDateMin` / `Max`，另禁用 `non-trading-days`），默认 `defaultNewExpirationDate`，条数 / 休市名称取后端；其它检查全由后端 422 原文显示；成功后关闭并 `refreshAfterChange`。"去调整"仍只滚动高亮。审计 `ADJUST_EXPIRATION` 显示"调整到期日"，行内显示记录 ID 和备注，展开显示 `expirationAdjustment` 详情
 - 表单只做格式校验，文案尽量与后端 `details[].message` 一致；业务校验（担保、现金、持仓方向、multiplier）只在后端，422 的 `message` 原文显示
 - 交易方向显示 `代码（中文）`：BTO 买入开仓、STO 卖出开仓、BTC 买入平仓、STC 卖出平仓；FEAT-012 的 `EXP` 只显示"到期作废"（交易列表、已平仓用紫色标签）；FEAT-013 的 `ASG` 只显示"被指派"（洋红标签，`SPECIAL_ACTION_COLORS`）；未知值原样显示
 - 平仓：张数只能从后端 `allowedCloseContracts` 中选，按钮按 `closable` 显示，方向取 `closeAction`；已实现盈亏、被平批次、冻结释放全部取后端值

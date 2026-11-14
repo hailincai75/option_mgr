@@ -72,7 +72,11 @@ public class OptionPositionController {
                                    /* FEAT-014: long call rows: current available cash; null otherwise */
                                    BigDecimal availableCash,
                                    /* FEAT-042: expires on an ACTIVE ad-hoc closure ("临时休市" tag) */
-                                   boolean expiresOnAdhocClosure, String adhocClosureEventName) {
+                                   boolean expiresOnAdhocClosure, String adhocClosureEventName,
+                                   /* FEAT-043: "调整到期日" button and its dialog data (0 / null when not adjustable) */
+                                   boolean expirationAdjustable, int expirationAdjustmentRecordCount,
+                                   LocalDate defaultNewExpirationDate, LocalDate newExpirationDateMin,
+                                   LocalDate newExpirationDateMax) {
     }
 
     /** FEAT-013: one selectable assignment size (earliest whole lots) and its shares. */
@@ -95,7 +99,8 @@ public class OptionPositionController {
         return new PositionsResponse(s.asOfDate(), positions.size(), s.frozenTotal(), positions);
     }
 
-    private static PositionResponse toResponse(OptionPosition p, OptionPositionService.PositionSummary s) {
+    /** One row; also the "position" of the FEAT-043 adjustment response. */
+    static PositionResponse toResponse(OptionPosition p, OptionPositionService.PositionSummary s) {
         ContractKey c = p.contract();
         LocalDate today = s.asOfDate();
         Instant now = s.now();
@@ -117,6 +122,7 @@ public class OptionPositionController {
         CoverageTimeline.Shortfall sf = rc == null ? null : rc.shortfall();
         LocalDate latest = assignable ? AssignmentTerms.latestDate(c.expirationDate(), now) : null;
         String adhocClosureName = s.adhocClosureEventName(p);
+        OptionPositionService.Adjustability adj = s.adjustability(p);
         return new PositionResponse(c.symbol(), c.expirationDate(), ContractKey.strikeText(c.strike()),
                 c.optionType(), c.label(), p.direction(), p.contracts(), p.multiplier(), p.openingNetTotal(),
                 p.averageNetPerContract(), p.frozenCash(), dte, s.remainingTradingDays(p), p.expirationStatus(today), Math.max(0, -dte),
@@ -136,7 +142,9 @@ public class OptionPositionController {
                         : List.of(),
                 latestExercise, latestExercise,
                 exercisable && c.optionType() == OptionType.CALL ? s.availableCash() : null,
-                adhocClosureName != null, adhocClosureName);
+                adhocClosureName != null, adhocClosureName, adj != null, adj == null ? 0 : adj.recordCount(),
+                adj == null ? null : adj.defaultDate(), adj == null ? null : adj.minDate(),
+                adj == null ? null : adj.maxDate());
     }
 
     private static LotResponse toResponse(PositionLot l, OptionPositionService.RowCoverage rc) {

@@ -29,7 +29,9 @@ public class AuditController {
 
     public record AuditRecordResponse(long id, Instant operatedAt, AuditOperation operation,
                                       AuditObjectType objectType, long objectId, String summary, JsonNode before,
-                                      JsonNode after, JsonNode changes, JsonNode sideEffects) {
+                                      JsonNode after, JsonNode changes, JsonNode sideEffects,
+                                      /* FEAT-043: ADJUST_EXPIRATION only; null for every other record */
+                                      JsonNode expirationAdjustment) {
     }
 
     public record AuditPageResponse(List<AuditRecordResponse> items, int page, int size, long totalItems,
@@ -57,6 +59,6 @@ public class AuditController {
         AuditService.AuditPage p = audit.page(account.id(), objectType, objectId, page, size);
         return new AuditPageResponse(p.items().stream().map(v -> new AuditRecordResponse(v.id(), v.operatedAt(),
                 v.operation(), v.objectType(), v.objectId(), v.summary(), v.before(), v.after(), v.changes(),
-                v.sideEffects())).toList(), p.page(), p.size(), p.totalItems(), p.totalPages());
+                v.sideEffects(), v.operation() == AuditOperation.ADJUST_EXPIRATION ? v.detail() : null)).toList(), p.page(), p.size(), p.totalItems(), p.totalPages());
     }
 }

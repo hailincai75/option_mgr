@@ -1,6 +1,6 @@
 import { DatePicker } from 'antd'
 import dayjs, { type Dayjs } from 'dayjs'
-import { useEffect, useEffectEvent, useRef } from 'react'
+import { useEffect, useEffectEvent, useMemo, useRef } from 'react'
 import type { LocalDateString, NonTradingDay } from '../../api/types'
 import { monthOf, type YearMonth } from '../calendar/tradingCalendar'
 
@@ -34,6 +34,11 @@ export interface ExpirationDatePickerProps {
   onViewMonthChange: (month: YearMonth) => void
   /** Month to show when opening the panel without a value (today in New York). */
   defaultMonth: YearMonth
+  /** FEAT-043: earliest / latest selectable date (inclusive, from the backend); others disabled. */
+  minDate?: LocalDateString | null
+  maxDate?: LocalDateString | null
+  /** Prefix of each day cell's testid (`<prefix>-YYYY-MM-DD`). */
+  dayTestIdPrefix?: string
   'data-testid'?: string
 }
 
@@ -54,9 +59,15 @@ export function ExpirationDatePicker({
   viewMonth,
   onViewMonthChange,
   defaultMonth,
+  minDate = null,
+  maxDate = null,
+  dayTestIdPrefix = 'open-trade-expiration-day',
   'data-testid': testId,
 }: ExpirationDatePickerProps) {
   const wrapperRef = useRef<HTMLDivElement>(null)
+  // Same object while the value is unchanged: a new Dayjs on every render makes the picker
+  // treat it as a new value and jump the panel back to its month (month flips were undone).
+  const pickerDate = useMemo(() => toDayjs(value), [value])
 
   const commit = (next: string) => {
     if (next === (value ?? '')) return
@@ -87,13 +98,19 @@ export function ExpirationDatePicker({
     }
   }, [])
 
-  const isDisabled = (date: Dayjs) => restrict && nonTradingDays.has(date.format(DATE_FORMAT))
+  const isDisabled = (date: Dayjs) => {
+    const text = date.format(DATE_FORMAT)
+    // "YYYY-MM-DD" strings sort in date order; the bounds themselves come from the backend.
+    if (minDate !== null && text < minDate) return true
+    if (maxDate !== null && text > maxDate) return true
+    return restrict && nonTradingDays.has(text)
+  }
 
   return (
     <div ref={wrapperRef}>
       <DatePicker
         id={id}
-        value={toDayjs(value)}
+        value={pickerDate}
         format={DATE_FORMAT}
         placeholder={DATE_FORMAT}
         style={{ width: '100%' }}
@@ -119,8 +136,9 @@ export function ExpirationDatePicker({
             <div
               className="ant-picker-cell-inner"
               title={nonTrading?.name}
-              data-testid={`open-trade-expiration-day-${date}`}
+              data-testid={`${dayTestIdPrefix}-${date}`}
               data-non-trading={nonTrading !== undefined ? 'true' : undefined}
+              data-disabled={isDisabled(current) ? 'true' : undefined}
             >
               {current.date()}
             </div>

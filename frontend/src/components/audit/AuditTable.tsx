@@ -1,7 +1,7 @@
 import { Button, Col, Descriptions, Row, Table, Tag } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { HTMLAttributes, ReactNode } from 'react'
-import type { AuditRecord, AuditSnapshot } from '../../api/types'
+import type { AuditExpirationAdjustment, AuditRecord, AuditSnapshot } from '../../api/types'
 import { EMPTY_VALUE, formatDateTimeSecondsNY, formatMoney } from '../../utils/format'
 import { stockTypeLabel } from '../stock/stockLabels'
 import { tradeActionLabel } from '../trade/tradeLabels'
@@ -223,6 +223,123 @@ function lines(texts: string[], testId: string): ReactNode {
   )
 }
 
+/** FEAT-043: label of the `ADJUST_EXPIRATION` operation. */
+const ADJUST_EXPIRATION_LABEL = '调整到期日'
+
+const OPERATION_LABELS: Record<string, string> = {
+  CREATE: '新增',
+  UPDATE: '修改',
+  DELETE: '删除',
+  ADJUST_EXPIRATION: ADJUST_EXPIRATION_LABEL,
+}
+
+const OPERATION_COLORS: Record<string, string> = {
+  CREATE: 'green',
+  DELETE: 'red',
+  ADJUST_EXPIRATION: 'purple',
+}
+
+/** Display label of an audit operation; unknown values are shown as-is. */
+function auditOperationLabel(operation: string): string {
+  return OPERATION_LABELS[operation] ?? operation
+}
+
+/** "#1、#2、#3" */
+function tradeIdsText(ids: readonly number[]): string {
+  return ids.length === 0 ? EMPTY_VALUE : ids.map((id) => `#${String(id)}`).join('、')
+}
+
+/** FEAT-043: expanded detail of an `ADJUST_EXPIRATION` record (backend values only). */
+function ExpirationAdjustmentDetail({
+  adjustment,
+}: {
+  adjustment: AuditExpirationAdjustment
+}) {
+  const optionType = adjustment.optionType === 'CALL' ? 'C' : 'P'
+  return (
+    <Descriptions
+      title="调整到期日"
+      column={1}
+      size="small"
+      bordered
+      data-testid="audit-adjustment"
+      items={[
+        {
+          key: 'contract',
+          label: '合约',
+          children: (
+            <span data-testid="audit-adjustment-contract">
+              {`${adjustment.symbol} ${adjustment.strike} ${optionType}`}
+            </span>
+          ),
+        },
+        {
+          key: 'dates',
+          label: '到期日',
+          children: (
+            <span data-testid="audit-adjustment-dates">
+              {`${adjustment.oldExpirationDate} → ${adjustment.newExpirationDate}`}
+            </span>
+          ),
+        },
+        {
+          key: 'event',
+          label: '临时休市',
+          children: (
+            <span data-testid="audit-adjustment-event">
+              {adjustment.adhocClosureEventName || EMPTY_VALUE}
+            </span>
+          ),
+        },
+        {
+          key: 'trades',
+          label: '修改的记录',
+          children: (
+            <span data-testid="audit-adjustment-trade-ids">
+              {tradeIdsText(adjustment.tradeIds)}
+            </span>
+          ),
+        },
+        {
+          key: 'note',
+          label: '备注',
+          children: (
+            <span data-testid="audit-adjustment-note">
+              {adjustment.note?.trim() ? adjustment.note : EMPTY_VALUE}
+            </span>
+          ),
+        },
+      ]}
+    />
+  )
+}
+
+function ChangesCell({ record }: { record: AuditRecord }) {
+  if (record.operation === 'DELETE') return <span data-testid="audit-cell-changes">已删除</span>
+  if (record.operation === 'CREATE') return <span data-testid="audit-cell-changes">已新增</span>
+  const adjustment = record.expirationAdjustment ?? null
+  const changes = lines(
+    record.changes.map((change) => change.text),
+    'audit-cell-changes',
+  )
+  if (adjustment === null) return changes
+  return (
+    <div>
+      {changes}
+      <div data-testid="audit-adjust-trades">
+        记录：
+        <span data-testid="audit-adjust-trade-ids">{tradeIdsText(adjustment.tradeIds)}</span>
+      </div>
+      <div>
+        备注：
+        <span data-testid="audit-adjust-note">
+          {adjustment.note?.trim() ? adjustment.note : EMPTY_VALUE}
+        </span>
+      </div>
+    </div>
+  )
+}
+
 const columns: ColumnsType<AuditRecord> = [
   {
     title: '操作时间（美东）',
@@ -238,18 +355,11 @@ const columns: ColumnsType<AuditRecord> = [
     key: 'operation',
     render: (_value: unknown, record) => (
       <Tag
-        color={
-          record.operation === 'DELETE' ? 'red' : record.operation === 'CREATE' ? 'green' : 'blue'
-        }
+        color={OPERATION_COLORS[record.operation] ?? 'blue'}
         data-testid="audit-cell-operation"
+        data-operation={record.operation}
       >
-        {record.operation === 'DELETE'
-          ? '删除'
-          : record.operation === 'UPDATE'
-            ? '修改'
-            : record.operation === 'CREATE'
-              ? '新增'
-              : record.operation}
+        {auditOperationLabel(record.operation)}
       </Tag>
     ),
   },
@@ -272,17 +382,7 @@ const columns: ColumnsType<AuditRecord> = [
   {
     title: '改动',
     key: 'changes',
-    render: (_value: unknown, record) =>
-      record.operation === 'DELETE' ? (
-        <span data-testid="audit-cell-changes">已删除</span>
-      ) : record.operation === 'CREATE' ? (
-        <span data-testid="audit-cell-changes">已新增</span>
-      ) : (
-        lines(
-          record.changes.map((change) => change.text),
-          'audit-cell-changes',
-        )
-      ),
+    render: (_value: unknown, record) => <ChangesCell record={record} />,
   },
   {
     title: '连带变化',
@@ -315,28 +415,33 @@ export function AuditTable({ records, loading, empty }: AuditTableProps) {
         ({ 'data-testid': 'audit-row', 'data-audit-id': record.id }) as HTMLAttributes<HTMLElement>
       }
       expandable={{
-        expandedRowRender: (record) => (
-          <Row gutter={16} data-testid="audit-detail">
-            <Col xs={24} md={12}>
-              <Snapshot
-                title="修改前"
-                snapshot={record.before}
-                objectType={record.objectType}
-                testId="audit-before"
-                emptyText="无（新增）"
-              />
-            </Col>
-            <Col xs={24} md={12}>
-              <Snapshot
-                title={record.operation === 'DELETE' ? '修改后（已删除）' : '修改后'}
-                snapshot={record.after}
-                objectType={record.objectType}
-                testId="audit-after"
-                emptyText="已删除"
-              />
-            </Col>
-          </Row>
-        ),
+        expandedRowRender: (record) =>
+          record.expirationAdjustment != null ? (
+            <div data-testid="audit-detail">
+              <ExpirationAdjustmentDetail adjustment={record.expirationAdjustment} />
+            </div>
+          ) : (
+            <Row gutter={16} data-testid="audit-detail">
+              <Col xs={24} md={12}>
+                <Snapshot
+                  title="修改前"
+                  snapshot={record.before}
+                  objectType={record.objectType}
+                  testId="audit-before"
+                  emptyText="无（新增）"
+                />
+              </Col>
+              <Col xs={24} md={12}>
+                <Snapshot
+                  title={record.operation === 'DELETE' ? '修改后（已删除）' : '修改后'}
+                  snapshot={record.after}
+                  objectType={record.objectType}
+                  testId="audit-after"
+                  emptyText="已删除"
+                />
+              </Col>
+            </Row>
+          ),
         expandIcon: ({ expanded, onExpand, record }) => (
           <Button
             type="text"

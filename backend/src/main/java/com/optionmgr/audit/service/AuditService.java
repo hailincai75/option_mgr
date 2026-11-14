@@ -8,6 +8,8 @@ import com.optionmgr.audit.domain.AuditOperation;
 import com.optionmgr.audit.domain.FieldChange;
 import com.optionmgr.audit.domain.SideEffect;
 import com.optionmgr.audit.repository.AuditRecordEntity;
+import com.optionmgr.audit.repository.AuditRecordObjectEntity;
+import com.optionmgr.audit.repository.AuditRecordObjectRepository;
 import com.optionmgr.audit.repository.AuditRecordRepository;
 import java.time.Clock;
 import java.time.Instant;
@@ -29,10 +31,13 @@ public class AuditService {
     static final Sort ORDER = Sort.by(Sort.Order.desc("operatedAt"), Sort.Order.desc("id"));
 
     private final AuditRecordRepository records;
+    private final AuditRecordObjectRepository relatedObjects;
     private final ObjectMapper json;
     private final Clock clock;
 
-    public AuditService(AuditRecordRepository records, ObjectMapper json, Clock clock) {
+    public AuditService(AuditRecordRepository records, AuditRecordObjectRepository relatedObjects, ObjectMapper json,
+                        Clock clock) {
+        this.relatedObjects = relatedObjects;
         this.records = records;
         this.json = json;
         this.clock = clock;
@@ -59,7 +64,7 @@ public class AuditService {
     /** A stored record with its JSON parsed back. */
     public record AuditView(long id, Instant operatedAt, AuditOperation operation, AuditObjectType objectType,
                             long objectId, String summary, JsonNode before, JsonNode after, JsonNode changes,
-                            JsonNode sideEffects) {
+                            JsonNode sideEffects, JsonNode detail) {
     }
 
     public record AuditPage(List<AuditView> items, int page, int size, long totalItems, int totalPages) {
@@ -68,6 +73,15 @@ public class AuditService {
     /** Must join the caller's transaction: the audit record is written together with the change it describes. */
     @Transactional(propagation = Propagation.MANDATORY)
     public long record(NewAuditRecord r) {
+        return record(r, null, List.of());
+    }
+
+    /**
+     * As {@link #record(NewAuditRecord)}, with operation-specific data ({@code detail}, JSON-serializable; null for
+     * none) and further objects of the record's object type that the object filter also matches (FEAT-043).
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public long record(NewAuditRecord r, Object detail, List<Long> relatedObjectIds) {
         List<Map<String, Object>> changes = r.changes().stream().map(c -> {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("field", c.field());
@@ -90,7 +104,12 @@ public class AuditService {
         }).toList();
         AuditRecordEntity saved = records.save(new AuditRecordEntity(r.accountId(), clock.instant(), r.operation(),
                 r.objectType(), r.objectId(), r.summary(), r.before() == null ? null : write(r.before()), r.after() == null ? null : write(r.after()),
-                write(changes), write(effects)));
+                write(changes), write(effects)).withDetail(detail == null ? null : write(detail)));
+        for (Long objectId : relatedObjectIds) {
+            if (objectId != r.objectId()) {
+                relatedObjects.save(new AuditRecordObjectEntity(saved.getId(), r.objectType(), objectId));
+            }
+        }
         return saved.getId();
     }
 
@@ -104,7 +123,7 @@ public class AuditService {
         } else if (objectId == null) {
             result = records.findByAccountIdAndObjectType(accountId, objectType, request);
         } else {
-            result = records.findByAccountIdAndObjectTypeAndObjectId(accountId, objectType, objectId, request);
+            result = records.findByObject(accountId, objectType, objectId, request);
         }
         return new AuditPage(result.getContent().stream().map(this::view).toList(), page, size,
                 result.getTotalElements(), result.getTotalPages());
@@ -113,7 +132,8 @@ public class AuditService {
     private AuditView view(AuditRecordEntity e) {
         return new AuditView(e.getId(), e.getOperatedAt(), e.getOperation(), e.getObjectType(), e.getObjectId(),
                 e.getSummary(), e.getBeforeJson() == null ? null : read(e.getBeforeJson()), e.getAfterJson() == null ? null : read(e.getAfterJson()),
-                read(e.getChangesJson()), read(e.getSideEffectsJson()));
+                read(e.getChangesJson()), read(e.getSideEffectsJson()),
+                e.getDetailJson() == null ? null : read(e.getDetailJson()));
     }
 
     private String write(Object value) {

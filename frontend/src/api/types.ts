@@ -450,6 +450,19 @@ export interface OptionPosition {
   expiresOnAdhocClosure?: boolean
   /** FEAT-042: that closure's `eventName` (tag tooltip) when `expiresOnAdhocClosure`; else null. */
   adhocClosureEventName?: string | null
+  /**
+   * FEAT-043: the 调整到期日 button is shown only when true (ad-hoc closure expiry, contract not
+   * settled, not adjusted before). Optional: older fixtures.
+   */
+  expirationAdjustable?: boolean
+  /** FEAT-043: records the adjustment will change (opens + closes); 0 when not adjustable. */
+  expirationAdjustmentRecordCount?: number
+  /** FEAT-043: default new expiration date (trading day before the closure); null when not adjustable. */
+  defaultNewExpirationDate?: LocalDateString | null
+  /** FEAT-043: earliest selectable new expiration date (inclusive); null when not adjustable. */
+  newExpirationDateMin?: LocalDateString | null
+  /** FEAT-043: latest selectable new expiration date (inclusive); null when not adjustable. */
+  newExpirationDateMax?: LocalDateString | null
 }
 
 /** Contract: `GET /api/option-positions` → 200. */
@@ -661,7 +674,13 @@ export interface UpdateOptionTradeRequest {
 export type UpdateCashTransferRequest = CreateCashTransferRequest
 
 export type AuditObjectType = 'OPTION_TRADE' | 'CASH_TRANSFER' | 'ACCOUNT' | 'STOCK_TRADE'
-export type AuditOperation = 'CREATE' | 'UPDATE' | 'DELETE' | (string & {})
+/** FEAT-043 adds `ADJUST_EXPIRATION` (调整到期日). */
+export type AuditOperation =
+  | 'CREATE'
+  | 'UPDATE'
+  | 'DELETE'
+  | 'ADJUST_EXPIRATION'
+  | (string & {})
 
 /** A full snapshot of the object (trade or transfer fields, see contract); display only. */
 export type AuditSnapshot = Record<string, string | number | null>
@@ -700,6 +719,8 @@ export interface AuditRecord {
   after: AuditSnapshot | null
   changes: AuditFieldChange[]
   sideEffects: AuditSideEffect[]
+  /** FEAT-043: set on `ADJUST_EXPIRATION` records, null otherwise. Optional: older fixtures. */
+  expirationAdjustment?: AuditExpirationAdjustment | null
 }
 
 /** Contract: `GET /api/audit-log?objectType=&objectId=&page=&size=` → 200. */
@@ -1203,4 +1224,48 @@ export interface AdhocClosureAlert {
 export interface AdhocClosureAlertsResponse {
   /** Ascending by date; only dates with affected positions. */
   alerts: AdhocClosureAlert[]
+}
+
+// ---------------------------------------------------------------------------
+// FEAT-043 调整到期日
+// ---------------------------------------------------------------------------
+
+/** Contract: `POST /api/option-trades/expiration-adjustments` request body (current account). */
+export interface CreateExpirationAdjustmentRequest {
+  /** Current contract, passed as-is from the position row. */
+  symbol: string
+  expirationDate: LocalDateString
+  strike: string
+  optionType: OptionType
+  newExpirationDate: LocalDateString
+  /** ≤ 500 characters; null / blank = no note. */
+  note: string | null
+}
+
+/** Contract: `POST /api/option-trades/expiration-adjustments` → 200. */
+export interface ExpirationAdjustmentResponse {
+  auditId: number
+  symbol: string
+  strike: string
+  optionType: OptionType
+  oldExpirationDate: LocalDateString
+  newExpirationDate: LocalDateString
+  /** New contract label. */
+  contractLabel: string
+  /** Changed record ids, ascending. */
+  tradeIds: number[]
+  /** The new contract's position; null when it is fully closed. */
+  position: OptionPosition | null
+}
+
+/** Contract: audit `items[].expirationAdjustment` on `ADJUST_EXPIRATION` records. */
+export interface AuditExpirationAdjustment {
+  symbol: string
+  strike: string
+  optionType: OptionType
+  oldExpirationDate: LocalDateString
+  newExpirationDate: LocalDateString
+  adhocClosureEventName: string
+  tradeIds: number[]
+  note: string | null
 }

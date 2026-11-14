@@ -193,8 +193,26 @@ class TestSupportResetE2eProfileTest {
         assertThat(row.get("uncoveredContracts").asInt()).isEqualTo(2);
         assertThat(row.get("lots").get(0).get("coverage").asText()).isEqualTo("LEGACY");
         mvc.perform(post("/api/test-support/legacy-option-trades").contentType(MediaType.APPLICATION_JSON)
-                        .content(body.replace("CALL", "PUT")))
+                        .content(body.replace("\"STO\"", "\"BTC\"")))
                 .andExpect(status().isBadRequest());
+    }
+
+    /** FEAT-043: any open, without the Q126 trading-day check (an option expiring on the 2025-01-09 closure). */
+    @Test
+    void legacyOptionTradeAcceptsAnyOpenOnANonTradingDay() throws Exception {
+        transfer("DEPOSIT", "10000.00", "2024-12-02T10:00");
+        String put = "{\"symbol\":\"IXQZ\",\"expirationDate\":\"2025-01-09\",\"strike\":\"8\",\"optionType\":\"PUT\","
+                + "\"action\":\"STO\",\"contracts\":1,\"netAmount\":\"30.00\",\"tradedAtLocal\":\"2024-12-20T10:00\"}";
+        mvc.perform(post("/api/option-trades").contentType(MediaType.APPLICATION_JSON).content(put))
+                .andExpect(status().isUnprocessableEntity());
+        mvc.perform(post("/api/test-support/legacy-option-trades").contentType(MediaType.APPLICATION_JSON).content(put))
+                .andExpect(status().isCreated());
+        mvc.perform(post("/api/test-support/legacy-option-trades").contentType(MediaType.APPLICATION_JSON)
+                        .content(put.replace("\"STO\"", "\"BTO\"").replace("PUT", "CALL")))
+                .andExpect(status().isCreated());
+        JsonNode positions = getJson("/api/option-positions").get("positions");
+        assertThat(positions).hasSize(2);
+        assertThat(positions.get(0).get("lots").get(0).get("coverage").isNull()).isTrue();
     }
 
     private void reset() throws Exception {

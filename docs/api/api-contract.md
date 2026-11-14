@@ -144,3 +144,4 @@
 | [FEAT-039.md](FEAT-039.md) | FEAT-039 covered call 股票覆盖检查与锁定（**行为变化：STO call、股票卖出及多种修改 / 删除可能被 `COVERAGE_INSUFFICIENT` 拒绝**） |
 | [FEAT-009.md](FEAT-009.md) | FEAT-009 美股交易日历（`GET /api/trading-calendar/non-trading-days`、`/status`；持仓新增 `remainingTradingDays`；**行为变化：开仓到期日非交易日被 422 `EXPIRATION_NOT_TRADING_DAY` 拒绝**；测试支持假拉取与假时钟） |
 | [FEAT-042.md](FEAT-042.md) | FEAT-042 临时休市检测与提醒（`GET /api/adhoc-closure-alerts` 按账户；`GET /api/trading-calendar/adhoc-closures` 全系统、FEAT-043 复用；持仓新增 `expiresOnAdhocClosure`、`adhocClosureEventName`；拉取成功后检测，测试支持无新增接口） |
+| [FEAT-043.md](FEAT-043.md) | FEAT-043 临时休市时调整到期日（`POST /api/option-trades/expiration-adjustments`；持仓新增 `expirationAdjustable` 等；审计新 `operation` `ADJUST_EXPIRATION` 与 `expirationAdjustment` 字段，`objectId` 筛选也匹配调整涉及的交易；测试支持 `legacy-option-trades` 扩展到 put / BTO；迁移 V15） |

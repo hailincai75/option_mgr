@@ -5,5 +5,7 @@ public enum AuditOperation {
     /** FEAT-033: account creation (no "before"). */
     CREATE,
     UPDATE,
-    DELETE
+    DELETE,
+    /** FEAT-043: a contract's expiration date moved off an ad-hoc closure (several trades, one record). */
+    ADJUST_EXPIRATION
 }

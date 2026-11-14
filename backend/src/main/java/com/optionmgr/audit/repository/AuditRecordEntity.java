@@ -33,7 +33,7 @@ public class AuditRecordEntity {
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.VARCHAR)
-    @Column(nullable = false, length = 10)
+    @Column(nullable = false, length = 20)
     private AuditOperation operation;
 
     @Enumerated(EnumType.STRING)
@@ -59,7 +59,21 @@ public class AuditRecordEntity {
     @Column(name = "side_effects_json", nullable = false, length = 10000)
     private String sideEffectsJson;
 
+    /** FEAT-043: operation-specific data (the adjustment of ADJUST_EXPIRATION); null for other operations. */
+    @Column(name = "detail_json", length = 10000)
+    private String detailJson;
+
     protected AuditRecordEntity() {
+    }
+
+    /** Sets the operation-specific data; only before the record is first saved (the entity is immutable). */
+    public AuditRecordEntity withDetail(String detailJson) {
+        this.detailJson = detailJson;
+        return this;
+    }
+
+    public String getDetailJson() {
+        return detailJson;
     }
 
     public AuditRecordEntity(long accountId, Instant operatedAt, AuditOperation operation, AuditObjectType objectType, long objectId,

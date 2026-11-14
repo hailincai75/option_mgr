@@ -1,11 +1,11 @@
 # FEAT-043: 临时休市时调整合约到期日（Q43 的例外）
 
-- **Status:** Approved
+- **Status:** Verified
 - **Priority:** P1
 - **Depends on:** FEAT-042（临时休市记录与提醒）、FEAT-009（交易日判断）、FEAT-005（审计）、FEAT-039（覆盖检查）、FEAT-012 / 013 / 041 / 014（作废、被指派、行权）
 - **Scope:**
-  - [ ] Backend: Done（调整操作、检查、审计）
-  - [ ] Frontend: Done（持仓行按钮、调整对话框）
+  - [x] Backend: Done（调整操作、检查、审计）
+  - [x] Frontend: Done（持仓行按钮、调整对话框）
 
 ## 背景 / 用户故事
 2025-01-09 临时休市时，原定该日到期的期权改为 2025-01-08 到期（Q120 背景）。合约到期日按 Q43 不能修改，只能删掉全部记录再重录，很麻烦。作为期权交易者，当 FEAT-042 提醒我有持仓在临时休市日到期时，我想一次把这个合约的到期日改成实际到期的交易日，记录全部跟着改，并留下审计。
@@ -70,3 +70,26 @@ P2 = BTO 2 张 IXQZ 2026-12-04 9C 净额 60.00。P3 = STO 1 张 QRTV 2026-12-18 
 
 ## Open Questions
 - 无（Q129–Q133 已定）。
+
+## Implementation Notes
+
+### Backend
+- **契约**：`docs/api/FEAT-043.md`（实现阶段两处更正 / 补充：`legacy-option-trades` 平仓方向的 400 文案同 `POST /api/option-trades`；迁移多一列 `audit_record.detail_json`）。
+- **新增文件**：`db/migration/V15__expiration_adjustment.sql`；`trade/domain/ExpirationAdjustmentRules`；`trade/service/ExpirationAdjustmentService`；`trade/web/ExpirationAdjustmentController`；`trade/repository/ExpirationAdjustmentEntity` / `ExpirationAdjustmentRepository`；`audit/repository/AuditRecordObjectEntity` / `AuditRecordObjectRepository`。
+- **修改**：`AuditOperation`（`ADJUST_EXPIRATION`）、`AuditRecordEntity`（`detail_json`，operation 列宽 20）、`AuditRecordRepository.findByObject`、`AuditService`（`record(r, detail, relatedObjectIds)`、`AuditView.detail`）、`AuditController`（`expirationAdjustment`）；`ErrorCode`（7 个新码）；`OptionTradeEntity.changeExpiration`；`OptionPositionService`（`Adjustability`）、`OptionPositionController`（5 个新字段，`toResponse` 供调整响应复用）；`OptionTradeDtos.AdjustExpirationRequest`；`TestSupportController`（`legacy-option-trades` 接受任意开仓）。
+- **测试**：`ExpirationAdjustmentRulesTest`（规则与顺序）、`ExpirationAdjustmentControllerTest`（验收 1–9 的后端部分、404 / 400、跨账户、范围、Q132、只调一次、FEAT-005 审计筛选回归）；`TestSupportResetE2eProfileTest` 增加任意开仓预置；迁移测试改为 `before-V15` / `V16__simulated_failure.sql`，`MigrationFromM1Test` 复制 M1 行时去掉 `detail_json`。
+- **设计决定**：
+  - 一次调整一条审计（`objectId` = 最小交易 id），其它交易 id 写进 `audit_record_object`，审计按对象筛选同时匹配，所以 3 条记录的"历史"都显示这次调整；`hasAuditLog` 只在调整的交易上置 `true`，其它审计行为不变。
+  - "只调一次"用 `expiration_adjustment` 的唯一键（账户 + 新合约），调整后新录入在新合约上的记录不影响判断。
+  - Q130 重放：合约重放、call 的覆盖不变量（覆盖不依赖到期日）、现金流水重放；数据正确时不会失败，是防御性检查。
+  - 现金流水 `description` 中的旧合约文字改为新合约文字（金额、冻结、时间不变）。
+- **已知限制**：不能撤销；调整后 FEAT-042 记录被撤销时不回退；`legacy-option-trades` 只在 `e2e` profile 下存在。
+
+### Frontend
+- **新增文件**：`components/position/AdjustExpirationModal.tsx`（调整到期日对话框）、`components/position/expirationAdjustment.ts`（按钮 / 对话框文案与请求体，纯函数）、`pages/AdjustExpiration.test.tsx`。
+- **修改**：`api/types.ts`（持仓 5 个新字段、`CreateExpirationAdjustmentRequest`、`ExpirationAdjustmentResponse`、`AuditExpirationAdjustment`、`AuditOperation` 加 `ADJUST_EXPIRATION`、审计项 `expirationAdjustment`，新字段均为可选以兼容旧测试数据）；`api/optionTrades.ts`（`createExpirationAdjustment`）；`PositionTable`（按 `expirationAdjustable` 显示按钮，可与其它按钮并列或单独出现）；`PositionsPage`（打开对话框）；`ExpirationDatePicker`（新增可选 `minDate` / `maxDate` / `dayTestIdPrefix`；单元格加 `data-disabled`；`value` 改为按字符串 memo 的 Dayjs——原先每次渲染新建对象，已有值时翻月会被拉回原月份，录入页也受益）；`AuditTable`（操作标签映射，`ADJUST_EXPIRATION` 显示紫色"调整到期日"；改动列在 `changes` 之后加"记录：#…""备注：…"；展开行显示调整详情代替修改前 / 后快照）。
+- **对话框**：合约、`当前到期日（休市名称）`、`N 条开仓 / 平仓记录`、说明文字全部来自后端字段；新到期日默认 `defaultNewExpirationDate`，`newExpirationDateMin`..`newExpirationDateMax` 之外及 FEAT-009 `non-trading-days` 的日期禁用（休市日查询失败时提示不禁用，与录入页相同）；手动输入范围外 / 非交易日不在前端拦截，提交后显示后端 422 原文（验收 7）。前端只校验"新到期日必填"和备注 ≤ 500。错误原文显示、对话框不关闭，并让持仓和提醒失效重查；成功后提示 `已调整到期日：<新合约>`、关闭对话框、`refreshAfterChange`（含持仓、提醒、交易列表、已平仓、审计、现金）。
+- **FEAT-042 去调整**：行为不变（滚动并高亮第一个受影响行），需求规则 1 只要求"指向这些行"，不自动打开对话框。
+- **data-testid**：持仓行 `position-adjust-expiration`；对话框 `adjust-expiration-modal`、`adjust-expiration-contract`、`adjust-expiration-current`、`adjust-expiration-record-count`、`adjust-expiration-form`、`adjust-expiration-date`（在 input 上）、日期单元格 `adjust-expiration-day-YYYY-MM-DD`（`data-non-trading` / `data-disabled`）、`adjust-expiration-calendar-error`、`adjust-expiration-note`、`adjust-expiration-hint`、`adjust-expiration-error`（`data-error-code`）、`adjust-expiration-submit`、`adjust-expiration-cancel`；审计 `audit-cell-operation` 加 `data-operation`，行内 `audit-adjust-trades`、`audit-adjust-trade-ids`、`audit-adjust-note`，展开 `audit-adjustment`、`audit-adjustment-contract`、`audit-adjustment-dates`、`audit-adjustment-event`、`audit-adjustment-trade-ids`、`audit-adjustment-note`。
+- **测试**：`pages/AdjustExpiration.test.tsx`（11 条：文案 / 请求体纯函数、按钮只在可调整行、对话框内容与默认值、范围外 / 非交易日禁用、提交请求体与成功后关闭刷新、422 原文、必填、取消、审计行与展开详情、无备注）。
+- **已知限制**：前端不判断日期（只用后端给的范围和非交易日禁用）；`ExpirationDatePicker` 的 memo 修正影响录入页，`TradingCalendar.test.tsx` 等已有测试留给 qa 全量 `npm test` 验证。

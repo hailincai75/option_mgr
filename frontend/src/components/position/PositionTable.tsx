@@ -7,6 +7,7 @@ import { decimalSign, EMPTY_VALUE, formatDateTimeNY, formatMoney } from '../../u
 import { SIGNED_MONEY_COLORS, tradeActionLabel } from '../trade/tradeLabels'
 import { ADHOC_CLOSURE_TAG_TEXT } from './adhocClosure'
 import { coverageTags } from './coverageLabels'
+import { ADJUST_EXPIRATION_BUTTON_TEXT, isExpirationAdjustable } from './expirationAdjustment'
 import { tradesUrlForPosition } from './positionLinks'
 
 const DIRECTION_TAGS: Record<string, { label: string; color: string }> = {
@@ -202,6 +203,7 @@ function positionColumns(
   onExpirePosition: (position: OptionPosition) => void,
   onAssignPosition: (position: OptionPosition) => void,
   onExercisePosition: (position: OptionPosition) => void,
+  onAdjustExpiration: (position: OptionPosition) => void,
 ): ColumnsType<OptionPosition> {
   return [
     {
@@ -320,9 +322,17 @@ function positionColumns(
       // 17:30 (`expirable`, FEAT-012), and 被指派 on short puts / calls at any time (`assignable`,
       // FEAT-013 / FEAT-041 Q95 — the only button while 到期待确认), and 行权 on long calls / puts at
       // any time (`exercisable`, FEAT-014 Q81 — next to 平仓 / 作废, alone while 到期待确认).
+      // FEAT-043: 调整到期日 on rows the backend marks `expirationAdjustable`.
       render: (_value: unknown, position) => {
         const exercisable = position.exercisable === true
-        if (!position.closable && !position.expirable && !position.assignable && !exercisable) {
+        const adjustable = isExpirationAdjustable(position)
+        if (
+          !position.closable &&
+          !position.expirable &&
+          !position.assignable &&
+          !exercisable &&
+          !adjustable
+        ) {
           return null
         }
         return (
@@ -372,6 +382,17 @@ function positionColumns(
                 行权
               </Button>
             )}
+            {adjustable && (
+              <Button
+                size="small"
+                onClick={() => {
+                  onAdjustExpiration(position)
+                }}
+                data-testid="position-adjust-expiration"
+              >
+                {ADJUST_EXPIRATION_BUTTON_TEXT}
+              </Button>
+            )}
           </Space>
         )
       },
@@ -391,9 +412,13 @@ interface PositionTableProps {
   onAssignPosition: (position: OptionPosition) => void
   /** Opens the 行权 dialog for an exercisable long position (FEAT-014). */
   onExercisePosition: (position: OptionPosition) => void
+  /** Opens the 调整到期日 dialog for an adjustable position (FEAT-043). */
+  onAdjustExpiration?: (position: OptionPosition) => void
   /** FEAT-042: row highlighted after 去调整 (by contract label); null/omitted for none. */
   highlightedContract?: string | null
 }
+
+const NO_ADJUST = () => undefined
 
 /**
  * Positions in backend order; each row expands to its FIFO lots and has 平仓 (closable),
@@ -408,6 +433,7 @@ export function PositionTable({
   onExpirePosition,
   onAssignPosition,
   onExercisePosition,
+  onAdjustExpiration = NO_ADJUST,
   highlightedContract = null,
 }: PositionTableProps) {
   const { token } = theme.useToken()
@@ -420,6 +446,7 @@ export function PositionTable({
         onExpirePosition,
         onAssignPosition,
         onExercisePosition,
+        onAdjustExpiration,
       )}
       dataSource={positions}
       loading={loading}

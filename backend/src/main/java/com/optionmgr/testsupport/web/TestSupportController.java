@@ -8,8 +8,6 @@ import com.optionmgr.testsupport.E2eProfile;
 import com.optionmgr.testsupport.service.DatabaseResetService;
 import com.optionmgr.trade.domain.ContractKey;
 import com.optionmgr.trade.domain.OpenTradeTerms;
-import com.optionmgr.trade.domain.OptionType;
-import com.optionmgr.trade.domain.TradeAction;
 import com.optionmgr.trade.service.OptionTradeService;
 import com.optionmgr.trade.web.OptionTradeController;
 import com.optionmgr.trade.web.OptionTradeDtos.OpenTradeRequest;
@@ -123,14 +121,15 @@ public class TestSupportController {
 
     /**
      * FEAT-039: an STO call stored as if entered before FEAT-039 (LEGACY: no coverage check), then evaluated by the
-     * automatic inclusion. Same body and response as POST /api/option-trades.
+     * automatic inclusion. FEAT-043: also any other open (BTO / STO, call / put) stored without the Q126 trading-day
+     * check (e.g. an option expiring on 2025-01-09). Same body and response as POST /api/option-trades.
      */
     @PostMapping("/legacy-option-trades")
     @ResponseStatus(HttpStatus.CREATED)
     public TradeResponse legacyOptionTrade(AccountRef account, @Valid @RequestBody OpenTradeRequest req) {
-        if (req.action() != TradeAction.STO || req.optionType() != OptionType.CALL) {
+        if (req.action() == null || !req.action().isOpening()) {
             throw new ApiException(ErrorCode.VALIDATION_ERROR, "Request validation failed",
-                    List.of(new ErrorResponse.FieldError("action", "只能预置 STO call")));
+                    List.of(new ErrorResponse.FieldError("action", "只能预置开仓")));
         }
         ContractKey contract = new ContractKey(req.symbol(), req.expirationDate(), req.strike(), req.optionType());
         int multiplier = req.multiplier() == null

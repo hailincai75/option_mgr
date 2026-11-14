@@ -108,7 +108,7 @@ class MigrationV6HasAuditLogTest {
 
         try (Stream<Path> files = Files.list(dir)) {
             List<String> backups = files.map(p -> p.getFileName().toString())
-                    .filter(f -> f.startsWith("v5db-backup-before-V14-")).toList();
+                    .filter(f -> f.startsWith("v5db-backup-before-V15-")).toList();
             assertThat(backups).hasSize(1);
         }
     }

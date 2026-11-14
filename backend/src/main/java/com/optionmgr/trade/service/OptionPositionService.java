@@ -21,6 +21,9 @@ import com.optionmgr.trade.domain.LotTrade;
 import com.optionmgr.trade.domain.OptionPosition;
 import com.optionmgr.trade.domain.PositionBuilder;
 import com.optionmgr.trade.repository.OptionTradeEntity;
+import com.optionmgr.trade.domain.ExpirationAdjustmentRules;
+import com.optionmgr.trade.repository.ExpirationAdjustmentEntity;
+import com.optionmgr.trade.repository.ExpirationAdjustmentRepository;
 import com.optionmgr.trade.repository.OptionTradeRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -32,6 +35,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,12 +50,14 @@ public class OptionPositionService {
     private final CoverageService coverage;
     private final TradingCalendarService tradingCalendar;
     private final AdhocClosureService adhocClosures;
+    private final ExpirationAdjustmentRepository adjustments;
     private final Clock clock;
 
     public OptionPositionService(OptionTradeRepository trades, CashLedgerService ledger,
                                  StockPositionService stockPositions, CoverageService coverage,
                                  TradingCalendarService tradingCalendar, AdhocClosureService adhocClosures,
-                                 Clock clock) {
+                                 ExpirationAdjustmentRepository adjustments, Clock clock) {
+        this.adjustments = adjustments;
         this.adhocClosures = adhocClosures;
         this.tradingCalendar = tradingCalendar;
         this.coverage = coverage;
@@ -72,7 +79,13 @@ public class OptionPositionService {
                                   BigDecimal frozenTotal, Map<ContractKey, Integer> expiryContracts,
                                   Map<String, Long> stockShares, Map<ContractKey, RowCoverage> coverage,
                                   BigDecimal availableCash, Map<String, Long> availableShares,
-                                  TradingCalendar calendar, Map<LocalDate, String> adhocClosures) {
+                                  TradingCalendar calendar, Map<LocalDate, String> adhocClosures,
+                                  Map<ContractKey, Adjustability> adjustable) {
+
+        /** FEAT-043: the expiration adjustment a row allows; null when the row cannot be adjusted. */
+        public Adjustability adjustability(OptionPosition p) {
+            return adjustable.get(p.contract());
+        }
 
         /** FEAT-042 rule 3/5: eventName of the ACTIVE ad-hoc closure the position expires on; null when none. */
         public String adhocClosureEventName(OptionPosition p) {
@@ -108,6 +121,18 @@ public class OptionPositionService {
         public long underlyingShares(OptionPosition p) {
             return stockShares.getOrDefault(p.contract().symbol(), 0L);
         }
+    }
+
+    /**
+     * FEAT-043: a row whose expiration date may be adjusted (expires on an ACTIVE ad-hoc closure, not settled, not
+     * adjusted before).
+     *
+     * @param recordCount records that would change (all records of the contract in the account)
+     * @param defaultDate closest trading day before the closure
+     * @param minDate     last trade date (New York)
+     * @param maxDate     the day before the current expiration date
+     */
+    public record Adjustability(int recordCount, LocalDate defaultDate, LocalDate minDate, LocalDate maxDate) {
     }
 
     /**
@@ -174,9 +199,38 @@ public class OptionPositionService {
             }
         }
         BigDecimal availableCash = ledger.currentBalance(accountId).available();
+        TradingCalendar calendar = tradingCalendar.calendar();
+        Map<LocalDate, String> closures = adhocClosures.activeClosures();
         return new PositionSummary(now, today, positions, frozenTotal, Map.copyOf(expiryContracts),
-                Map.copyOf(stockShares), Map.copyOf(rows), availableCash, Map.copyOf(availableShares), tradingCalendar.calendar(),
-                Map.copyOf(adhocClosures.activeClosures()));
+                Map.copyOf(stockShares), Map.copyOf(rows), availableCash, Map.copyOf(availableShares), calendar,
+                Map.copyOf(closures), adjustable(accountId, positions, byContract, closures, calendar));
+    }
+
+    /** FEAT-043: adjustable rows (rule 1, checks 3.1 / 3.2, Q131 only once). */
+    private Map<ContractKey, Adjustability> adjustable(long accountId, List<OptionPosition> positions,
+                                                       Map<ContractKey, List<LotTrade>> byContract,
+                                                       Map<LocalDate, String> closures, TradingCalendar calendar) {
+        if (positions.stream().noneMatch(p -> closures.containsKey(p.contract().expirationDate()))) {
+            return Map.of();
+        }
+        Set<ContractKey> adjusted = adjustments.findByAccountId(accountId).stream()
+                .map(ExpirationAdjustmentEntity::newContract).collect(Collectors.toSet());
+        Map<ContractKey, Adjustability> out = new HashMap<>();
+        for (OptionPosition p : positions) {
+            ContractKey c = p.contract();
+            if (!closures.containsKey(c.expirationDate()) || adjusted.contains(c)) {
+                continue;
+            }
+            List<ExpirationAdjustmentRules.Record> records = byContract.get(c).stream()
+                    .map(t -> new ExpirationAdjustmentRules.Record(t.tradeId(), t.action(), t.tradedAt())).toList();
+            if (ExpirationAdjustmentRules.settled(records)) {
+                continue;
+            }
+            out.put(c, new Adjustability(records.size(),
+                    ExpirationAdjustmentRules.defaultNewDate(c.expirationDate(), calendar::isTradingDay),
+                    ExpirationAdjustmentRules.lastTradeDate(records), c.expirationDate().minusDays(1)));
+        }
+        return Map.copyOf(out);
     }
 
     static RowCoverage rowCoverage(OptionPosition p, CoverageTimeline timeline) {

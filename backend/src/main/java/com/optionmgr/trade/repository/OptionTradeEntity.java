@@ -173,6 +173,11 @@ public class OptionTradeEntity {
         this.note = note;
     }
 
+    /** FEAT-043: the expiration date moves (exception to Q43); every other field and the id stay. */
+    public void changeExpiration(LocalDate newExpirationDate) {
+        this.expirationDate = newExpirationDate;
+    }
+
     /** Called only by the edit path, in the transaction that writes this trade's UPDATE audit record. */
     public void markAudited() {
         this.hasAuditLog = true;
