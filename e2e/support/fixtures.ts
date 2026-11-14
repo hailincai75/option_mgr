@@ -1,5 +1,14 @@
 import { test as base, expect, type Locator, type Page } from '@playwright/test'
-import { BACKEND_URL, backendIsUp, e2eBackend, setApiAccount, startBackend, type E2EBackend } from './backend'
+import {
+  BACKEND_URL,
+  backendIsUp,
+  e2eBackend,
+  ensureWorkerStack,
+  FRONTEND_URL,
+  setApiAccount,
+  startBackend,
+  type E2EBackend,
+} from './backend'
 import { releaseBackendClock } from './clock'
 import { TradeForm } from './trade'
 
@@ -8,9 +17,17 @@ export { expect }
 /** U+2212, used by the app for negative money. */
 export const MINUS = '−'
 
+type WorkerFixtures = {
+  /**
+   * This worker's own stack (e2e-profile backend with its own in-memory DB + Vite dev server proxying to it, see
+   * backend.ts), started on first use and kept for the whole run (stopped by global teardown). Auto-used.
+   */
+  workerStack: void
+}
+
 type Fixtures = {
   /**
-   * The suite's shared e2e-profile backend (started in global setup), reset to an empty database before each
+   * This worker's own e2e-profile backend (started by workerStack), reset to an empty database before each
    * test via POST /api/test-support/reset. Auto-used. Tests may stop/start it to simulate an outage.
    */
   backend: E2EBackend
@@ -18,7 +35,18 @@ type Fixtures = {
   trade: TradeForm
 }
 
-export const test = base.extend<Fixtures>({
+export const test = base.extend<Fixtures, WorkerFixtures>({
+  workerStack: [
+    async ({}, use) => {
+      await ensureWorkerStack()
+      await use()
+    },
+    { scope: 'worker', auto: true, timeout: 240_000 },
+  ],
+  // Pages go to this worker's Vite dev server (and through its /api proxy to this worker's backend).
+  baseURL: async ({}, use) => {
+    await use(FRONTEND_URL)
+  },
   backend: [
     async ({}, use) => {
       // Self-heal if a previous test left the backend stopped (e.g. it failed during the outage test).

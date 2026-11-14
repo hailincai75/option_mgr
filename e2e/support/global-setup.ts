@@ -1,14 +1,15 @@
-import { bootJar, javaExecutable, startBackend, stopBackend } from './backend'
+import { bootJar, javaExecutable, stopAll, viteBin } from './backend'
 
 /**
- * Starts ONE e2e-profile backend for the whole run (fails fast if 8080 is taken or the reset endpoint is
- * missing) and returns the teardown that stops it.
+ * Checks the prerequisites (JDK, boot jar, Vite) and returns the teardown that stops every backend and Vite dev
+ * server this run started. The per-worker stacks themselves are started lazily by the worker-scoped fixture
+ * (fixtures.ts), so a run with fewer spec files than workers only starts the stacks it uses.
  */
 export default async function globalSetup(): Promise<() => Promise<void>> {
   javaExecutable()
   bootJar()
-  await startBackend('suite')
+  viteBin()
   return async () => {
-    await stopBackend()
+    await stopAll()
   }
 }

@@ -378,11 +378,15 @@ test.describe('FEAT-012 到期作废', () => {
     await page.goto('/closed')
     await ui.id('closed-filter-action-exp').check()
     await ui.id('closed-filter-submit').click()
+    // The unfiltered list also has 4 rows / +266.69: wait until the filter is applied (URL) before changing it again,
+    // otherwise the form re-syncs from the URL after the next clicks and undoes them.
+    await expect.poll(() => new URL(page.url()).searchParams.getAll('action').join(',')).toBe('EXP')
     await expect(ui.id('closed-count')).toHaveText('共 4 笔平仓')
     await expect(ui.id('closed-pnl-total')).toHaveText('+266.69')
     await ui.id('closed-filter-action-exp').uncheck()
     await ui.id('closed-filter-action-btc').check()
     await ui.id('closed-filter-submit').click()
+    await expect.poll(() => new URL(page.url()).searchParams.getAll('action').join(',')).toBe('BTC')
     await expect(ui.id('closed-row')).toHaveCount(0)
   })
 

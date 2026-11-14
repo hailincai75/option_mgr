@@ -1,48 +1,34 @@
 import { defineConfig, devices } from '@playwright/test'
-import { BACKEND_URL } from './support/backend'
+import { E2E_WORKERS } from './support/backend'
 
 /**
- * Ports. Defaults 5173 (frontend) / 8080 (backend). To run next to the developer's own app on those ports, set
- * E2E_FRONTEND_PORT and E2E_BACKEND_PORT (e.g. 15173 / 18080): the suite then starts its own Vite dev server on
- * E2E_FRONTEND_PORT with its /api proxy pointed at the e2e backend (OPTION_MGR_API_TARGET) and never talks to
- * 5173 / 8080.
- */
-const FRONTEND_PORT = process.env.E2E_FRONTEND_PORT ?? '5173'
-const FRONTEND_URL = `http://localhost:${FRONTEND_PORT}`
-
-/**
- * E2E for Option Manager.
- * - Frontend: Vite dev server on 5173 (reused if already running, otherwise started here).
- * - Backend: global setup starts ONE backend from the boot jar with the `e2e` Spring profile (in-memory H2,
- *   enforced by the backend) on 8080 and stops it at the end. Before every test the fixture calls
- *   POST /api/test-support/reset (must be 204) so each test starts with an empty database. If 8080 is held by a
- *   backend without the e2e profile (reset → 404) the run aborts before writing anything; the developer's file
- *   DB (backend/data/) is never touched. Requires the boot jar: `cd backend && gradlew.bat bootJar`.
- * - All tests share one database, so they run serially (workers: 1, not fully parallel).
+ * E2E for Option Manager, run in parallel by spec file.
+ * - E2E_WORKERS workers (default 3; E2E_WORKERS=1 = serial). Each worker slot i has its own isolated stack, started on
+ *   first use by the worker-scoped fixture (support/fixtures.ts) and stopped by global teardown:
+ *   - backend from the boot jar with the `e2e` Spring profile on E2E_BACKEND_PORT + i (default 18080 + i); in-memory
+ *     H2 (enforced by the backend), so each JVM has its own database, clock and reset endpoint;
+ *   - Vite dev server on E2E_FRONTEND_PORT + i (default 15173 + i) with its /api proxy pointed at that backend
+ *     (OPTION_MGR_API_TARGET); the worker's baseURL.
+ *   8080 / 5173 (the developer's own app) are never used by default. A port held by a non-e2e backend (reset → 404)
+ *   aborts the run before writing anything; the developer's file DB (backend/data/) is never touched.
+ * - Before every test the fixture calls POST /api/test-support/reset (must be 204) on the worker's backend.
+ * - fullyParallel: false: tests inside one spec file still run in order in one worker; files are spread over workers.
+ * Requires the boot jar: `cd backend && gradlew.bat bootJar`.
  */
 export default defineConfig({
   testDir: './tests',
   fullyParallel: false,
-  workers: 1,
+  workers: E2E_WORKERS,
   retries: 0,
   timeout: 120_000,
   expect: { timeout: 10_000 },
   reporter: [['list'], ['html', { open: 'never' }]],
   globalSetup: './support/global-setup.ts',
   use: {
-    baseURL: FRONTEND_URL,
+    // baseURL is set per worker by support/fixtures.ts
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     locale: 'zh-CN',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
-  webServer: {
-    command: FRONTEND_PORT === '5173' ? 'npm run dev' : `npm run dev -- --port ${FRONTEND_PORT} --strictPort`,
-    cwd: '../frontend',
-    url: FRONTEND_URL,
-    env: { OPTION_MGR_API_TARGET: BACKEND_URL },
-    // A custom port is always a fresh server of our own (never someone else's Vite pointed at another backend).
-    reuseExistingServer: FRONTEND_PORT === '5173',
-    timeout: 120_000,
-  },
 })

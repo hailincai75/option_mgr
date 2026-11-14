@@ -326,6 +326,10 @@ test.describe('FEAT-006 已平仓', () => {
     expect(new URL(page.url()).searchParams.get('page')).toBeNull()
 
     await c.clear()
+    // Wait until the page has rendered the cleared filters (the URL changes first); a size click before that still
+    // carries the old start date.
+    await expect(c.count).toHaveText('共 25 笔平仓')
+    await expect(c.f('start-date')).toHaveValue('')
     await page.getByTestId('closed-size-50').locator('xpath=ancestor::label[1]').click()
     await expect(c.rows).toHaveCount(25)
     await expect(c.total).toHaveText('+50.00')

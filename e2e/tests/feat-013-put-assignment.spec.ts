@@ -389,9 +389,14 @@ class Ui {
   }
 
   async chooseContracts(d: Locator, n: number): Promise<void> {
-    await d.getByTestId(S.assignContracts).click()
-    await this.page.locator('.ant-select-dropdown:visible').getByTestId(S.assignContractsOption(n)).click()
-    await expect.poll(() => this.selectedContracts(d)).toMatch(new RegExp(`^${n} 张`))
+    // Retried as a whole: under load the click on the option can land while the dialog / dropdown is still animating
+    // and be lost (the select keeps its default), which is not what this test is about.
+    await expect(async () => {
+      const dropdown = this.page.locator('.ant-select-dropdown:visible')
+      if (!(await dropdown.isVisible())) await d.getByTestId(S.assignContracts).click()
+      await dropdown.getByTestId(S.assignContractsOption(n)).click({ timeout: 3_000 })
+      await expect.poll(() => this.selectedContracts(d), { timeout: 2_000 }).toMatch(new RegExp(`^${n} 张`))
+    }).toPass({ timeout: 15_000 })
   }
 
   async submitAssign(d: Locator): Promise<void> {
