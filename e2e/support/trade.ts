@@ -47,6 +47,55 @@ export async function apiTrade(t: {
   return (await r.json()) as never
 }
 
+/**
+ * FEAT-039 scenario L: an STO call "entered before FEAT-039 went live" (coverage status LEGACY, Q79) via the e2e-only
+ * POST /api/test-support/legacy-option-trades (same body / response as POST /api/option-trades; skips E1 / E3, then
+ * runs the automatic inclusion once). Sent with the current API account (X-Account-Id added by the fetch patch).
+ */
+export async function apiLegacyTrade(t: {
+  symbol?: string
+  expiration?: string
+  strike: string
+  contracts?: number
+  netAmount: string
+  time: string
+  multiplier?: number
+  note?: string
+}): Promise<{ id: number; tradedAt: string; tradedAtLocal: string }> {
+  const r = await fetch(`${BACKEND_URL}/api/test-support/legacy-option-trades`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      symbol: t.symbol ?? 'AAPL',
+      expirationDate: t.expiration ?? '2026-12-18',
+      strike: t.strike,
+      optionType: 'CALL',
+      action: 'STO',
+      contracts: t.contracts ?? 1,
+      netAmount: t.netAmount,
+      tradedAtLocal: t.time,
+      multiplier: t.multiplier ?? 100,
+      note: t.note ?? null,
+    }),
+  })
+  if (r.status !== 201) throw new Error(`seed legacy call failed: ${r.status} ${await r.text()}`)
+  return (await r.json()) as never
+}
+
+/**
+ * FEAT-039: STO calls need shares. Seeds a stock 转入 (TRANSFER_IN: no cash effect, Q71) of `shares` `symbol` on the
+ * New York date `tradeDate` (counted from 00:00, Q86) in the current API account; returns the stock record id.
+ */
+export async function apiTransferInShares(symbol: string, shares: number, tradeDate: string, amount = '1.00'): Promise<number> {
+  const r = await fetch(`${BACKEND_URL}/api/stock-trades`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'TRANSFER_IN', symbol, shares, amount, tradeDate, note: null }),
+  })
+  if (r.status !== 201) throw new Error(`seed TRANSFER_IN ${shares} ${symbol} failed: ${r.status} ${await r.text()}`)
+  return ((await r.json()) as { id: number }).id
+}
+
 export async function apiGetTrade(id: number): Promise<Record<string, unknown>> {
   return (await (await fetch(`${BACKEND_URL}/api/option-trades/${id}`)).json()) as Record<string, unknown>
 }

@@ -368,7 +368,7 @@ class StockTradeControllerTest {
         sto.put("contracts", 1);
         sto.put("netAmount", "20.00");
         sto.put("tradedAtLocal", "2026-11-03T09:00");
-        send(post("/api/option-trades"), sto, 201);
+        send(post(com.optionmgr.testsupport.LegacyShortCallTestController.openUrl(sto)), sto, 201);
         assertThat(summary()).containsExactly("1020.00", "500.00", "520.00");
 
         assertError(reject(stock("BUY", "QRTV", 100, "600.00", "2026-11-03T10:00"), 422), "CASH_INSUFFICIENT",
@@ -720,7 +720,7 @@ class StockTradeControllerTest {
         sto.put("contracts", 5);
         sto.put("netAmount", "150.00");
         sto.put("tradedAtLocal", "2026-11-12T10:00");
-        assertThat(send(post("/api/option-trades"), sto, 201).get("frozenChange").asText()).isEqualTo("0.00");
+        assertThat(send(post(com.optionmgr.testsupport.LegacyShortCallTestController.openUrl(sto)), sto, 201).get("frozenChange").asText()).isEqualTo("0.00");
         assertThat(summary()).containsExactly("9249.35", "0.00", "9249.35");
         create("SELL", "IXQZ", 150, "1300.00", "2026-11-12T11:00");
 

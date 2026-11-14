@@ -6,6 +6,7 @@ import type {
   OptionPositionsResponse,
   OptionTrade,
   OptionTradePage,
+  StockPositionsResponse,
 } from '../api/types'
 import { App } from '../App'
 import { jsonResponse, mockFetch, renderWithProviders } from '../test/render'
@@ -168,6 +169,8 @@ interface FakeServer {
   positions: () => Response
   trades?: OptionTrade[]
   onPost?: () => Response
+  /** FEAT-039: stock positions response; defaults to no stock. */
+  stocks?: StockPositionsResponse
 }
 
 function startFakeServer(server: FakeServer) {
@@ -196,7 +199,7 @@ function startFakeServer(server: FakeServer) {
     }
     if (method === 'GET' && url === '/api/stock-positions') {
       // FEAT-011 stock section (covered by StockPositions.test.tsx).
-      return Promise.resolve(jsonResponse({ positionCount: 0, positions: [] }))
+      return Promise.resolve(jsonResponse(server.stocks ?? { positionCount: 0, positions: [] }))
     }
     if (method === 'POST' && url === '/api/option-trades' && server.onPost) {
       return Promise.resolve(server.onPost())
@@ -612,7 +615,8 @@ describe('PositionsPage', () => {
   })
 })
 
-describe('short calls (FEAT-038, Q62)', () => {
+describe('short calls (FEAT-038 / FEAT-039, Q62)', () => {
+  // 受检: 2 CHECKED lots covering 200 shares.
   const IXQZ_9_C = position({
     symbol: 'IXQZ',
     strike: '9',
@@ -623,61 +627,116 @@ describe('short calls (FEAT-038, Q62)', () => {
     averageNetPerContract: '27.84',
     frozenCash: '0.00',
     dte: 36,
+    underlyingShares: 300,
+    coveredShares: 200,
+    uncoveredContracts: 0,
+    uncoveredShares: 0,
+    availableShares: 100,
+    uncoveredShortfallAt: null,
+    uncoveredShortfallAtLocal: null,
+    uncoveredShortfallHeldShares: null,
     lots: [
       lot({
         tradeId: 2,
         tradedAt: '2026-11-10T17:43:00Z',
         tradedAtLocal: '2026-11-10T12:43:00',
         remainingNetAmount: '18.34',
+        coverage: 'CHECKED',
+        requiredShares: 100,
       }),
       lot({
         tradeId: 5,
         tradedAt: '2026-11-11T17:21:00Z',
         tradedAtLocal: '2026-11-11T12:21:00',
         remainingNetAmount: '37.34',
+        coverage: 'CHECKED',
+        requiredShares: 100,
       }),
     ],
   })
+  // 旧批次 only (scenario L).
   const IXQZ_10_C = position({
     symbol: 'IXQZ',
     strike: '10',
     optionType: 'CALL',
     direction: 'SHORT',
-    openingNetTotal: '20.34',
-    averageNetPerContract: '20.34',
+    contracts: 2,
+    openingNetTotal: '90.00',
+    averageNetPerContract: '45.00',
     frozenCash: '0.00',
     dte: 36,
-    lots: [lot({ tradeId: 3, remainingNetAmount: '20.34' })],
+    underlyingShares: 300,
+    coveredShares: 0,
+    uncoveredContracts: 2,
+    uncoveredShares: 200,
+    availableShares: 100,
+    uncoveredShortfallAt: '2026-11-03T15:00:00Z',
+    uncoveredShortfallAtLocal: '2026-11-03T10:00:00',
+    uncoveredShortfallHeldShares: 0,
+    lots: [lot({ tradeId: 1, remainingContracts: 2, coverage: 'LEGACY', requiredShares: 200 })],
+  })
+  // Both kinds of lot in one row.
+  const IXQZ_11_C = position({
+    symbol: 'IXQZ',
+    strike: '11',
+    optionType: 'CALL',
+    direction: 'SHORT',
+    contracts: 3,
+    openingNetTotal: '60.00',
+    averageNetPerContract: '20.00',
+    frozenCash: '0.00',
+    dte: 36,
+    underlyingShares: 300,
+    coveredShares: 100,
+    uncoveredContracts: 2,
+    uncoveredShares: 200,
+    availableShares: 100,
+    uncoveredShortfallAt: '2026-11-03T15:00:00Z',
+    uncoveredShortfallAtLocal: '2026-11-03T10:00:00',
+    uncoveredShortfallHeldShares: 0,
+    lots: [
+      lot({ tradeId: 4, remainingContracts: 2, coverage: 'LEGACY', requiredShares: 200 }),
+      lot({ tradeId: 6, coverage: 'CHECKED', requiredShares: 100 }),
+    ],
   })
 
-  it('marks only short call rows as 未冻结 with a tooltip (AC 2)', async () => {
-    mockFetch().mockImplementation(() =>
-      Promise.resolve(
+  it('shows 已覆盖 / 未覆盖 on short call rows, never 未冻结 (FEAT-039 AC 1, 6, 8)', async () => {
+    startFakeServer({
+      positions: () =>
         jsonResponse({
           asOfDate: '2026-11-12',
-          positionCount: 4,
+          positionCount: 5,
           frozenTotal: '40000.00',
-          positions: [AAPL_200_P, AAPL_210_C, IXQZ_9_C, IXQZ_10_C],
+          positions: [AAPL_200_P, AAPL_210_C, IXQZ_9_C, IXQZ_10_C, IXQZ_11_C],
         }),
-      ),
-    )
+    })
     renderWithProviders(<PositionsPage />)
     await screen.findAllByTestId('position-row')
 
     const frozenOf = (contract: string) =>
       within(rowOf(contract)).getByTestId('position-cell-frozen')
-    expect(
-      within(frozenOf('IXQZ 2026-12-18 9 C')).getByTestId('position-cell-frozen-none'),
-    ).toHaveTextContent('未冻结')
-    expect(
-      within(frozenOf('IXQZ 2026-12-18 10 C')).getByTestId('position-cell-frozen-none'),
-    ).toHaveTextContent('未冻结')
+    const nine = frozenOf('IXQZ 2026-12-18 9 C')
+    expect(within(nine).getByTestId('position-cell-coverage-checked')).toHaveTextContent(
+      '已覆盖 200 股',
+    )
+    expect(within(nine).queryByTestId('position-cell-coverage-legacy')).toBeNull()
+
+    const ten = frozenOf('IXQZ 2026-12-18 10 C')
+    expect(within(ten).getByTestId('position-cell-coverage-legacy')).toHaveTextContent(/^未覆盖$/)
+    expect(within(ten).queryByTestId('position-cell-coverage-checked')).toBeNull()
+
+    const eleven = frozenOf('IXQZ 2026-12-18 11 C')
+    expect(within(eleven).getByTestId('position-cell-coverage-checked')).toHaveTextContent(
+      '已覆盖 100 股',
+    )
+    expect(within(eleven).getByTestId('position-cell-coverage-legacy')).toHaveTextContent(
+      '未覆盖 2 张',
+    )
+
     // Long call: still "—"; short put: still its amount.
     expect(frozenOf('AAPL 2026-12-18 210 C')).toHaveTextContent('—')
-    expect(
-      within(frozenOf('AAPL 2026-12-18 210 C')).queryByTestId('position-cell-frozen-none'),
-    ).toBeNull()
     expect(frozenOf('AAPL 2026-12-18 200 P')).toHaveTextContent('40,000.00')
+    expect(screen.queryByText('未冻结')).toBeNull()
 
     // Other columns behave like a short put.
     expect(cellTexts(rowOf('IXQZ 2026-12-18 9 C')).slice(1, 5)).toEqual([
@@ -688,10 +747,45 @@ describe('short calls (FEAT-038, Q62)', () => {
     ])
     expect(within(rowOf('IXQZ 2026-12-18 9 C')).getByTestId('position-close')).toBeInTheDocument()
 
-    await userEvent.hover(
-      within(frozenOf('IXQZ 2026-12-18 9 C')).getByTestId('position-cell-frozen-none'),
-    )
-    expect(await screen.findByText('卖出 call 不冻结现金，需自行保证股票覆盖')).toBeInTheDocument()
+    await userEvent.hover(within(nine).getByTestId('position-cell-coverage-checked'))
+    expect(
+      await screen.findByText('占用 IXQZ 200 股，平仓、作废或被指派前这些股票不能卖出'),
+    ).toBeInTheDocument()
+
+    await userEvent.hover(within(ten).getByTestId('position-cell-coverage-legacy'))
+    expect(
+      await screen.findByText(
+        '上线前录入，未纳入覆盖检查：需要 200 股，当前可用 100 股；2026-11-03 10:00 时持有 0 股。补录该时间之前的股票后自动变为已覆盖',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('shows 被覆盖 and 可用 columns in the stock section (FEAT-039)', async () => {
+    startFakeServer({
+      positions: () => jsonResponse(EMPTY),
+      stocks: {
+        positionCount: 1,
+        positions: [
+          {
+            symbol: 'IXQZ',
+            shares: 1200,
+            coveredShares: 1000,
+            availableShares: 200,
+            totalCost: '9600.00',
+            averageCost: '8.0000',
+            lotCount: 0,
+            lots: [],
+          },
+        ],
+      },
+    })
+    renderWithProviders(<PositionsPage />)
+    const row = await screen.findByTestId('stock-position-row')
+    expect(within(row).getByTestId('stock-position-shares')).toHaveTextContent('1,200')
+    expect(within(row).getByTestId('stock-position-covered-shares')).toHaveTextContent('1,000')
+    expect(within(row).getByTestId('stock-position-available-shares')).toHaveTextContent('200')
+    expect(screen.getByRole('columnheader', { name: '被覆盖' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '可用' })).toBeInTheDocument()
   })
 })
 

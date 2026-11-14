@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test'
 import { apiTransfer, CashPage, expect, MINUS, test } from '../support/fixtures'
-import { apiTrade } from '../support/trade'
+import { apiLegacyTrade, apiTrade } from '../support/trade'
 import { BACKEND_URL, setApiAccount } from '../support/backend'
 import { addDays, nyToday, stablePhase } from '../support/ny'
 
@@ -215,7 +215,8 @@ async function scenarioP(): Promise<void> {
   await apiTrade({ action: 'STO', symbol: 'XYZ', expiration: EXP, strike: '45', type: 'PUT', netAmount: '130.00', time: at(addDays(EXP, -15)) })
   await apiTrade({ action: 'STO', symbol: 'QRTV', expiration: FAR, strike: '30', type: 'PUT', netAmount: '85.00', time: at(addDays(EXP, -14)) })
   await apiTrade({ action: 'BTO', symbol: 'QRTV', expiration: EXP, strike: '25', type: 'CALL', netAmount: '40.00', time: at(addDays(EXP, -14), '11:00') })
-  await apiTrade({ action: 'STO', symbol: 'IXQZ', expiration: EXP, strike: '8', type: 'CALL', netAmount: '22.00', time: at(addDays(EXP, -14), '12:00') })
+  // FEAT-039: a short call without shares can only be a pre-launch (LEGACY) batch (Q79)
+  await apiLegacyTrade({ symbol: 'IXQZ', expiration: EXP, strike: '8', netAmount: '22.00', time: at(addDays(EXP, -14), '12:00') })
 }
 
 async function apiAssign(body: {

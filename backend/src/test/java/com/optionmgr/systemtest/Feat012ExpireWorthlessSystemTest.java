@@ -312,6 +312,7 @@ class Feat012ExpireWorthlessSystemTest extends OptionTradeSystemTestBase {
         e1 = open("STO", 2, "XYZ", "2026-11-20", "45", "PUT", "240.00", "2026-11-03T10:00", 100);
         e2 = open("BTO", 1, "QRTV", "2026-11-20", "30", "CALL", "85.65", "2026-11-04T10:00", 100);
         e3 = open("STO", 1, "XYZ", "2026-11-20", "45", "PUT", "130.00", "2026-11-05T10:00", 100);
+        transferInShares("IXQZ", 100, "2026-11-06"); // FEAT-039: E4 needs 100 shares (转入: no cash, no ledger row)
         e4 = open("STO", 1, "IXQZ", "2026-11-20", "8", "CALL", "22.34", "2026-11-06T10:00", 100);
         e5 = open("BTO", 2, "QRTV", "2026-11-20", "25", "PUT", "40.00", "2026-11-06T11:00", 100);
         assertSummary("20266.69", "13500.00", "6766.69");
@@ -849,6 +850,7 @@ class Feat012ExpireWorthlessSystemTest extends OptionTradeSystemTestBase {
     void openAtCutoffAfterExpiryThenDeleteExpiry() {
         scenarioE();
         long exp = okExpire("QRTV", "2026-11-20", "30", "CALL", 1).get("id").asLong();
+        transferInShares("QRTV", 100, "2026-11-20"); // FEAT-039
         long sto = open("STO", 1, "QRTV", "2026-11-20", "30", "CALL", "5.00", "2026-11-20T16:00", 100);
         JsonNode p = position(QRTV_C);
         assertThat(p.get("direction").asText()).isEqualTo("SHORT");

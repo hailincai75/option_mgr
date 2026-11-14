@@ -814,7 +814,7 @@ class StockPnlInSummariesControllerTest {
         sto.put("contracts", 5);
         sto.put("netAmount", "150.00");
         sto.put("tradedAtLocal", "2026-11-12T10:00");
-        send(post("/api/option-trades"), sto, 201);
+        send(post(com.optionmgr.testsupport.LegacyShortCallTestController.openUrl(sto)), sto, 201);
 
         JsonNode p = closed("");
         assertThat(names(p)).containsExactly("S5", "S4");

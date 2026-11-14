@@ -182,6 +182,21 @@ class TestSupportResetE2eProfileTest {
         assertThat(json.readTree(again).get("id").asLong()).isEqualTo(2);
     }
 
+    /** FEAT-039: an STO call preset as entered before the coverage check (LEGACY), without any shares. */
+    @Test
+    void legacyOptionTradeIsStoredUncovered() throws Exception {
+        String body = "{\"symbol\":\"IXQZ\",\"expirationDate\":\"2027-12-17\",\"strike\":\"10\",\"optionType\":\"CALL\","
+                + "\"action\":\"STO\",\"contracts\":2,\"netAmount\":\"90.00\",\"tradedAtLocal\":\"2026-01-05T10:00\"}";
+        mvc.perform(post("/api/test-support/legacy-option-trades").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated());
+        JsonNode row = getJson("/api/option-positions").get("positions").get(0);
+        assertThat(row.get("uncoveredContracts").asInt()).isEqualTo(2);
+        assertThat(row.get("lots").get(0).get("coverage").asText()).isEqualTo("LEGACY");
+        mvc.perform(post("/api/test-support/legacy-option-trades").contentType(MediaType.APPLICATION_JSON)
+                        .content(body.replace("CALL", "PUT")))
+                .andExpect(status().isBadRequest());
+    }
+
     private void reset() throws Exception {
         mvc.perform(post("/api/test-support/reset")).andExpect(status().isNoContent());
     }

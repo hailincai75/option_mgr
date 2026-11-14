@@ -24,6 +24,7 @@ import com.optionmgr.stock.repository.StockTradeRepository;
 import com.optionmgr.stock.repository.StockTradeSpecifications;
 import com.optionmgr.trade.repository.OptionTradeEntity;
 import com.optionmgr.trade.repository.OptionTradeRepository;
+import com.optionmgr.trade.service.CoverageService;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -67,10 +68,12 @@ public class StockTradeService {
     private final StockTradeRepository trades;
     private final CashLedgerService ledger;
     private final OptionTradeRepository optionTrades;
+    private final CoverageService coverage;
     private final Clock clock;
 
     public StockTradeService(StockTradeRepository trades, CashLedgerService ledger,
-                             OptionTradeRepository optionTrades, Clock clock) {
+                             OptionTradeRepository optionTrades, CoverageService coverage, Clock clock) {
+        this.coverage = coverage;
         this.trades = trades;
         this.ledger = ledger;
         this.optionTrades = optionTrades;
@@ -123,6 +126,15 @@ public class StockTradeService {
                 all.add(pending);
                 return all;
             }, StockRecord.NOT_YET_ENTERED, "补录");
+            // FEAT-039: E2 at the sale (covered shares cannot be sold), then E3 for later points
+            CoverageService.Snapshot snapshot = coverage.snapshot(accountId, cmd.symbol(),
+                    CoverageService.Proposal.stock(records -> {
+                        List<StockRecord> all = new ArrayList<>(records);
+                        all.add(pending);
+                        return all;
+                    }));
+            coverage.checkSale(snapshot, StockRecord.NOT_YET_ENTERED, cmd.shares());
+            coverage.checkInvariant(snapshot, tradedAt, "补录");
         }
         if (cmd.type() == StockTradeType.BUY) {
             InsertionCheck check = ledger.checkInsertion(accountId, tradedAt, cmd.type().cashChange(amount),
@@ -142,6 +154,7 @@ public class StockTradeService {
                     cmd.type().describe(cmd.shares(), cmd.symbol()), note));
             ledgerEntryId = entry.getId();
         }
+        coverage.includeLegacy(accountId, cmd.symbol()); // FEAT-039 Q101: more shares may cover legacy lots
         return new StockTradeView(saved, ledgerEntryId, saleOf(accountId, saved));
     }
 

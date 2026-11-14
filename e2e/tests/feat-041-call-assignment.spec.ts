@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test'
 import { apiTransfer, CashPage, expect, MINUS, test } from '../support/fixtures'
-import { apiTrade } from '../support/trade'
+import { apiLegacyTrade, apiTrade } from '../support/trade'
 import { BACKEND_URL, setApiAccount } from '../support/backend'
 import { addDays, nyToday, stablePhase } from '../support/ny'
 
@@ -221,12 +221,15 @@ async function apiCreateAccount(name: string): Promise<number> {
   return ((await r.json()) as { id: number }).id
 }
 
-/** AC4's "小账户": deposit 1,000.00; STO 1 IXQZ EXP 9 C 20.00; no stock. Leaves the API account on it. */
+/**
+ * AC4's "小账户": deposit 1,000.00; STO 1 IXQZ EXP 9 C 20.00; no stock. Leaves the API account on it.
+ * FEAT-039: a call without shares can only be a pre-launch (LEGACY) batch (Q79), seeded via the e2e-only endpoint.
+ */
 async function smallAccount(): Promise<number> {
   const acc = await apiCreateAccount('小账户')
   setApiAccount(acc)
   await apiTransfer('DEPOSIT', '1000.00', at(addDays(EXP, -18)))
-  await apiTrade({ action: 'STO', symbol: 'IXQZ', expiration: EXP, strike: '9', type: 'CALL', netAmount: '20.00', time: at(addDays(EXP, -15)) })
+  await apiLegacyTrade({ symbol: 'IXQZ', expiration: EXP, strike: '9', netAmount: '20.00', time: at(addDays(EXP, -15)) })
   return acc
 }
 
@@ -597,8 +600,16 @@ test.describe('FEAT-041 卖出 call 被指派', () => {
   })
 
   test('AC5 使之后卖出不成立：已有 EXP+1 卖出 100 股；被指派 3 张 → 「补录后 … 的卖出 IXQZ 100 股将超过当时持股 0 股」；改 2 张成功', async ({ page }) => {
-    await scenarioC()
+    // FEAT-039: with C1 + C2 covering all 300 shares (CHECKED) this later sale would be refused, so as in scenario C but
+    // the sale is recorded first and C1 / C2 are pre-launch LEGACY batches (at most C1 is auto-included: same numbers).
+    // Ids as scenario C: C1, C2, L1 = option #1–#3; the sale = stock #3.
+    await apiTransfer('DEPOSIT', '10000.00', at(addDays(EXP, -18)))
+    await apiStock('BUY', 'IXQZ', 150, '1200.00', at(addDays(EXP, -17))) // S1 #1
+    await apiStock('BUY', 'IXQZ', 150, '1350.00', at(addDays(EXP, -16))) // S2 #2
     await apiStock('SELL', 'IXQZ', 100, '1000.00', at(addDays(EXP, 1)))
+    await apiLegacyTrade({ symbol: 'IXQZ', expiration: EXP, strike: '9', contracts: 2, netAmount: '60.00', time: at(addDays(EXP, -15)) }) // C1 #1
+    await apiLegacyTrade({ symbol: 'IXQZ', expiration: EXP, strike: '9', netAmount: '25.00', time: at(addDays(EXP, -14)) }) // C2 #2
+    await apiTrade({ action: 'BTO', symbol: 'IXQZ', expiration: EXP, strike: '10', type: 'CALL', netAmount: '15.00', time: at(addDays(EXP, -14), '11:00') }) // L1 #3
     const ui = new Ui(page)
     await ui.openPositions()
     const d = await ui.openAssign(C9)

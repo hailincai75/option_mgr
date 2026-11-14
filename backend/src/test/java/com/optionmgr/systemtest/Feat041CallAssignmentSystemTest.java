@@ -471,12 +471,15 @@ class Feat041CallAssignmentSystemTest extends OptionTradeSystemTestBase {
         return okAssign(c9Asg(3, "2026-11-20", "0.00"));
     }
 
-    /** AC4's "小账户" without stock: deposit 1,000.00, STO 1 IXQZ 9 C 20.00. Switches to it; returns its id. */
+    /**
+     * AC4's "小账户" without stock: deposit 1,000.00, STO 1 IXQZ 9 C 20.00. Switches to it; returns its id.
+     * FEAT-039: a call without shares can only be a pre-launch (LEGACY) batch, Q79.
+     */
     String smallAccount() {
         String small = String.valueOf(newAccount("小账户"));
         accountId = small;
         deposit("1000.00", "2026-11-02T10:00");
-        open("STO", 1, "IXQZ", "2026-11-20", "9", "CALL", "20.00", "2026-11-05T10:00", 100);
+        okLegacyTrade(trade("STO", 1, "IXQZ", "2026-11-20", "9", "CALL", "20.00", "2026-11-05T10:00", 100));
         assertSummary("1020.00", "0.00", "1020.00");
         return small;
     }
@@ -743,9 +746,20 @@ class Feat041CallAssignmentSystemTest extends OptionTradeSystemTestBase {
     @Test
     @DisplayName("AC5 使之后卖出不成立：加 11-24 卖出 100 股；被指派 3 张 → 「补录后 2026-11-24 10:00 的卖出 IXQZ 100 股将超过当时持股 0 股」；2 张成功，卖出改用 S2 剩余")
     void ac5_laterSaleBlocks() {
-        scenarioC();
+        // FEAT-039: with 300 shares covering C1 + C2 (CHECKED) the 11-24 sale would be refused (E2/E3), so here C1 and
+        // C2 are pre-launch LEGACY batches entered after the sale; at most C1 (200 <= 200 shares) can be auto-included,
+        // which changes none of the numbers below. Same scenario C otherwise.
         clock.set(WED_1125_1000);
+        d1 = deposit("10000.00", "2026-11-02T10:00").get("id").asLong();
+        s1 = okStock(stockBody("BUY", "IXQZ", 150, "1200.00", "2026-11-03T10:00"));
+        s2 = okStock(stockBody("BUY", "IXQZ", 150, "1350.00", "2026-11-04T10:00"));
         long sell = okStock(stockBody("SELL", "IXQZ", 100, "1000.00", "2026-11-24T10:00"));
+        c1 = okLegacyTrade(trade("STO", 2, "IXQZ", "2026-11-20", "9", "CALL", "60.00", "2026-11-05T10:00", 100))
+                .get("id").asLong();
+        c2 = okLegacyTrade(trade("STO", 1, "IXQZ", "2026-11-20", "9", "CALL", "25.00", "2026-11-06T10:00", 100))
+                .get("id").asLong();
+        l1 = open("BTO", 1, "IXQZ", "2026-11-20", "10", "CALL", "15.00", "2026-11-06T11:00", 100);
+        assertSummary("8520.00", "0.00", "8520.00");
         assertThat(getStock(sell).get("soldCost").asText()).isEqualTo("800.00");
         assertThat(rejectedAssign(c9Asg(3, "2026-11-20", null), "SHARES_INSUFFICIENT"))
                 .isEqualTo("补录后 2026-11-24 10:00 的卖出 IXQZ 100 股将超过当时持股 0 股");
@@ -767,8 +781,9 @@ class Feat041CallAssignmentSystemTest extends OptionTradeSystemTestBase {
         accountId = String.valueOf(newAccount("测试 call 账户"));
         deposit("1000.00", "2026-11-02T10:00");
         okStock(stockBody("TRANSFER_IN", "IXQZ", 100, "800.00", "2026-11-02"));
-        open("STO", 1, "IXQZ", "2026-11-20", "9", "CALL", "20.00", "2026-11-05T10:00", 100);
-        open("STO", 1, "IXQZ", "2026-11-27", "10", "CALL", "15.00", "2026-11-05T11:00", 100);
+        // FEAT-039: two calls on 100 shares - only possible as pre-launch LEGACY batches (Q79)
+        okLegacyTrade(trade("STO", 1, "IXQZ", "2026-11-20", "9", "CALL", "20.00", "2026-11-05T10:00", 100));
+        okLegacyTrade(trade("STO", 1, "IXQZ", "2026-11-27", "10", "CALL", "15.00", "2026-11-05T11:00", 100));
         okAssign(asgBody("IXQZ", "2026-11-27", "10", "CALL", 1, "2026-11-27", null, null));
         assertThat(rejectedAssign(c9Asg(1, "2026-11-20", null), "SHARES_INSUFFICIENT")).isEqualTo(
                 "补录后 2026-11-27 16:00 的被指派 1 张 IXQZ 2026-11-27 10 C 需要 100 股，当时持股 0 股，请先删除该被指派");

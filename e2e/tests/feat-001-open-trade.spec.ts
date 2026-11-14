@@ -1,5 +1,5 @@
 import { apiLedger, apiTransfer, CashPage, expect, MINUS, nyLocal, test } from '../support/fixtures'
-import { apiGetTrade, apiTrade, apiTradeCount, TradeForm } from '../support/trade'
+import { apiGetTrade, apiTrade, apiTradeCount, apiTransferInShares, TradeForm } from '../support/trade'
 
 /**
  * FEAT-001 录入开仓 E2E. The backend runs on the real clock (2026-11-11 at the time of writing), so the two
@@ -199,6 +199,7 @@ test.describe('FEAT-001 录入开仓', () => {
 
   test('AC9（FEAT-038 取代 Q16）STO call 允许：保存成功，冻结变动 —，现金 +120.00', async ({ page, trade }) => {
     await apiTransfer('DEPOSIT', '100000.00', DEP)
+    await apiTransferInShares('AAPL', 100, '2026-11-10') // FEAT-039 (Q77): the call needs 100 shares; no cash effect
     await trade.open()
     await trade.submitAndExpectSaved(TradeForm.base({ action: 'STO', strike: '250', type: 'CALL', netAmount: '120.00' }))
     await expect(trade.confirm('cash-change')).toHaveText('+120.00')
@@ -330,8 +331,10 @@ test.describe('FEAT-001 录入开仓', () => {
 
     test('0DTE：到期日等于成交日（今天）允许保存', async ({ trade }) => {
       await apiTransfer('DEPOSIT', '100000.00', DEP)
-      const time = nyLocal(new Date(Date.now() - 3600_000))
-      const today = time.slice(0, 10)
+      // Today 00:00 NY: never in the future and never after the 16:00 cutoff of a same-day expiration (FEAT-012 Q83),
+      // whatever time of day the suite runs (now − 1 h failed after 17:00 NY).
+      const today = nyLocal(new Date()).slice(0, 10)
+      const time = `${today}T00:00`
       await trade.open()
       await trade.submitAndExpectSaved(
         TradeForm.base({ action: 'BTO', strike: '210', type: 'CALL', netAmount: '1.00', time, expiration: today }),

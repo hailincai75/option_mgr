@@ -1088,10 +1088,13 @@ class Feat011StockTradesSystemTest extends OptionTradeSystemTestBase {
     // ------------------------------------------------------------------ AC 13
 
     @Test
-    @DisplayName("AC13 与期权互不影响：STO call 不检查覆盖、股票不锁定；FEAT-040（AC15）起已平仓/盈亏汇总/首页包含股票卖出")
+    @DisplayName("AC13 与期权互不影响（FEAT-039 起只对上线前录入的旧批次成立：不占用股票、股票不锁定）；FEAT-040（AC15）起已平仓/盈亏汇总/首页包含股票卖出")
     void ac13NoOptionInteraction() {
         scenarioS();
-        JsonNode call = okTrade(trade("STO", 5, "IXQZ", "2026-12-18", "9", "CALL", "150.00", "2026-11-12T10:00", 100));
+        // FEAT-039 (Q77/Q79): an uncovered 5-contract call can only exist as a pre-launch LEGACY batch, which does not
+        // lock shares - so S6 below can still sell the last 150 IXQZ.
+        JsonNode call = okLegacyTrade(
+                trade("STO", 5, "IXQZ", "2026-12-18", "9", "CALL", "150.00", "2026-11-12T10:00", 100));
         assertThat(call.get("frozenChange").asText()).isEqualTo("0.00");
         assertSummary("9249.35", "0.00", "9249.35");
         JsonNode opt = get("/api/option-positions").body();

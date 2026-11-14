@@ -19,12 +19,17 @@ public record SideEffect(long tradeId, String action, String contractLabel, Stri
     public static final String PROCEEDS = "proceeds";
     /** FEAT-041: {@link #field()} of a call assignment whose delivered shares' cost changed (new FIFO match). */
     public static final String SOLD_COST = "soldCost";
+    /** FEAT-039: {@link #field()} of a legacy STO call lot included in the coverage check ("STO #5 纳入覆盖检查"). */
+    public static final String COVERAGE = "coverage";
 
     /**
      * "交易 #3 BTC 冻结变动 −24.70 → −24.69"; an expiry (FEAT-012): "到期作废 #17 冻结变动 −24.70 → −24.69"; an
      * assignment (FEAT-013): "被指派 #9 冻结变动 …" / "被指派 #9 股票成本 13,130.00 → 13,125.00".
      */
     public String text() {
+        if (COVERAGE.equals(field)) {
+            return action + " #" + tradeId + " 纳入覆盖检查";
+        }
         String subject = switch (action) {
             case "EXP" -> "到期作废 #" + tradeId;
             case "ASG" -> "被指派 #" + tradeId;

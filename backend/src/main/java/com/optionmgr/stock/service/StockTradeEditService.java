@@ -23,6 +23,7 @@ import com.optionmgr.stock.domain.StockTimes;
 import com.optionmgr.stock.domain.StockTradeType;
 import com.optionmgr.stock.repository.StockTradeEntity;
 import com.optionmgr.stock.repository.StockTradeRepository;
+import com.optionmgr.trade.service.CoverageService;
 import com.optionmgr.trade.domain.Symbols;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -30,6 +31,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -56,10 +58,12 @@ public class StockTradeEditService {
     private final StockTradeRepository trades;
     private final CashLedgerService ledger;
     private final AuditService audit;
+    private final CoverageService coverage;
     private final Clock clock;
 
     public StockTradeEditService(StockTradeService stocks, StockTradeRepository trades, CashLedgerService ledger,
-                                 AuditService audit, Clock clock) {
+                                 AuditService audit, CoverageService coverage, Clock clock) {
+        this.coverage = coverage;
         this.stocks = stocks;
         this.trades = trades;
         this.ledger = ledger;
@@ -99,6 +103,14 @@ public class StockTradeEditService {
         StockRecord edited = new StockRecord(id, type, tradedAt, cmd.shares(), amount, note);
         stocks.checkHoldings(accountId, trade.getSymbol(),
                 records -> records.stream().map(r -> r.id() == id ? edited : r).toList(), id, "修改");
+        // FEAT-039: E2 for an edited sale, then E3 from the earlier of the old and new time
+        CoverageService.Snapshot coverageSnapshot = coverage.snapshot(accountId, trade.getSymbol(),
+                CoverageService.Proposal.stock(records -> records.stream().map(r -> r.id() == id ? edited : r).toList()));
+        if (type == StockTradeType.SELL) {
+            coverage.checkSale(coverageSnapshot, id, cmd.shares());
+        }
+        coverage.checkInvariant(coverageSnapshot,
+                tradedAt.isBefore(trade.getTradedAt()) ? tradedAt : trade.getTradedAt(), "修改");
         Optional<CashLedgerEntryEntity> entry = entryOf(trade);
         BigDecimal cashChange = type.cashChange(amount);
         if (entry.isPresent()) {
@@ -108,13 +120,14 @@ public class StockTradeEditService {
         }
 
         Map<String, Object> before = snapshot(trade);
-        List<SideEffect> effects = stocks.assignedSaleCostEffects(accountId, trade.getSymbol(),
-                records -> records.stream().map(r -> r.id() == id ? edited : r).toList());
+        List<SideEffect> effects = new ArrayList<>(stocks.assignedSaleCostEffects(accountId, trade.getSymbol(),
+                records -> records.stream().map(r -> r.id() == id ? edited : r).toList()));
         trade.update(cmd.shares(), amount, tradedAt, note);
         trade.markAudited();
         entry.ifPresent(e -> ledger.updateEntry(accountId, e.getId(), tradedAt, e.getSourceType(), cashChange,
                 Money.ZERO, type.describe(cmd.shares(), trade.getSymbol()), note));
         trades.flush();
+        effects.addAll(coverage.includeLegacy(accountId, trade.getSymbol()));
         Map<String, Object> after = snapshot(trade);
         audit.record(new AuditService.NewAuditRecord(accountId, AuditOperation.UPDATE, AuditObjectType.STOCK_TRADE, id,
                 summary(before), before, after, changes(type, before, after), effects));
@@ -128,16 +141,20 @@ public class StockTradeEditService {
         rejectGenerated(trade);
         stocks.checkHoldings(accountId, trade.getSymbol(),
                 records -> records.stream().filter(r -> r.id() != id).toList(), -1, "删除");
+        coverage.checkInvariant(coverage.snapshot(accountId, trade.getSymbol(),
+                CoverageService.Proposal.stock(records -> records.stream().filter(r -> r.id() != id).toList())),
+                trade.getTradedAt(), "删除");
         Optional<CashLedgerEntryEntity> entry = entryOf(trade);
         if (entry.isPresent()) {
             rejectNegative(ledger.replayWithChanges(accountId, Map.of(), Set.of(entry.get().getId())), "删除");
         }
 
         Map<String, Object> before = snapshot(trade);
-        List<SideEffect> effects = stocks.assignedSaleCostEffects(accountId, trade.getSymbol(),
-                records -> records.stream().filter(r -> r.id() != id).toList());
+        List<SideEffect> effects = new ArrayList<>(stocks.assignedSaleCostEffects(accountId, trade.getSymbol(),
+                records -> records.stream().filter(r -> r.id() != id).toList()));
         entry.ifPresent(e -> ledger.deleteEntry(accountId, e.getId()));
         trades.delete(trade);
+        effects.addAll(coverage.includeLegacy(accountId, trade.getSymbol()));
         audit.record(new AuditService.NewAuditRecord(accountId, AuditOperation.DELETE, AuditObjectType.STOCK_TRADE, id,
                 summary(before), before, null, List.of(), effects));
     }

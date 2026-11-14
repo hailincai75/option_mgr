@@ -27,6 +27,7 @@ import com.optionmgr.trade.domain.CloseMatch;
 import com.optionmgr.trade.domain.ContractHistory;
 import com.optionmgr.trade.domain.ContractKey;
 import com.optionmgr.trade.domain.ContractReplay;
+import com.optionmgr.trade.domain.CoverageStatus;
 import com.optionmgr.trade.domain.LotTrade;
 import com.optionmgr.trade.domain.OpenTradeTerms;
 import com.optionmgr.trade.domain.OptionType;
@@ -74,11 +75,13 @@ public class OptionTradeEditService {
     private final AuditService audit;
     private final StockTradeService stocks;
     private final StockTradeRepository stockTrades;
+    private final CoverageService coverage;
     private final Clock clock;
 
     public OptionTradeEditService(OptionTradeRepository trades, OptionTradeService tradeService,
                                   CashLedgerService ledger, AuditService audit, StockTradeService stocks,
-                                  StockTradeRepository stockTrades, Clock clock) {
+                                  StockTradeRepository stockTrades, CoverageService coverage, Clock clock) {
+        this.coverage = coverage;
         this.stocks = stocks;
         this.stockTrades = stockTrades;
         this.trades = trades;
@@ -166,6 +169,24 @@ public class OptionTradeEditService {
                 history, LotTrade.NOT_YET_ENTERED);
         OptionTradeService.rejectNonPositiveCost(costs, "修改");
 
+        // FEAT-039: E1 for an STO call whose size / time / multiplier changed (a LEGACY lot is then checked as
+        // CHECKED and becomes CHECKED), then E3 from the earlier of the old and new time
+        boolean shortCall = trade.getAction() == TradeAction.STO && contract.optionType() == OptionType.CALL;
+        boolean includeEdited = shortCall && sizeOrTimeChanged
+                && trade.getCoverageStatus() == CoverageStatus.LEGACY;
+        if (contract.optionType() == OptionType.CALL) {
+            CoverageService.Proposal proposal = CoverageService.Proposal.contract(contract, all);
+            if (includeEdited) {
+                proposal = proposal.treatingChecked(id);
+            }
+            CoverageService.Snapshot snapshot = coverage.snapshot(accountId, contract.symbol(), proposal);
+            if (shortCall && sizeOrTimeChanged) {
+                coverage.checkCallOpen(snapshot, id);
+            }
+            Instant from = tradedAt.isBefore(trade.getTradedAt()) ? tradedAt : trade.getTradedAt();
+            coverage.checkInvariant(snapshot, from, "修改");
+        }
+
         int effectiveMultiplier = step.effectiveMultiplier();
         BigDecimal frozenChange = opening
                 ? terms.frozenChange()
@@ -197,6 +218,11 @@ public class OptionTradeEditService {
                 OpenTradeTerms.describe(trade.getAction(), cmd.contracts(), effectiveMultiplier, contract), note);
         ledger.correctFrozenChanges(accountId, corrections);
         OptionTradeService.applyCostCorrections(costs);
+        if (includeEdited) {
+            trade.markCoverageChecked();
+            effects.add(CoverageService.inclusionEffect(trade));
+        }
+        effects.addAll(coverage.includeLegacy(accountId, contract.symbol()));
         Map<String, Object> after = snapshot(trade, cashChange, frozenChange);
         audit.record(new AuditService.NewAuditRecord(accountId, AuditOperation.UPDATE, AuditObjectType.OPTION_TRADE, id,
                 summary(trade), before, after, changes(before, after), effects));
@@ -244,6 +270,17 @@ public class OptionTradeEditService {
             stocks.checkHoldings(accountId, lot.getSymbol(),
                     records -> records.stream().filter(r -> r.id() != lot.getId()).toList(), -1, "删除");
         }
+        // FEAT-039: the remaining CHECKED short calls stay covered (deleting a BTC / EXP / put ASG may uncover them)
+        if (contract.optionType() == OptionType.CALL || lot != null) {
+            CoverageService.Proposal proposal = CoverageService.Proposal.contract(contract,
+                    existing.trades().stream().filter(t -> t.tradeId() != id).toList());
+            if (lot != null) {
+                long lotId = lot.getId();
+                proposal = proposal.withStock(records -> records.stream().filter(r -> r.id() != lotId).toList());
+            }
+            coverage.checkInvariant(coverage.snapshot(accountId, contract.symbol(), proposal), trade.getTradedAt(),
+                    "删除");
+        }
 
         Map<Long, BigDecimal> corrections = OptionTradeService.frozenCorrections(existing, history, id);
         rejectNegativeCash(ledger.replayWithChanges(accountId, movements(existing, corrections),
@@ -286,6 +323,7 @@ public class OptionTradeEditService {
         trades.delete(trade);
         ledger.correctFrozenChanges(accountId, corrections);
         OptionTradeService.applyCostCorrections(costs);
+        effects.addAll(coverage.includeLegacy(accountId, contract.symbol()));
         audit.record(new AuditService.NewAuditRecord(accountId, AuditOperation.DELETE, AuditObjectType.OPTION_TRADE, id,
                 summary, before, null, List.of(), effects));
     }

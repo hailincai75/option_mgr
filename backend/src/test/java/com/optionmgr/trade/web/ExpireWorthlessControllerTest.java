@@ -178,11 +178,13 @@ class ExpireWorthlessControllerTest {
     }
 
     private JsonNode ok(ObjectNode body) throws Exception {
-        return send(post(isClose(body.get("action").asText()) ? TRADES + "/closes" : TRADES), body, 201);
+        return send(post(isClose(body.get("action").asText()) ? TRADES + "/closes"
+                : com.optionmgr.testsupport.LegacyShortCallTestController.openUrl(body)), body, 201);
     }
 
     private JsonNode rejected(ObjectNode body, int status, String code) throws Exception {
-        JsonNode err = send(post(isClose(body.get("action").asText()) ? TRADES + "/closes" : TRADES), body, status);
+        JsonNode err = send(post(isClose(body.get("action").asText()) ? TRADES + "/closes"
+                : com.optionmgr.testsupport.LegacyShortCallTestController.openUrl(body)), body, status);
         assertThat(err.get("code").asText()).isEqualTo(code);
         return err;
     }

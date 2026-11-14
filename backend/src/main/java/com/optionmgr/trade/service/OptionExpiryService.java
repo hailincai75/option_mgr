@@ -50,10 +50,12 @@ public class OptionExpiryService {
     private final OptionTradeRepository trades;
     private final OptionTradeService tradeService;
     private final CashLedgerService ledger;
+    private final CoverageService coverage;
     private final Clock clock;
 
     public OptionExpiryService(OptionTradeRepository trades, OptionTradeService tradeService, CashLedgerService ledger,
-                               Clock clock) {
+                               CoverageService coverage, Clock clock) {
+        this.coverage = coverage;
         this.trades = trades;
         this.tradeService = tradeService;
         this.ledger = ledger;
@@ -133,6 +135,8 @@ public class OptionExpiryService {
                     null));
         }
         ledger.correctFrozenChanges(accountId, corrections);
+        // FEAT-039: an expiry only releases lots (no check); legacy lots may now be covered
+        coverage.includeLegacy(accountId, contract.symbol());
         return new OptionTradeService.TradeView(expiry, entry, Optional.of(match));
     }
 

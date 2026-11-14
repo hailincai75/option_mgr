@@ -62,9 +62,9 @@ const ACTION_OPTIONS: { value: EntryAction; label: string }[] = [
   { value: 'STC', label: 'STC 卖出平仓' },
 ]
 
-/** Q61 wording (FEAT-038; last sentence updated by FEAT-011). */
+/** Q61 wording (FEAT-038; replaced by FEAT-039 rule 7). */
 const SHORT_CALL_HINT =
-  '卖出 call 不冻结现金，请自行确保账户有足够股票覆盖（每张 = multiplier 股）；covered call 覆盖检查（FEAT-039）上线后将自动检查。'
+  '卖出 call 需要同一账户有足够的可用股票覆盖：每张 = multiplier 股，可用股数 = 持股 − 已被其它卖出 call 覆盖的股数，不足时不能保存。卖出 call 不冻结现金。'
 
 function initialValues(): TradeEntryFormValues {
   return {

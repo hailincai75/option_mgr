@@ -4,6 +4,8 @@ import com.optionmgr.account.web.AccountRef;
 import com.optionmgr.common.time.MarketTime;
 import com.optionmgr.trade.domain.AssignmentTerms;
 import com.optionmgr.trade.domain.ContractKey;
+import com.optionmgr.trade.domain.CoverageStatus;
+import com.optionmgr.trade.domain.CoverageTimeline;
 import com.optionmgr.trade.domain.ExpirationStatus;
 import com.optionmgr.trade.domain.ExpirationTimes;
 import com.optionmgr.trade.domain.OptionPosition;
@@ -57,7 +59,11 @@ public class OptionPositionController {
                                    boolean assignable, List<AssignChoice> assignChoices,
                                    LocalDate assignmentDateMax, LocalDate assignmentDateDefault,
                                    /* FEAT-041: short call rows: current shares of the underlying; null otherwise */
-                                   Long underlyingShares) {
+                                   Long underlyingShares,
+                                   /* FEAT-039: short call rows only (null otherwise) */
+                                   Long coveredShares, Integer uncoveredContracts, Long uncoveredShares,
+                                   Long availableShares, Instant uncoveredShortfallAt,
+                                   String uncoveredShortfallAtLocal, Long uncoveredShortfallHeldShares) {
     }
 
     /** FEAT-013: one selectable assignment size (earliest whole lots) and its shares. */
@@ -67,7 +73,10 @@ public class OptionPositionController {
     public record LotResponse(long tradeId, TradeAction action, Instant tradedAt, String tradedAtLocal,
                               int originalContracts, int remainingContracts, BigDecimal originalNetAmount,
                               BigDecimal remainingNetAmount, BigDecimal originalFrozen, BigDecimal remainingFrozen,
-                              String note) {
+                              String note,
+                              /* FEAT-039: short call lots only (null otherwise) */
+                              CoverageStatus coverage, Long requiredShares, Instant shortfallAt,
+                              String shortfallAtLocal, Long shortfallHeldShares) {
     }
 
     @GetMapping
@@ -85,23 +94,33 @@ public class OptionPositionController {
         Instant cutoff = ExpirationTimes.tradingCutoff(c.expirationDate());
         boolean assignable = p.direction() == PositionDirection.SHORT;
         Long underlyingShares = assignable && c.optionType() == OptionType.CALL ? s.underlyingShares(p) : null;
+        OptionPositionService.RowCoverage rc = s.coverage(p);
+        CoverageTimeline.Shortfall sf = rc == null ? null : rc.shortfall();
         LocalDate latest = assignable ? AssignmentTerms.latestDate(c.expirationDate(), now) : null;
         return new PositionResponse(c.symbol(), c.expirationDate(), ContractKey.strikeText(c.strike()),
                 c.optionType(), c.label(), p.direction(), p.contracts(), p.multiplier(), p.openingNetTotal(),
                 p.averageNetPerContract(), p.frozenCash(), dte, p.expirationStatus(today), Math.max(0, -dte),
-                p.lots().size(), p.lots().stream().map(OptionPositionController::toResponse).toList(),
+                p.lots().size(), p.lots().stream().map(l -> toResponse(l, rc)).toList(),
                 p.closeAction(), p.allowedCloseContracts(), p.closable(now), p.expiryPending(now), p.expirable(now),
                 s.expiryContracts(p), cutoff, LOCAL_SECONDS.format(MarketTime.toLocal(cutoff)), assignable,
                 assignable
                         ? p.allowedCloseContracts().stream().map(n -> new AssignChoice(n, n * p.multiplier())).toList()
                         : List.of(),
-                latest, latest, underlyingShares);
+                latest, latest, underlyingShares,
+                rc == null ? null : rc.coveredShares(), rc == null ? null : rc.uncoveredContracts(),
+                rc == null ? null : rc.uncoveredShares(), rc == null ? null : rc.availableShares(),
+                sf == null ? null : sf.at(), sf == null ? null : LOCAL_SECONDS.format(MarketTime.toLocal(sf.at())),
+                sf == null ? null : sf.held());
     }
 
-    private static LotResponse toResponse(PositionLot l) {
+    private static LotResponse toResponse(PositionLot l, OptionPositionService.RowCoverage rc) {
+        OptionPositionService.LotCoverage lc = rc == null ? null : rc.lots().get(l.tradeId());
+        CoverageTimeline.Shortfall sf = lc == null ? null : lc.shortfall();
         return new LotResponse(l.tradeId(), l.action(), l.tradedAt(),
                 LOCAL_SECONDS.format(MarketTime.toLocal(l.tradedAt())), l.originalContracts(),
                 l.remainingContracts(), l.originalNetAmount(), l.remainingNetAmount(), l.originalFrozen(),
-                l.remainingFrozen(), l.note());
+                l.remainingFrozen(), l.note(), lc == null ? null : lc.status(), lc == null ? null : lc.requiredShares(),
+                sf == null ? null : sf.at(), sf == null ? null : LOCAL_SECONDS.format(MarketTime.toLocal(sf.at())),
+                sf == null ? null : sf.held());
     }
 }

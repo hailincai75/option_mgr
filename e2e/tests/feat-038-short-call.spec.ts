@@ -1,10 +1,12 @@
 import type { Page } from '@playwright/test'
 import { apiTransfer, CashPage, expect, MINUS, nyLocal, test } from '../support/fixtures'
-import { apiTrade, TradeForm } from '../support/trade'
+import { apiTrade, apiTransferInShares, TradeForm } from '../support/trade'
 
 /**
  * FEAT-038 允许 STO call、不冻结现金 E2E (real clock). Scenario IXQZ is entered through the 录入交易 page.
  * DB reset per test: trade ids #1 #2 #3 #4a #4b = 1–5.
+ * FEAT-039 (Q77): STO calls need shares, so each test first records a stock 转入 (no cash effect) of enough shares;
+ * the 冻结现金 cell of a short call shows "已覆盖 N 股" instead of the old "未冻结" (Q62), the entry hint is the new Q61 text.
  */
 
 const today = () => nyLocal(new Date()).slice(0, 10)
@@ -27,8 +29,9 @@ function posRow(page: Page, contract: string) {
 }
 
 test.describe('FEAT-038 卖出 call 不冻结', () => {
-  test('AC1 提示只在 STO + Call 时显示且不阻止提交；#1 保存：+14.34、冻结 —、10,958.99；流水说明', async ({ page, trade }) => {
+  test('AC1 提示只在 STO + Call 时显示（FEAT-039 文案）且不阻止提交；#1 保存：+14.34、冻结 —、10,958.99；流水说明', async ({ page, trade }) => {
     await apiTransfer('DEPOSIT', '10944.65', '2026-11-09T09:00')
+    await apiTransferInShares('IXQZ', 100, '2026-11-09') // FEAT-039
     await trade.open()
     const hint = page.getByTestId('open-trade-short-call-hint')
     await expect(hint).toHaveCount(0)
@@ -36,7 +39,7 @@ test.describe('FEAT-038 卖出 call 不冻结', () => {
     await trade.typePut.check()
     await expect(hint).toHaveCount(0)
     await trade.typeCall.check()
-    await expect(hint).toHaveText('卖出 call 不冻结现金，请自行确保账户有足够股票覆盖（每张 = multiplier 股）；covered call 覆盖检查（FEAT-039）上线后将自动检查。')
+    await expect(hint).toHaveText('卖出 call 需要同一账户有足够的可用股票覆盖：每张 = multiplier 股，可用股数 = 持股 − 已被其它卖出 call 覆盖的股数，不足时不能保存。卖出 call 不冻结现金。')
     await trade.actionBto.check()
     await expect(hint).toHaveCount(0)
     await page.getByTestId('open-trade-action-stc').check()
@@ -57,8 +60,9 @@ test.describe('FEAT-038 卖出 call 不冻结', () => {
     ])
   })
 
-  test('AC2 场景 IXQZ 全部经页面录入：15,000/0/15,000；持仓 2 个、未冻结标签、批次；已平仓 −20.67（红）；交易列表、汇总、首页', async ({ page, trade }) => {
+  test('AC2 场景 IXQZ 全部经页面录入：15,000/0/15,000；持仓 2 个、已覆盖标签（FEAT-039）、批次；已平仓 −20.67（红）；交易列表、汇总、首页', async ({ page, trade }) => {
     await apiTransfer('DEPOSIT', '10944.65', '2026-11-09T09:00')
+    await apiTransferInShares('IXQZ', 300, '2026-11-09') // FEAT-039: at most 3 calls open at once (#4a before #4b)
     await trade.open()
     await trade.submitAndExpectSaved(ixqz({ action: 'STO', expiration: '2026-11-20', strike: '7.5', netAmount: '14.34', time: '2026-11-09T13:40' }))
     await expect(page.getByTestId('open-trade-short-call-hint')).toHaveCount(0) // form reset after save
@@ -84,11 +88,12 @@ test.describe('FEAT-038 卖出 call 不冻结', () => {
     await expect(nine.getByTestId('position-cell-contracts')).toHaveText('2')
     await expect(nine.getByTestId('position-cell-opening-net')).toHaveText('+55.68')
     await expect(nine.getByTestId('position-cell-average-net')).toHaveText('+27.84')
-    await expect(nine.getByTestId('position-cell-frozen').getByTestId('position-cell-frozen-none')).toHaveText('未冻结')
+    await expect(nine.getByTestId('position-cell-frozen').getByTestId('position-cell-coverage-checked')).toHaveText('已覆盖 200 股')
+    await expect(nine.getByTestId('position-cell-coverage-legacy')).toHaveCount(0)
     await expect(nine.getByTestId('position-cell-dte')).toHaveText(dte)
     await expect(nine.getByTestId('position-cell-lot-count')).toHaveText('2')
-    await nine.getByTestId('position-cell-frozen-none').hover()
-    await expect(page.getByText('卖出 call 不冻结现金，需自行保证股票覆盖')).toBeVisible()
+    await nine.getByTestId('position-cell-coverage-checked').hover()
+    await expect(page.getByText('占用 IXQZ 200 股，平仓、作废或被指派前这些股票不能卖出')).toBeVisible()
     await nine.getByTestId('position-expand').click()
     const lots = nine.locator('xpath=following-sibling::tr[1]').getByTestId('lot-row')
     await expect(lots).toHaveCount(2)
@@ -103,7 +108,8 @@ test.describe('FEAT-038 卖出 call 不冻结', () => {
     ).toEqual(['2026-11-10 12:43 STO（卖出开仓） 1 / 1 +18.34 —', '2026-11-11 12:21 STO（卖出开仓） 1 / 1 +37.34 —'])
     const ten = posRow(page, 'IXQZ 2026-12-18 10 C')
     await expect(ten.getByTestId('position-cell-opening-net')).toHaveText('+20.34')
-    await expect(ten.getByTestId('position-cell-frozen-none')).toHaveText('未冻结')
+    await expect(ten.getByTestId('position-cell-coverage-checked')).toHaveText('已覆盖 100 股')
+    await expect(page.getByText('未冻结')).toHaveCount(0)
     await expect(ten.getByTestId('position-cell-dte')).toHaveText(dte)
     await expect(posRow(page, 'IXQZ 2026-11-20 7.5 C')).toHaveCount(0)
     // the 平仓 button pre-fills BTC like a short put
@@ -152,6 +158,7 @@ test.describe('FEAT-038 卖出 call 不冻结', () => {
   })
 
   test('AC4+AC5 零现金卖 call：25.00；持仓页平仓 BTC 30.00 被拒（无"释放冻结"）、输入保留；20.00 成功 +5.00，5/0/5，持仓清空', async ({ page, trade }) => {
+    await apiTransferInShares('XYZ', 100, '2026-11-10') // FEAT-039: shares, but still zero cash
     await trade.open()
     await new CashPage(page).expectSummary('0.00', '0.00', '0.00')
     await trade.submitAndExpectSaved(TradeForm.base({ action: 'STO', symbol: 'XYZ', strike: '50', type: 'CALL', netAmount: '25.00', time: '2026-11-10T10:00' }))
@@ -175,15 +182,18 @@ test.describe('FEAT-038 卖出 call 不冻结', () => {
     await expect(page.getByTestId('positions-count')).toHaveText('共 0 个持仓')
   })
 
-  test('AC6+AC7 标签只在空头 call：空头 put 显示冻结金额、多头 call 显示 —；冻结合计只来自 put', async ({ page }) => {
+  test('AC6+AC7 标签只在空头 call（FEAT-039：已覆盖 100 股）：空头 put 显示冻结金额、多头 call 显示 —；冻结合计只来自 put', async ({ page }) => {
     await apiTransfer('DEPOSIT', '25000.00', '2026-11-02T10:00')
+    await apiTransferInShares('AAPL', 100, '2026-11-04') // FEAT-039
     await apiTrade({ action: 'STO', strike: '200', type: 'PUT', netAmount: '349.35', time: '2026-11-03T10:30' })
     await apiTrade({ action: 'STO', strike: '250', type: 'CALL', netAmount: '120.00', time: '2026-11-04T10:00' })
     await apiTrade({ action: 'BTO', strike: '210', type: 'CALL', netAmount: '100.00', time: '2026-11-04T11:00' })
     await page.goto('/positions')
     await expect(page.getByTestId('positions-frozen-total')).toHaveText('冻结现金合计 20,000.00')
-    await expect(page.getByTestId('position-cell-frozen-none')).toHaveCount(1)
-    await expect(posRow(page, 'AAPL 2026-12-18 250 C').getByTestId('position-cell-frozen-none')).toHaveText('未冻结')
+    await expect(page.getByTestId('position-cell-coverage-checked')).toHaveCount(1)
+    await expect(page.getByTestId('position-cell-coverage-legacy')).toHaveCount(0)
+    await expect(posRow(page, 'AAPL 2026-12-18 250 C').getByTestId('position-cell-coverage-checked')).toHaveText('已覆盖 100 股')
+    await expect(page.getByText('未冻结')).toHaveCount(0)
     await expect(posRow(page, 'AAPL 2026-12-18 200 P').getByTestId('position-cell-frozen')).toHaveText('20,000.00')
     await expect(posRow(page, 'AAPL 2026-12-18 210 C').getByTestId('position-cell-frozen')).toHaveText('—')
     await expect(posRow(page, 'AAPL 2026-12-18 210 C').getByTestId('position-cell-direction')).toHaveText('多头')

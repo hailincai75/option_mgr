@@ -460,7 +460,9 @@ class Feat013PutAssignmentSystemTest extends OptionTradeSystemTestBase {
         p2 = open("STO", 1, "XYZ", "2026-11-20", "45", "PUT", "130.00", "2026-11-05T10:00", 100);
         p3 = open("STO", 1, "QRTV", "2026-12-18", "30", "PUT", "85.00", "2026-11-06T10:00", 100);
         p4 = open("BTO", 1, "QRTV", "2026-11-20", "25", "CALL", "40.00", "2026-11-06T11:00", 100);
-        p5 = open("STO", 1, "IXQZ", "2026-11-20", "8", "CALL", "22.00", "2026-11-06T12:00", 100);
+        // FEAT-039: P5 is a short call without shares - only possible as a pre-launch (LEGACY) batch (Q79)
+        p5 = okLegacyTrade(trade("STO", 1, "IXQZ", "2026-11-20", "8", "CALL", "22.00", "2026-11-06T12:00", 100))
+                .get("id").asLong();
         assertSummary("20437.00", "16500.00", "3937.00");
         assertThat(ledgerCount()).isEqualTo(6);
     }

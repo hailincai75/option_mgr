@@ -7,6 +7,11 @@ import com.optionmgr.common.time.MarketTime;
 import com.optionmgr.stock.domain.StockPosition;
 import com.optionmgr.stock.service.StockPositionService;
 import com.optionmgr.trade.domain.ContractKey;
+import com.optionmgr.trade.domain.CoverageStatus;
+import com.optionmgr.trade.domain.CoverageTimeline;
+import com.optionmgr.trade.domain.OptionType;
+import com.optionmgr.trade.domain.PositionDirection;
+import com.optionmgr.trade.domain.PositionLot;
 import com.optionmgr.trade.domain.ExpiryReplay;
 import com.optionmgr.trade.domain.LotTrade;
 import com.optionmgr.trade.domain.OptionPosition;
@@ -33,10 +38,12 @@ public class OptionPositionService {
     private final OptionTradeRepository trades;
     private final CashLedgerService ledger;
     private final StockPositionService stockPositions;
+    private final CoverageService coverage;
     private final Clock clock;
 
     public OptionPositionService(OptionTradeRepository trades, CashLedgerService ledger,
-                                 StockPositionService stockPositions, Clock clock) {
+                                 StockPositionService stockPositions, CoverageService coverage, Clock clock) {
+        this.coverage = coverage;
         this.stockPositions = stockPositions;
         this.trades = trades;
         this.ledger = ledger;
@@ -53,7 +60,12 @@ public class OptionPositionService {
      */
     public record PositionSummary(Instant now, LocalDate asOfDate, List<OptionPosition> positions,
                                   BigDecimal frozenTotal, Map<ContractKey, Integer> expiryContracts,
-                                  Map<String, Long> stockShares) {
+                                  Map<String, Long> stockShares, Map<ContractKey, RowCoverage> coverage) {
+
+        /** FEAT-039: coverage of a short call row; null for every other row. */
+        public RowCoverage coverage(OptionPosition p) {
+            return coverage.get(p.contract());
+        }
 
         public int expiryContracts(OptionPosition p) {
             return expiryContracts.getOrDefault(p.contract(), 0);
@@ -63,6 +75,23 @@ public class OptionPositionService {
         public long underlyingShares(OptionPosition p) {
             return stockShares.getOrDefault(p.contract().symbol(), 0L);
         }
+    }
+
+    /**
+     * FEAT-039: one STO call lot of a short call row.
+     *
+     * @param requiredShares remaining contracts x multiplier
+     * @param shortfall      LEGACY only: first point where it would not be covered (hover); null for CHECKED
+     */
+    public record LotCoverage(CoverageStatus status, long requiredShares, CoverageTimeline.Shortfall shortfall) {
+    }
+
+    /**
+     * FEAT-039: a short call row: shares of its CHECKED lots, contracts / shares of its LEGACY lots, the symbol's
+     * available shares now and the earliest LEGACY shortfall (null without LEGACY lots).
+     */
+    public record RowCoverage(long coveredShares, int uncoveredContracts, long uncoveredShares, long availableShares,
+                              CoverageTimeline.Shortfall shortfall, Map<Long, LotCoverage> lots) {
     }
 
     @Transactional(readOnly = true)
@@ -94,7 +123,43 @@ public class OptionPositionService {
         for (StockPosition sp : stockPositions.currentPositions(accountId)) {
             stockShares.put(sp.symbol(), sp.shares());
         }
+        Map<ContractKey, RowCoverage> rows = new HashMap<>();
+        Map<String, CoverageService.Snapshot> snapshots = new HashMap<>();
+        for (OptionPosition p : positions) {
+            if (p.direction() == PositionDirection.SHORT && p.contract().optionType() == OptionType.CALL) {
+                CoverageService.Snapshot snapshot = snapshots.computeIfAbsent(p.contract().symbol(),
+                        sym -> coverage.snapshot(accountId, sym));
+                rows.put(p.contract(), rowCoverage(p, snapshot.timeline()));
+            }
+        }
         return new PositionSummary(now, today, positions, frozenTotal, Map.copyOf(expiryContracts),
-                Map.copyOf(stockShares));
+                Map.copyOf(stockShares), Map.copyOf(rows));
+    }
+
+    static RowCoverage rowCoverage(OptionPosition p, CoverageTimeline timeline) {
+        long available = timeline.current(CoverageTimeline.checked()).available();
+        long covered = 0;
+        int uncoveredContracts = 0;
+        long uncoveredShares = 0;
+        CoverageTimeline.Shortfall earliest = null;
+        Map<Long, LotCoverage> lots = new LinkedHashMap<>();
+        for (PositionLot l : p.lots()) {
+            long required = (long) l.remainingContracts() * l.multiplier();
+            boolean checked = timeline.lot(l.tradeId()).map(CoverageTimeline.CallLot::checked).orElse(true);
+            if (checked) {
+                covered += required;
+                lots.put(l.tradeId(), new LotCoverage(CoverageStatus.CHECKED, required, null));
+                continue;
+            }
+            CoverageTimeline.Shortfall s = timeline.legacyShortfall(timeline.lot(l.tradeId()).orElseThrow())
+                    .orElse(null);
+            uncoveredContracts += l.remainingContracts();
+            uncoveredShares += required;
+            if (s != null && (earliest == null || s.at().isBefore(earliest.at()))) {
+                earliest = s;
+            }
+            lots.put(l.tradeId(), new LotCoverage(CoverageStatus.LEGACY, required, s));
+        }
+        return new RowCoverage(covered, uncoveredContracts, uncoveredShares, available, earliest, lots);
     }
 }

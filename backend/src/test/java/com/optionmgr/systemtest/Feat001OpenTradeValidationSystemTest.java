@@ -276,6 +276,8 @@ class Feat001OpenTradeValidationSystemTest extends OptionTradeSystemTestBase {
 
         emptyLedger();
         // FEAT-038 (Q16 superseded): an STO call with zero cash is accepted - no collateral, nothing frozen
+        // (FEAT-039: it needs 100 shares, a 转入 has no cash effect)
+        transferInShares("AAPL", 100, "2026-11-10");
         assertThat(okTrade(aapl("STO", "250", "CALL", "1.00", AT)).get("frozenChange").asText()).isEqualTo("0.00");
         assertSummary("1.00", "0.00", "1.00");
         emptyLedger();

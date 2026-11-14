@@ -89,6 +89,55 @@ abstract class OptionTradeSystemTestBase extends CashSystemTestBase {
         assertThat(state()).isEqualTo(before);
     }
 
+    // ------------------------------------------------------------------ FEAT-039 helpers (covered call)
+
+    /**
+     * FEAT-039: STO calls need shares. Posts a stock 转入 (TRANSFER_IN: no cash, no ledger row) of {@code shares}
+     * {@code symbol} on {@code tradeDate} (NY date, counted from 00:00, Q86) in the current account; returns its id.
+     */
+    long transferInShares(String symbol, int shares, String tradeDate) {
+        ObjectNode n = json.createObjectNode();
+        n.put("type", "TRANSFER_IN");
+        n.put("symbol", symbol);
+        n.put("shares", shares);
+        n.put("amount", "1.00");
+        n.put("tradeDate", tradeDate);
+        n.putNull("note");
+        Resp r = postRaw("/api/stock-trades", n.toString(), MediaType.APPLICATION_JSON);
+        assertThat(r.status()).as("TRANSFER_IN %d %s %s -> %s", shares, symbol, tradeDate, r.body()).isEqualTo(201);
+        return r.body().get("id").asLong();
+    }
+
+    /**
+     * FEAT-039 scenario L / old behaviour: an STO call "entered before FEAT-039 went live" (coverage_status LEGACY,
+     * Q79). Systemtests run with profile "test" (no /api/test-support), so: a temporary 转入 of exactly the needed
+     * shares on the trade date lets the normal POST pass E1/E3; then via JDBC the temporary stock row is removed and
+     * the new trade (plus any batch that was LEGACY before and may have been auto-included because of the temporary
+     * shares) is set to LEGACY. A 转入 has no ledger row, so cash / ledger are exactly as for a pre-launch trade.
+     */
+    JsonNode okLegacyTrade(ObjectNode stoCallBody) {
+        assertThat(stoCallBody.get("action").asText()).isEqualTo("STO");
+        assertThat(stoCallBody.get("optionType").asText()).isEqualTo("CALL");
+        List<Long> legacyBefore = jdbc.queryForList(
+                "SELECT id FROM option_trade WHERE coverage_status = 'LEGACY'", Long.class);
+        int multiplier = stoCallBody.has("multiplier") ? stoCallBody.get("multiplier").asInt() : 100;
+        int shares = stoCallBody.get("contracts").asInt() * multiplier;
+        long temp = transferInShares(stoCallBody.get("symbol").asText(), shares,
+                stoCallBody.get("tradedAtLocal").asText().substring(0, 10));
+        JsonNode t = okTrade(stoCallBody);
+        assertThat(jdbc.update("DELETE FROM stock_trade WHERE id = ?", temp)).isEqualTo(1);
+        assertThat(jdbc.update("UPDATE option_trade SET coverage_status = 'LEGACY' WHERE id = ?",
+                t.get("id").asLong())).isEqualTo(1);
+        for (Long id : legacyBefore) {
+            jdbc.update("UPDATE option_trade SET coverage_status = 'LEGACY' WHERE id = ?", id);
+        }
+        return t;
+    }
+
+    String coverageStatus(long tradeId) {
+        return jdbc.queryForObject("SELECT coverage_status FROM option_trade WHERE id = ?", String.class, tradeId);
+    }
+
     // ------------------------------------------------------------------ state snapshots
 
     record State(String total, String frozen, String available, long ledgerEntries, long trades) {

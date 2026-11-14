@@ -18,6 +18,9 @@ import org.springframework.http.MediaType;
  * FEAT-038 STO call allowed without freezing cash (Q16 superseded), end-to-end over HTTP.
  * "Now" = 2026-11-12 10:00 New York. Scenario IXQZ is a fictional covered-call roll; every write is followed by a
  * consistency check positions.frozenTotal == cash frozenCash.
+ *
+ * <p>FEAT-039 (Q77): an STO call now needs uncovered shares in the same account, so every scenario first records a
+ * stock 转入 (no cash effect, Q71) of enough shares; all FEAT-038 numbers (cash, frozen, P&amp;L) are unchanged.
  */
 class Feat038ShortCallSystemTest extends OptionTradeSystemTestBase {
 
@@ -102,6 +105,8 @@ class Feat038ShortCallSystemTest extends OptionTradeSystemTestBase {
 
     void ixqzUpTo3() {
         deposit("10944.65", "2026-11-09T09:00");
+        // FEAT-039: up to 4 short calls are open at once (AC3: #4b before #4a at the same instant)
+        transferInShares("IXQZ", 400, "2026-11-09");
         openOk("#1", "STO", 1, "IXQZ", "2026-11-20", "7.5", "CALL", "14.34", "2026-11-09T13:40", 100);
         openOk("#2", "STO", 1, "IXQZ", "2026-12-18", "9", "CALL", "18.34", "2026-11-10T12:43", 100);
         openOk("#3", "STO", 1, "IXQZ", "2026-12-18", "10", "CALL", "20.34", "2026-11-11T10:26", 100);
@@ -204,6 +209,7 @@ class Feat038ShortCallSystemTest extends OptionTradeSystemTestBase {
     @DisplayName("AC1 #1 STO call：现金 +14.34、冻结 0.00；汇总 10,958.99/0/10,958.99；流水说明")
     void ac1_firstShortCall() {
         deposit("10944.65", "2026-11-09T09:00");
+        transferInShares("IXQZ", 100, "2026-11-09"); // FEAT-039
         JsonNode t = openOk("#1", "STO", 1, "IXQZ", "2026-11-20", "7.5", "CALL", "14.34", "2026-11-09T13:40", 100);
         assertThat(t.get("cashChange").asText()).isEqualTo("14.34");
         assertThat(t.get("frozenChange").asText()).isEqualTo("0.00");
@@ -239,6 +245,7 @@ class Feat038ShortCallSystemTest extends OptionTradeSystemTestBase {
     @DisplayName("AC4+AC5 零现金卖 call 25.00；BTC 30.00 被拒（无释放冻结字样）；20.00 成功 +5.00、5/0/5")
     void ac4and5_zeroCashCallThenBtc() {
         assertSummary("0.00", "0.00", "0.00");
+        transferInShares("XYZ", 100, "2026-11-10"); // FEAT-039: shares, but still zero cash
         openOk("x", "STO", 1, "XYZ", "2026-12-18", "50", "CALL", "25.00", "2026-11-10T10:00", 100);
         assertSummary("25.00", "0.00", "25.00");
         String msg = closeRejected(closeBody("BTC", 1, "XYZ", "2026-12-18", "50", "CALL", "30.00", "2026-11-11T10:00"),
@@ -255,6 +262,7 @@ class Feat038ShortCallSystemTest extends OptionTradeSystemTestBase {
     @Test
     @DisplayName("BTC 平空头 call 的 Q19：补录 BTC 让之后的出金时点变负 → 拒绝（FEAT-007 文案）")
     void btcShortCallLaterPointNegative() {
+        transferInShares("XYZ", 100, "2026-11-10"); // FEAT-039
         openOk("x", "STO", 1, "XYZ", "2026-12-18", "50", "CALL", "25.00", "2026-11-10T10:00", 100);
         withdraw("20.00", "2026-11-12T09:00");
         assertThat(closeRejected(closeBody("BTC", 1, "XYZ", "2026-12-18", "50", "CALL", "10.00", "2026-11-11T10:00"),
@@ -286,7 +294,8 @@ class Feat038ShortCallSystemTest extends OptionTradeSystemTestBase {
     void ac7_putAndCall() {
         deposit("25000.00", "2026-11-02T10:00");
         openOk("p", "STO", 1, "AAPL", "2026-12-18", "200", "PUT", "349.35", "2026-11-03T10:30", 100);
-        // the call's notional (25,000) is far above the available cash (5,349.35) - still no check
+        // the call's notional (25,000) is far above the available cash (5,349.35) - still no cash check
+        transferInShares("AAPL", 100, "2026-11-04"); // FEAT-039: covered by shares
         JsonNode c = openOk("c", "STO", 1, "AAPL", "2026-12-18", "250", "CALL", "120.00", "2026-11-04T10:00", 100);
         assertThat(c.get("frozenChange").asText()).isEqualTo("0.00");
         assertSummary("25469.35", "20000.00", "5469.35");
@@ -336,6 +345,7 @@ class Feat038ShortCallSystemTest extends OptionTradeSystemTestBase {
     @Test
     @DisplayName("修改空头 call 不做 Q18：零现金下把张数 1 → 5、改 multiplier、改时间都允许，冻结仍为 0")
     void editShortCallSkipsQ18() {
+        transferInShares("XYZ", 100, "2026-11-10"); // FEAT-039: covers 1 x 100 and 5 x 10
         JsonNode t = openOk("x", "STO", 1, "XYZ", "2026-12-18", "50", "CALL", "25.00", "2026-11-10T10:00", 100);
         ObjectNode e = json.createObjectNode();
         e.put("contracts", 5);
@@ -363,7 +373,8 @@ class Feat038ShortCallSystemTest extends OptionTradeSystemTestBase {
         assertThat(get("/api/closed-trades").body().get("filteredCount").asInt()).isZero();
         assertThat(closeRejected(closeBody("BTC", 1, "IXQZ", "2026-12-18", "9", "CALL", "1.00", "2026-11-11T13:00"),
                 "NO_POSITION_TO_CLOSE")).isEqualTo("该合约（IXQZ 2026-12-18 9 C）在成交时没有持仓，无法平仓");
-        // and B can sell the same call itself with zero cash
+        // and B can sell the same call itself with zero cash (FEAT-039: with its own shares)
+        transferInShares("IXQZ", 100, "2026-11-11");
         openOk("b1", "STO", 1, "IXQZ", "2026-12-18", "9", "CALL", "1.00", "2026-11-11T13:00", 100);
         accountId = "1";
         assertIxqzResult();

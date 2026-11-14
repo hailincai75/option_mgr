@@ -161,7 +161,7 @@ class PutAssignmentControllerTest {
         if (multiplier != null) {
             n.put("multiplier", multiplier);
         }
-        return send(post(TRADES), n, 201).get("id").asLong();
+        return send(post(com.optionmgr.testsupport.LegacyShortCallTestController.openUrl(n)), n, 201).get("id").asLong();
     }
 
     /** Scenario P in the current account (clock must be &gt;= 2026-11-06 12:00). */

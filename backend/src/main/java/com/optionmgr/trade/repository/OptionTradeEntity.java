@@ -1,6 +1,7 @@
 package com.optionmgr.trade.repository;
 
 import com.optionmgr.trade.domain.ContractKey;
+import com.optionmgr.trade.domain.CoverageStatus;
 import com.optionmgr.trade.domain.OptionType;
 import com.optionmgr.trade.domain.TradeAction;
 import jakarta.persistence.Column;
@@ -78,7 +79,45 @@ public class OptionTradeEntity {
     @Column(name = "assignment_fee", precision = 19, scale = 2)
     private BigDecimal assignmentFee;
 
+    /** FEAT-039: CHECKED / LEGACY for an STO call lot; null for every other record. */
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
+    @Column(name = "coverage_status", length = 8)
+    private CoverageStatus coverageStatus;
+
+    /**
+     * FEAT-039: entry order shared with stock_trade (database sequence, set on insert). Null on an entity inserted in
+     * the current transaction: such a record was entered last.
+     */
+    @Column(name = "entry_seq", insertable = false, updatable = false)
+    private Long entrySeq;
+
     protected OptionTradeEntity() {
+    }
+
+    public CoverageStatus getCoverageStatus() {
+        return coverageStatus;
+    }
+
+    /** FEAT-039: a legacy lot passed the coverage check (edit or automatic inclusion); never goes back. */
+    public void markCoverageChecked() {
+        if (coverageStatus == null) {
+            throw new IllegalStateException("not an STO call: " + id);
+        }
+        this.coverageStatus = CoverageStatus.CHECKED;
+    }
+
+    /** Test support only (e2e): an STO call entered as if before FEAT-039. */
+    public void markCoverageLegacy() {
+        if (coverageStatus == null) {
+            throw new IllegalStateException("not an STO call: " + id);
+        }
+        this.coverageStatus = CoverageStatus.LEGACY;
+    }
+
+    /** Entry order across option and stock records; {@link Long#MAX_VALUE} for a record inserted just now. */
+    public long entrySeq() {
+        return entrySeq == null ? Long.MAX_VALUE : entrySeq;
     }
 
     /** FEAT-013: an assignment record (ASG, net amount 0) with its fee. */
@@ -108,6 +147,8 @@ public class OptionTradeEntity {
         this.tradedAt = tradedAt;
         this.note = note;
         this.createdAt = createdAt;
+        this.coverageStatus = action == TradeAction.STO && contract.optionType() == OptionType.CALL
+                ? CoverageStatus.CHECKED : null;
     }
 
     /** FEAT-005 edit (Q43): only these fields change; contract and action never do. The id (entry order) stays. */

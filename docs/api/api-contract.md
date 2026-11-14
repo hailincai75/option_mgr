@@ -139,3 +139,4 @@
 | [FEAT-040.md](FEAT-040.md) | FEAT-040 股票已实现盈亏并入已平仓、盈亏汇总、首页 |
 | [FEAT-013.md](FEAT-013.md) | FEAT-013 卖出 put 被指派（`ASG`） |
 | [FEAT-041.md](FEAT-041.md) | FEAT-041 卖出 call 被指派（`ASG` 扩展到空头 call） |
+| [FEAT-039.md](FEAT-039.md) | FEAT-039 covered call 股票覆盖检查与锁定（**行为变化：STO call、股票卖出及多种修改 / 删除可能被 `COVERAGE_INSUFFICIENT` 拒绝**） |

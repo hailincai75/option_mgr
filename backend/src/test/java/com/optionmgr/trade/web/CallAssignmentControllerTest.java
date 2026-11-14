@@ -166,7 +166,7 @@ class CallAssignmentControllerTest {
         if (multiplier != null) {
             n.put("multiplier", multiplier);
         }
-        return send(post(TRADES), n, 201).get("id").asLong();
+        return send(post(com.optionmgr.testsupport.LegacyShortCallTestController.openUrl(n)), n, 201).get("id").asLong();
     }
 
     private ObjectNode stockBody(String type, String symbol, int shares, String amount, String time) {
@@ -463,6 +463,8 @@ class CallAssignmentControllerTest {
     void ac5_laterSaleMustStayCovered() throws Exception {
         clock.set(WED_25_10AM);
         scenarioC();
+        // FEAT-041 behaviour on calls entered before FEAT-039: LEGACY lots lock no shares, so the later sale is kept
+        jdbc.update("UPDATE option_trade SET coverage_status = 'LEGACY' WHERE coverage_status IS NOT NULL");
         stock("SELL", "IXQZ", 100, "1000.00", "2026-11-24T10:00");
         assignRejected(assignBody("IXQZ", "9", 3, "2026-11-20", null), "SHARES_INSUFFICIENT",
                 "补录后 2026-11-24 10:00 的卖出 IXQZ 100 股将超过当时持股 0 股");

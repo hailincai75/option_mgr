@@ -76,6 +76,7 @@ class ShortCallControllerTest {
 
     void cleanUp() {
         jdbc.update("DELETE FROM audit_record");
+        jdbc.update("DELETE FROM stock_trade");
         jdbc.update("DELETE FROM option_trade");
         jdbc.update("DELETE FROM cash_ledger_entry");
         jdbc.update("DELETE FROM cash_transfer");
@@ -124,7 +125,8 @@ class ShortCallControllerTest {
     }
 
     private static String url(ObjectNode body) {
-        return body.get("action").asText().endsWith("C") ? "/api/option-trades/closes" : "/api/option-trades";
+        return body.get("action").asText().endsWith("C") ? "/api/option-trades/closes"
+                : com.optionmgr.testsupport.LegacyShortCallTestController.openUrl(body);
     }
 
     private JsonNode ok(ObjectNode body) throws Exception {
@@ -359,6 +361,14 @@ class ShortCallControllerTest {
     @Test
     void editingAShortCallSkipsQ18() throws Exception {
         newEmptyAccount();
+        // FEAT-039: 10 contracts need 1,000 covering shares (a transfer-in has no cash effect)
+        ObjectNode shares = json.createObjectNode();
+        shares.put("type", "TRANSFER_IN");
+        shares.put("symbol", "XYZ");
+        shares.put("shares", 1000);
+        shares.put("amount", "40000.00");
+        shares.put("tradeDate", "2026-11-02");
+        send(post("/api/stock-trades"), shares, 201);
         long id = ok(body("STO", "XYZ", "2026-12-18", "50", "CALL", 1, "25.00", "2026-11-10T10:00")).get("id").asLong();
         // 10 contracts x 100 x 50 would need 50,000 as put collateral; a call needs none
         JsonNode t = send(put("/api/option-trades/" + id), edit(id, "25.00", 10), 200);

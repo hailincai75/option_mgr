@@ -82,10 +82,12 @@ public class OptionTradeService {
     private final OptionTradeRepository trades;
     private final CashLedgerService ledger;
     private final StockTradeRepository stockTrades;
+    private final CoverageService coverage;
     private final Clock clock;
 
     public OptionTradeService(OptionTradeRepository trades, CashLedgerService ledger, StockTradeRepository stockTrades,
-                              Clock clock) {
+                              CoverageService coverage, Clock clock) {
+        this.coverage = coverage;
         this.trades = trades;
         this.ledger = ledger;
         this.stockTrades = stockTrades;
@@ -203,6 +205,15 @@ public class OptionTradeService {
      */
     @Transactional
     public TradeView open(long accountId, OpenCommand cmd) {
+        return open(accountId, cmd, false);
+    }
+
+    /**
+     * As {@link #open(long, OpenCommand)}; {@code legacy} (test support only, e2e): an STO call stored as entered
+     * before FEAT-039 - no coverage check (E1 / E3), saved LEGACY, then evaluated by the automatic inclusion.
+     */
+    @Transactional
+    public TradeView open(long accountId, OpenCommand cmd, boolean legacy) {
         // 1. field rules that need the clock / the trade's New York date
         Instant tradedAt = MarketTime.toInstant(cmd.tradedAtLocal());
         LocalDate tradeDate = MarketTime.toLocal(tradedAt).toLocalDate();
@@ -227,11 +238,20 @@ public class OptionTradeService {
 
         // 2. Q7 at the trade, and every later trade of the contract still valid (Q27/Q39)
         rejectFirstViolation(contract, history, NOT_MULTIPLIER);
-        // 3. Q23 (FEAT-038: STO call is allowed - Q16 superseded; no share-coverage check before FEAT-011)
+        // 3. Q23 (FEAT-038: STO call is allowed - Q16 superseded; share coverage: FEAT-039 below)
         rejectFirstViolation(contract, history, MULTIPLIER);
         // FEAT-013: later assignments re-matched to other lots keep a positive stock cost
         List<CostCorrection> costs = costCorrections(accountId, contract, existing, history, LotTrade.NOT_YET_ENTERED);
         rejectNonPositiveCost(costs, "补录");
+        // FEAT-039: E1 at the new STO call, then E3 for later points
+        if (!legacy && terms.action() == TradeAction.STO && contract.optionType() == OptionType.CALL) {
+            List<LotTrade> all = new ArrayList<>(existing.trades());
+            all.add(candidate);
+            CoverageService.Snapshot snapshot = coverage.snapshot(accountId, contract.symbol(),
+                    CoverageService.Proposal.contract(contract, all));
+            coverage.checkCallOpen(snapshot, LotTrade.NOT_YET_ENTERED);
+            coverage.checkInvariant(snapshot, tradedAt, "补录");
+        }
 
         // 4. cash (Q13, Q18 for STO put only, Q19), with later closes' re-matched frozen release.
         // A short call freezes nothing (OpenTradeTerms.freezesCollateral), so it only adds cash.
@@ -244,6 +264,10 @@ public class OptionTradeService {
         CashLedgerEntryEntity entry = ledger.append(new NewLedgerEntry(accountId, tradedAt, CashSourceType.OPTION_OPEN,
                 trade.getId(), terms.cashChange(), terms.frozenChange(), terms.description(), note));
         ledger.correctFrozenChanges(accountId, corrections);
+        if (legacy && trade.getCoverageStatus() != null) {
+            trade.markCoverageLegacy();
+        }
+        coverage.includeLegacy(accountId, contract.symbol());
         return new TradeView(trade, entry, Optional.empty());
     }
 
@@ -309,6 +333,7 @@ public class OptionTradeService {
                 OpenTradeTerms.describe(cmd.action(), cmd.contracts(), multiplier, contract), note));
         ledger.correctFrozenChanges(accountId, corrections);
         applyCostCorrections(costs);
+        coverage.includeLegacy(accountId, contract.symbol());
         return new TradeView(trade, entry, Optional.of(match));
     }
 

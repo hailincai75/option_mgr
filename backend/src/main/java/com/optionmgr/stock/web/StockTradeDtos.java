@@ -134,7 +134,9 @@ public final class StockTradeDtos {
                                    BigDecimal originalCost, BigDecimal remainingCost, String note) {
     }
 
-    public record StockPositionResponse(String symbol, long shares, BigDecimal totalCost, BigDecimal averageCost,
+    /** FEAT-039: {@code coveredShares} = shares covered by CHECKED short calls now; available = shares - covered. */
+    public record StockPositionResponse(String symbol, long shares, long coveredShares, long availableShares,
+                                        BigDecimal totalCost, BigDecimal averageCost,
                                         int lotCount, List<StockLotResponse> lots) {
     }
 

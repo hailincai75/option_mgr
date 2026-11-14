@@ -130,6 +130,27 @@ export function StockPositionTable({ positions, loading, empty, onSell }: StockP
         </span>
       ),
     },
+    // FEAT-039: shares covering short calls and the rest (both from the backend).
+    {
+      title: '被覆盖',
+      key: 'coveredShares',
+      align: 'right',
+      render: (_value: unknown, position) => (
+        <span data-testid="stock-position-covered-shares" style={NUMERIC}>
+          {formatInteger(position.coveredShares)}
+        </span>
+      ),
+    },
+    {
+      title: '可用',
+      key: 'availableShares',
+      align: 'right',
+      render: (_value: unknown, position) => (
+        <span data-testid="stock-position-available-shares" style={NUMERIC}>
+          {formatInteger(position.availableShares)}
+        </span>
+      ),
+    },
     {
       title: '总成本',
       key: 'totalCost',

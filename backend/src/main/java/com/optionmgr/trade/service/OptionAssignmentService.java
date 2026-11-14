@@ -59,11 +59,13 @@ public class OptionAssignmentService {
     private final StockTradeRepository stockTrades;
     private final CashLedgerService ledger;
     private final StockTradeService stocks;
+    private final CoverageService coverage;
     private final Clock clock;
 
     public OptionAssignmentService(OptionTradeRepository trades, OptionTradeService tradeService,
                                    StockTradeRepository stockTrades, CashLedgerService ledger,
-                                   StockTradeService stocks, Clock clock) {
+                                   StockTradeService stocks, CoverageService coverage, Clock clock) {
+        this.coverage = coverage;
         this.stocks = stocks;
         this.trades = trades;
         this.tradeService = tradeService;
@@ -154,6 +156,7 @@ public class OptionAssignmentService {
                 terms.shares(), terms.stockCost(), at, assignment.getId(), now));
         ledger.correctFrozenChanges(accountId, corrections);
         OptionTradeService.applyCostCorrections(costs);
+        coverage.includeLegacy(accountId, contract.symbol()); // FEAT-039: more shares may cover legacy lots
         return new OptionTradeService.TradeView(assignment, entry, Optional.of(match), lot, null);
     }
 
@@ -187,6 +190,18 @@ public class OptionAssignmentService {
             return all;
         }, StockRecord.NOT_YET_ENTERED, "补录", s -> StockMessages.assignmentExceedsHolding(contract.symbol(), s));
 
+        // FEAT-039 (rule 4): delivering the shares must leave the CHECKED short calls covered (a legacy lot's
+        // assignment can take shares that cover other calls)
+        CoverageService.Snapshot snapshot = coverage.snapshot(accountId, contract.symbol(),
+                CoverageService.Proposal.contract(contract, history.steps().stream().map(ReplayedTrade::trade).toList())
+                        .withStock(records -> {
+                            List<StockRecord> all = new ArrayList<>(records);
+                            all.add(pending);
+                            return all;
+                        })
+                        .withNewCallAssignment());
+        coverage.checkInvariant(snapshot, at, "被指派");
+
         // 9. cash (Q19): only a fee larger than the strike amount can lower cash
         Map<Long, BigDecimal> corrections = OptionTradeService.frozenCorrections(existing, history);
         InsertionCheck check = ledger.checkInsertion(accountId, at, terms.cashChange(), terms.frozenChange(),
@@ -207,6 +222,7 @@ public class OptionAssignmentService {
         ledger.correctFrozenChanges(accountId, corrections);
         OptionTradeService.applyCostCorrections(costs);
         stockTrades.flush();
+        coverage.includeLegacy(accountId, contract.symbol());
         return tradeService.views(accountId, List.of(assignment)).get(0);
     }
 

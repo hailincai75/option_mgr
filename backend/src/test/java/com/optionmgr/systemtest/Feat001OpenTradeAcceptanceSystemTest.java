@@ -175,6 +175,7 @@ class Feat001OpenTradeAcceptanceSystemTest extends OptionTradeSystemTestBase {
     @DisplayName("AC9（FEAT-038 取代 Q16）STO call 允许：现金 +120.00、冻结 0.00，流水说明同 FEAT-001")
     void ac9_stoCallAcceptedWithoutFreeze() {
         deposit("100000.00", DEP);
+        transferInShares("AAPL", 100, "2026-11-10"); // FEAT-039 (Q77): the call needs 100 shares; no cash effect
         JsonNode t = okTrade(aapl("STO", "250", "CALL", "120.00", AT));
         assertThat(t.get("cashChange").asText()).isEqualTo("120.00");
         assertThat(t.get("frozenChange").asText()).isEqualTo("0.00");

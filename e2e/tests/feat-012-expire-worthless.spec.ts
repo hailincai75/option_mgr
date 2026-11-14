@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test'
 import { apiTransfer, CashPage, expect, MINUS, test } from '../support/fixtures'
-import { apiTrade } from '../support/trade'
+import { apiTrade, apiTransferInShares } from '../support/trade'
 import { BACKEND_URL } from '../support/backend'
 import { addDays, nyToday, stablePhase } from '../support/ny'
 
@@ -26,6 +26,7 @@ async function scenarioE(): Promise<void> {
   await apiTrade({ action: 'STO', symbol: 'XYZ', expiration: EXP, strike: '45', type: 'PUT', contracts: 2, netAmount: '240.00', time: '2026-10-27T10:00' })
   await apiTrade({ action: 'BTO', symbol: 'QRTV', expiration: EXP, strike: '30', type: 'CALL', netAmount: '85.65', time: '2026-10-28T10:00' })
   await apiTrade({ action: 'STO', symbol: 'XYZ', expiration: EXP, strike: '45', type: 'PUT', netAmount: '130.00', time: '2026-10-29T10:00' })
+  await apiTransferInShares('IXQZ', 100, '2026-10-30') // FEAT-039: the short call needs 100 shares (转入: no cash effect)
   await apiTrade({ action: 'STO', symbol: 'IXQZ', expiration: EXP, strike: '8', type: 'CALL', netAmount: '22.34', time: '2026-10-30T10:00' })
   await apiTrade({ action: 'BTO', symbol: 'QRTV', expiration: EXP, strike: '25', type: 'PUT', contracts: 2, netAmount: '40.00', time: '2026-10-30T11:00' })
 }

@@ -20,4 +20,11 @@ public interface OptionTradeRepository extends JpaRepository<OptionTradeEntity, 
 
     /** All trades of an account in replay order. */
     List<OptionTradeEntity> findByAccountIdOrderByTradedAtAscIdAsc(Long accountId);
+
+    /** FEAT-039: every record of one option type (calls) of a symbol in an account, all contracts. */
+    List<OptionTradeEntity> findByAccountIdAndSymbolAndOptionTypeOrderByTradedAtAscIdAsc(Long accountId, String symbol,
+                                                                                         OptionType optionType);
+
+    /** FEAT-039: lots with the given coverage status (startup inclusion of LEGACY lots). */
+    List<OptionTradeEntity> findByCoverageStatus(com.optionmgr.trade.domain.CoverageStatus status);
 }

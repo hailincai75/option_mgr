@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom'
 import type { OptionPosition, OptionPositionLot } from '../../api/types'
 import { decimalSign, EMPTY_VALUE, formatDateTimeNY, formatMoney } from '../../utils/format'
 import { SIGNED_MONEY_COLORS, tradeActionLabel } from '../trade/tradeLabels'
+import { coverageTags } from './coverageLabels'
 import { tradesUrlForPosition } from './positionLinks'
 
 const DIRECTION_TAGS: Record<string, { label: string; color: string }> = {
@@ -31,6 +32,34 @@ function FrozenMoney({ value, testId }: { value: string; testId: string }) {
   return (
     <span data-testid={testId} style={{ fontVariantNumeric: 'tabular-nums' }}>
       {decimalSign(value) === 0 ? EMPTY_VALUE : formatMoney(value)}
+    </span>
+  )
+}
+
+/**
+ * FEAT-039 (Q62): short calls freeze no cash; the cell shows `已覆盖 N 股` (受检) and / or
+ * `未覆盖` (旧批次) with hover text, all values from the backend.
+ */
+function CoverageCell({ position }: { position: OptionPosition }) {
+  const tags = coverageTags(position)
+  return (
+    <span data-testid="position-cell-frozen" style={{ whiteSpace: 'nowrap' }}>
+      {tags.length === 0
+        ? EMPTY_VALUE
+        : tags.map((tag, index) => (
+            <Tooltip key={tag.kind} title={tag.hint}>
+              <Tag
+                color={tag.kind === 'checked' ? 'success' : 'warning'}
+                data-testid={`position-cell-coverage-${tag.kind}`}
+                style={{
+                  cursor: 'help',
+                  marginInlineEnd: index === tags.length - 1 ? 0 : undefined,
+                }}
+              >
+                {tag.label}
+              </Tag>
+            </Tooltip>
+          ))}
     </span>
   )
 }
@@ -217,14 +246,7 @@ function positionColumns(
       align: 'right',
       render: (_value: unknown, position) =>
         position.direction === 'SHORT' && position.optionType === 'CALL' ? (
-          // FEAT-038 (Q62): short calls freeze no cash (frozenCash is "0.00"); say so explicitly.
-          <span data-testid="position-cell-frozen">
-            <Tooltip title="卖出 call 不冻结现金，需自行保证股票覆盖">
-              <Tag data-testid="position-cell-frozen-none" style={{ marginInlineEnd: 0 }}>
-                未冻结
-              </Tag>
-            </Tooltip>
-          </span>
+          <CoverageCell position={position} />
         ) : (
           <FrozenMoney value={position.frozenCash} testId="position-cell-frozen" />
         ),

@@ -446,9 +446,9 @@ describe('OpenTradePage', () => {
     expect(byTestId('open-trade-time')).not.toHaveValue('')
   })
 
-  describe('STO call (FEAT-038, Q61)', () => {
+  describe('STO call (FEAT-038 / FEAT-039, Q61)', () => {
     const HINT =
-      '卖出 call 不冻结现金，请自行确保账户有足够股票覆盖（每张 = multiplier 股）；covered call 覆盖检查（FEAT-039）上线后将自动检查。'
+      '卖出 call 需要同一账户有足够的可用股票覆盖：每张 = multiplier 股，可用股数 = 持股 − 已被其它卖出 call 覆盖的股数，不足时不能保存。卖出 call 不冻结现金。'
 
     it('shows the hint only for STO + Call', async () => {
       startFakeServer({ summary: SUMMARY_30000 })
@@ -519,6 +519,43 @@ describe('OpenTradePage', () => {
         strike: '7.5',
         netAmount: '14.34',
       })
+    })
+
+    it('shows 422 COVERAGE_INSUFFICIENT verbatim (FEAT-039 AC 1)', async () => {
+      const message = '需要 200 股 IXQZ，可用 100 股（持有 200 股，其中 100 股已覆盖其它 call）'
+      startFakeServer({
+        summary: SUMMARY_30000,
+        onPost: () =>
+          jsonResponse(
+            {
+              code: 'COVERAGE_INSUFFICIENT',
+              message,
+              status: 422,
+              path: '/api/option-trades',
+              timestamp: '2026-11-13T15:00:00Z',
+              details: [],
+            },
+            422,
+          ),
+      })
+      renderWithProviders(<TradeEntryPage />)
+      const user = await fillTrade({
+        ...AC1_TRADE,
+        symbol: 'IXQZ',
+        expiration: '2026-12-18',
+        strike: '11',
+        type: 'call',
+        contracts: '2',
+        netAmount: '30.00',
+        time: '2026-11-04T10:00',
+        note: '',
+      })
+      await user.click(byTestId('open-trade-submit'))
+
+      const error = await screen.findByTestId('open-trade-error')
+      expect(error).toHaveTextContent(message)
+      expect(error).toHaveAttribute('data-error-code', 'COVERAGE_INSUFFICIENT')
+      expect(screen.queryByTestId('open-trade-confirmation')).not.toBeInTheDocument()
     })
   })
 })

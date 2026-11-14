@@ -380,6 +380,10 @@ class OptionTradeControllerTest {
     @Test
     void ac9_stoCallIsAllowedSinceFeat038() throws Exception {
         deposit("100000.00", "2026-11-02T10:00");
+        // FEAT-039: the call needs 100 covering shares (a transfer-in has no cash effect)
+        assertThat(mvc.perform(post("/api/stock-trades").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"type\":\"TRANSFER_IN\",\"symbol\":\"AAPL\",\"shares\":100,\"amount\":\"15000.00\","
+                        + "\"tradeDate\":\"2026-11-02\"}")).andReturn().getResponse().getStatus()).isEqualTo(201);
 
         JsonNode t = ok(trade("STO", "250", "CALL", "120.00"));
         assertThat(t.get("cashChange").asText()).isEqualTo("120.00");

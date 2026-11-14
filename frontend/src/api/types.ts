@@ -306,7 +306,18 @@ export interface OptionPositionLot {
   originalFrozen: MoneyString
   remainingFrozen: MoneyString
   note: string | null
+  /** FEAT-039: short-call lots only (null otherwise). */
+  coverage?: CoverageStatus | null
+  /** FEAT-039: remainingContracts × multiplier for short-call lots; null otherwise. */
+  requiredShares?: number | null
+  /** FEAT-039: LEGACY lots only — first instant the invariant fails, and shares held then. */
+  shortfallAt?: InstantString | null
+  shortfallAtLocal?: LocalDateTimeString | null
+  shortfallHeldShares?: number | null
 }
+
+/** FEAT-039: coverage status of an STO call lot. */
+export type CoverageStatus = 'CHECKED' | 'LEGACY' | (string & {})
 
 /** Contract: `GET /api/option-positions` → `positions[]`. Every value is display-ready. */
 export interface OptionPosition {
@@ -356,6 +367,20 @@ export interface OptionPosition {
   lots: OptionPositionLot[]
   /** FEAT-041: short call rows → current shares of the underlying held (may be 0); null otherwise. */
   underlyingShares?: number | null
+  /** FEAT-039 (short call rows; null otherwise): shares needed by CHECKED lots (0 when none). */
+  coveredShares?: number | null
+  /** FEAT-039: remaining contracts of LEGACY lots (0 when none). */
+  uncoveredContracts?: number | null
+  /** FEAT-039: shares needed by LEGACY lots. */
+  uncoveredShares?: number | null
+  /** FEAT-039: current available shares of the underlying (may be 0). */
+  availableShares?: number | null
+  /** FEAT-039: earliest shortfall instant among LEGACY lots; null when none. */
+  uncoveredShortfallAt?: InstantString | null
+  /** FEAT-039: same instant as New York local "YYYY-MM-DDTHH:mm:ss". */
+  uncoveredShortfallAtLocal?: LocalDateTimeString | null
+  /** FEAT-039: shares held at that instant. */
+  uncoveredShortfallHeldShares?: number | null
 }
 
 /** Contract: `GET /api/option-positions` → 200. */
@@ -456,6 +481,11 @@ export const STOCK_TRADE_FROM_ASSIGNMENT = 'STOCK_TRADE_FROM_ASSIGNMENT'
  * (declared with FEAT-011) for a call assignment without enough shares.
  */
 export const ASSIGNMENT_PROCEEDS_NOT_POSITIVE = 'ASSIGNMENT_PROCEEDS_NOT_POSITIVE'
+/**
+ * FEAT-039 error code (HTTP 422, `details` []): covered-call coverage check (E1 / E2 / E3) on
+ * option / stock trade create, edit, delete and assignments. `message` is shown verbatim.
+ */
+export const COVERAGE_INSUFFICIENT = 'COVERAGE_INSUFFICIENT'
 
 // ---------------------------------------------------------------------------
 // FEAT-005 修改 / 删除与审计
@@ -899,6 +929,10 @@ export interface StockPositionLot {
 export interface StockPosition {
   symbol: string
   shares: number
+  /** FEAT-039: shares currently covering CHECKED short calls (optional: older fixtures). */
+  coveredShares?: number
+  /** FEAT-039: shares − coveredShares (≥ 0). */
+  availableShares?: number
   totalCost: MoneyString
   /** totalCost ÷ shares, HALF_UP to 4 decimals (display only). */
   averageCost: PriceString

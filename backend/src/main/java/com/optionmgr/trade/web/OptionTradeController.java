@@ -139,7 +139,7 @@ public class OptionTradeController {
         return toResponse(service.get(account.id(), id));
     }
 
-    private static TradeResponse toResponse(OptionTradeService.TradeView view) {
+    public static TradeResponse toResponse(OptionTradeService.TradeView view) {
         OptionTradeEntity t = view.trade();
         ContractKey contract = t.contract();
         PositionDirection expiredDirection = t.getAction() == TradeAction.EXP
