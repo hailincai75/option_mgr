@@ -11,6 +11,8 @@ import java.util.Objects;
 
 /**
  * FEAT-013 figures of a short-put assignment (Q8, Q74, Q96) and its time rules (Q76, Q94). Pure Java.
+ * <p>FEAT-014: also the figures of a long-call exercise (Q111): with the cash-signed premium of long lots (negative)
+ * and nothing released, the stock cost is purchase (rounded up) + |premium| + fee and the cash change -(purchase + fee).
  *
  * @param strike     the contract's strike
  * @param contracts  assigned contracts
@@ -101,22 +103,35 @@ public record AssignmentTerms(BigDecimal strike, int contracts, int multiplier, 
      * and today only from 16:00 New York on.
      */
     public static String dateProblem(LocalDate assignmentDate, LocalDate expirationDate, Instant now) {
+        return dateProblem("指派日期", assignmentDate, expirationDate, now);
+    }
+
+    /** As above with the field's name in the texts, e.g. "行权日期" (FEAT-014, Q81). */
+    public static String dateProblem(String dateName, LocalDate date, LocalDate expirationDate, Instant now) {
         LocalDate today = MarketTime.toLocal(now).toLocalDate();
-        if (assignmentDate.isAfter(expirationDate)) {
-            return "指派日期不能晚于到期日（" + expirationDate + "）";
+        if (date.isAfter(expirationDate)) {
+            return dateName + "不能晚于到期日（" + expirationDate + "）";
         }
-        if (assignmentDate.isAfter(today)) {
-            return "指派日期不能晚于今天";
+        if (date.isAfter(today)) {
+            return dateName + "不能晚于今天";
         }
-        if (recordedAt(assignmentDate).isAfter(now)) {
-            return "指派日期为今天时，美东 16:00 之后才能记录";
+        if (recordedAt(date).isAfter(now)) {
+            return dateName + "为今天时，美东 16:00 之后才能记录";
         }
         return null;
     }
 
     /** Ledger description: "被指派 3 张 XYZ 2026-11-20 45 P，买入 300 股 XYZ" (+ "（multiplier 1）" after the contract). */
     public static String describe(ContractKey contract, int contracts, int multiplier) {
-        return OpenTradeTerms.describe(TradeAction.ASG, contracts, multiplier, contract) + "，买入 "
+        return describe(TradeAction.ASG, contract, contracts, multiplier);
+    }
+
+    /**
+     * Ledger description of a record that buys the shares (ASG put, FEAT-014 EXR call):
+     * "行权 3 张 QRTV 2026-11-20 30 C，买入 300 股 QRTV".
+     */
+    public static String describe(TradeAction action, ContractKey contract, int contracts, int multiplier) {
+        return OpenTradeTerms.describe(action, contracts, multiplier, contract) + "，买入 "
                 + contracts * multiplier + " 股 " + contract.symbol();
     }
 }

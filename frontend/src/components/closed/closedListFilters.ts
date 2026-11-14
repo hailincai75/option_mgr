@@ -30,8 +30,8 @@ export interface ClosedListUrlState {
 
 export const EMPTY_CLOSED_FILTERS: ClosedFilterValues = { ...EMPTY_TRADE_FILTERS, type: '' }
 
-/** FEAT-006: the closed-trade list only accepts closing directions (FEAT-012 EXP, FEAT-013 ASG). */
-export const CLOSE_ACTIONS: readonly TradeAction[] = ['BTC', 'STC', 'EXP', 'ASG']
+/** FEAT-006: the closed-trade list only accepts closing directions (FEAT-012 EXP, FEAT-013 ASG, FEAT-014 EXR). */
+export const CLOSE_ACTIONS: readonly TradeAction[] = ['BTC', 'STC', 'EXP', 'ASG', 'EXR']
 
 /** Shown when 类型 = 不限 and any option-only filter is set (Q90, requirement wording). */
 export const OPTION_ONLY_HINT = '按到期日 / 行权价 / Call·Put / 方向筛选时只显示期权'

@@ -120,7 +120,9 @@ public final class StockTradeDtos {
             List<SoldLotResponse> soldLots,
             /* FEAT-013: ASSIGN_BUY: the assignment (option trade id) that generated it; null otherwise */
             Long assignmentTradeId,
-            /* FEAT-013: false for ASSIGN_BUY (edit / delete through its assignment) */
+            /* FEAT-014: EXERCISE_BUY / EXERCISE_SELL: the exercise (option trade id) that generated it; null otherwise */
+            Long exerciseTradeId,
+            /* FEAT-013: false for generated records (edit / delete through their assignment / exercise) */
             boolean editable,
             boolean deletable) {
     }

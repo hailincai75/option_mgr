@@ -56,17 +56,21 @@ public final class TradeRejectionMessages {
 
     /** Why an expiry / assignment is invalid at its point in the replay (no "将" prefix). */
     private static String recordReason(ReplayedTrade s, ViolationKind kind) {
-        boolean assignment = s.trade().action() == TradeAction.ASG;
+        TradeAction a = s.trade().action();
+        boolean assignment = a == TradeAction.ASG;
         return switch (kind) {
-            case NO_POSITION -> assignment ? "没有持仓可被指派" : "没有持仓可作废";
+            case NO_POSITION -> assignment ? "没有持仓可被指派" : a == TradeAction.EXR ? "没有持仓可行权" : "没有持仓可作废";
             case CLOSE_EXCEEDS_POSITION -> "超过当时持仓 " + Math.abs(s.positionBefore()) + " 张";
             case CLOSE_NOT_WHOLE_LOTS -> "不是整笔批次（最早一笔是 " + s.earliestLotContracts() + " 张，"
                     + allowedText("可为 ", s.allowedCloseContracts()) + "）";
             case MULTIPLIER_MISMATCH -> "与当时持仓的 multiplier " + s.multiplierBefore() + " 不一致";
-            // only an assignment has a side (it closes a short position); an expiry cannot get here
+            // only an assignment (closes a short position) or an exercise (FEAT-014, closes a long one) has a side;
+            // an expiry cannot get here
             case CLOSE_WRONG_DIRECTION, OPEN_AGAINST_POSITION -> assignment
                     ? "遇到多头持仓（" + Math.abs(s.positionBefore()) + " 张）"
-                    : "与持仓方向冲突";
+                    : a == TradeAction.EXR
+                            ? "遇到空头持仓（" + Math.abs(s.positionBefore()) + " 张）"
+                            : "与持仓方向冲突";
         };
     }
 
@@ -85,6 +89,14 @@ public final class TradeRejectionMessages {
     public static String noPositionToAssign(ContractKey c, java.time.Instant at) {
         return MarketTime.displayMinute(at) + " 时该合约（" + c.label() + "）没有持仓可被指派";
     }
+
+    /** FEAT-014 step 4: "2026-11-20 16:00 时该合约（QRTV 2026-11-20 30 C）没有持仓可行权". */
+    public static String noPositionToExercise(ContractKey c, java.time.Instant at) {
+        return MarketTime.displayMinute(at) + " 时该合约（" + c.label() + "）没有持仓可行权";
+    }
+
+    /** FEAT-014 step 2. */
+    public static final String EXERCISE_SHORT_POSITION = "空头持仓不能行权（被行权请用\"被指派\"）";
 
     private static String closeReason(ReplayedTrade s, ViolationKind kind) {
         int held = Math.abs(s.positionBefore());
@@ -115,6 +127,17 @@ public final class TradeRejectionMessages {
                 case CLOSE_NOT_WHOLE_LOTS -> "必须一次被指派整笔开仓：最早一笔是 " + s.earliestLotContracts() + " 张，"
                         + allowedText("可为 ", s.allowedCloseContracts());
                 case MULTIPLIER_MISMATCH -> "被指派 " + s.trade().contracts() + " 张将" + recordReason(s, kind);
+            };
+        }
+        if (s.trade().action() == TradeAction.EXR) {
+            return switch (kind) {
+                case NO_POSITION -> noPositionToExercise(c, s.trade().tradedAt());
+                case CLOSE_WRONG_DIRECTION, OPEN_AGAINST_POSITION -> EXERCISE_SHORT_POSITION;
+                case CLOSE_EXCEEDS_POSITION -> "行权 " + s.trade().contracts() + " 张超过当时持仓 "
+                        + Math.abs(s.positionBefore()) + " 张";
+                case CLOSE_NOT_WHOLE_LOTS -> "必须一次行权整笔开仓：最早一笔是 " + s.earliestLotContracts() + " 张，"
+                        + allowedText("可为 ", s.allowedCloseContracts());
+                case MULTIPLIER_MISMATCH -> "行权 " + s.trade().contracts() + " 张将" + recordReason(s, kind);
             };
         }
         int held = Math.abs(s.positionBefore());

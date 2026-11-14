@@ -274,7 +274,7 @@ class OptionTradeListControllerTest {
         assertThat(names("action=STC")).isEmpty();
         assertThat(names("action=BTC&action=STC")).isEmpty();
         assertThat(names("action=")).hasSize(6);
-        assertThat(error("action=BUY", "BAD_REQUEST", "action")).containsExactly("方向只能是 BTO、STO、BTC、STC、EXP、ASG");
+        assertThat(error("action=BUY", "BAD_REQUEST", "action")).containsExactly("方向只能是 BTO、STO、BTC、STC、EXP、ASG、EXR");
         assertThat(error("action=STO&action=sto", "BAD_REQUEST", "action")).hasSize(1);
     }
 

@@ -5,6 +5,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { getOptionPositions, optionPositionQueryKeys } from '../api/optionPositions'
 import { AssignPositionModal } from '../components/position/AssignPositionModal'
 import { ClosePositionModal } from '../components/position/ClosePositionModal'
+import { ExercisePositionModal } from '../components/position/ExercisePositionModal'
 import { ExpirePositionModal } from '../components/position/ExpirePositionModal'
 import {
   EXPIRY_FILTER_OPTIONS,
@@ -24,7 +25,8 @@ import { formatMoney } from '../utils/format'
 /**
  * 持仓 page (FEAT-003): every current option position from `GET /api/option-positions`,
  * in backend order, with expandable FIFO lots, a 平仓 button (FEAT-004) on closable rows and a
- * 作废 button (FEAT-012) on expirable rows and a 被指派 button (FEAT-013) on short puts; below it the 股票持仓 section (FEAT-011). Every
+ * 作废 button (FEAT-012) on expirable rows, a 被指派 button (FEAT-013) on short puts / calls and a
+ * 行权 button (FEAT-014) on long calls / puts; below it the 股票持仓 section (FEAT-011). Every
  * number comes from the backend. FEAT-010: the 到期 filter (`?expiry=`) shows only the matching
  * option rows (by the backend's DTE, backend order kept) and hides the stock section while active.
  */
@@ -32,6 +34,7 @@ export function PositionsPage() {
   const [closing, setClosing] = useState<OptionPosition | null>(null)
   const [expiring, setExpiring] = useState<OptionPosition | null>(null)
   const [assigning, setAssigning] = useState<OptionPosition | null>(null)
+  const [exercising, setExercising] = useState<OptionPosition | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
   const expiryFilter = parseExpirySearch(searchParams)
   const filtering = expiryFilter !== 'all'
@@ -88,6 +91,7 @@ export function PositionsPage() {
           onClosePosition={setClosing}
           onExpirePosition={setExpiring}
           onAssignPosition={setAssigning}
+          onExercisePosition={setExercising}
           empty={
             filteredEmpty !== null && data.positions.length > 0 ? (
               <span data-testid="positions-expiry-empty">{filteredEmpty}</span>
@@ -161,6 +165,15 @@ export function PositionsPage() {
             position={assigning}
             onDone={() => {
               setAssigning(null)
+            }}
+          />
+        )}
+        {exercising !== null && (
+          <ExercisePositionModal
+            key={exercising.contractLabel}
+            position={exercising}
+            onDone={() => {
+              setExercising(null)
             }}
           />
         )}

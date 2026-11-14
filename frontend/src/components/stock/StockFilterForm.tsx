@@ -8,6 +8,8 @@ const TYPE_OPTION_LABELS: Record<string, string> = {
   TRANSFER_IN: '转入（期初持仓）',
   ASSIGN_BUY: '指派买入',
   ASSIGN_SELL: '指派卖出',
+  EXERCISE_BUY: '行权买入',
+  EXERCISE_SELL: '行权卖出',
 }
 
 interface StockFilterFormProps {

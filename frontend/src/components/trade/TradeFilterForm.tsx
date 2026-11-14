@@ -10,6 +10,7 @@ const ACTION_OPTION_LABELS: Record<string, string> = {
   STC: 'STC 卖出平仓',
   EXP: '到期作废',
   ASG: '被指派',
+  EXR: '行权',
 }
 
 /** Form values; `type` (record type, FEAT-040) only when `recordType` is set. */
@@ -36,7 +37,7 @@ interface TradeFilterFormProps {
   errors: Partial<Record<TradeFilterFormField, string>>
   onApply: (filters: TradeFilterFormValues) => void
   onClear: () => void
-  /** Direction options (default all; FEAT-006 uses BTC / STC / EXP / ASG). */
+  /** Direction options (default all; FEAT-006 uses BTC / STC / EXP / ASG / EXR). */
   actions?: readonly TradeAction[]
   /** Prefix for the date labels, e.g. "平仓" → "平仓开始日期（美东日期）". */
   dateLabelPrefix?: string

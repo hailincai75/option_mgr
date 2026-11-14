@@ -121,8 +121,11 @@ test.describe('FEAT-003 期权持仓', () => {
     expect(headers).toContain('仅供参考')
     await expect(page.getByText('空头为实收、多头为实付，均已含手续费').first()).toBeVisible()
     // FEAT-003 itself adds no operation buttons; later features add them by backend flags (Q34):
-    // 平仓 (FEAT-004) and 被指派 on short puts (FEAT-013) — never 删除 / 编辑 / 行权 here
-    await expect(page.getByTestId('positions-page').getByRole('button', { name: /删\s*除|编\s*辑|行\s*权/ })).toHaveCount(0)
+    // 平仓 (FEAT-004), 被指派 on short puts (FEAT-013) and 行权 on long rows (FEAT-014) — never 删除 / 编辑 here
+    await expect(page.getByTestId('positions-page').getByRole('button', { name: /删\s*除|编\s*辑/ })).toHaveCount(0)
+    await expect
+      .poll(() => page.getByTestId('position-exercise').evaluateAll((bs) => bs.map((b) => b.closest('[data-contract]')?.getAttribute('data-contract'))))
+      .toEqual(['AAPL 2026-12-18 210 C', 'MSFT 2027-01-15 450 C'])
     await expect
       .poll(() => page.getByTestId('position-assign').evaluateAll((bs) => bs.map((b) => b.closest('[data-contract]')?.getAttribute('data-contract'))))
       .toEqual(['AAPL 2026-12-18 200 P', 'F 2026-12-18 12.5 P', 'XYZ 2026-12-18 200 P'])

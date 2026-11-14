@@ -37,7 +37,8 @@ public record ClosedRecordFilter(TradeFilter options, ClosedRecordType type) {
 
     /** The stock sales matching the symbol and the (New York sale date) range. */
     public StockTradeFilter stockSales() {
-        return new StockTradeFilter(options.symbol(), Set.of(StockTradeType.SELL, StockTradeType.ASSIGN_SELL),
+        return new StockTradeFilter(options.symbol(), Set.of(StockTradeType.SELL, StockTradeType.ASSIGN_SELL,
+                        StockTradeType.EXERCISE_SELL),
                 options.startDate(),
                 options.endDate());
     }

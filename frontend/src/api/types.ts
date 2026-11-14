@@ -103,6 +103,8 @@ export type CashSourceType =
   | 'OPTION_EXPIRE'
   /** FEAT-013: 被指派 of a short put (amount −(purchase + fee), frozenChange −released). */
   | 'OPTION_ASSIGN'
+  /** FEAT-014: 行权 of a long call (−(purchase + fee)) / put (+(sale − fee)). */
+  | 'OPTION_EXERCISE'
   /** FEAT-011: 股票买入 / 股票卖出 (sourceId = stock trade id; edited on the 股票 page). */
   | 'STOCK_BUY'
   | 'STOCK_SELL'
@@ -187,8 +189,11 @@ export interface OptionTrade {
   /** Trailing zeros removed, e.g. "200", "12.5". */
   strike: string
   optionType: OptionType
-  /** Open string type: FEAT-004 adds BTC / STC, FEAT-012 EXP (到期作废), FEAT-013 ASG (被指派). */
-  action: OpeningAction | ClosingAction | 'EXP' | 'ASG' | (string & {})
+  /**
+   * Open string type: FEAT-004 adds BTC / STC, FEAT-012 EXP (到期作废), FEAT-013 ASG (被指派),
+   * FEAT-014 EXR (行权).
+   */
+  action: OpeningAction | ClosingAction | 'EXP' | 'ASG' | 'EXR' | (string & {})
   contracts: number
   multiplier: number
   netAmount: MoneyString
@@ -215,6 +220,36 @@ export interface OptionTrade {
   expiredDirection: PositionDirection | null
   /** FEAT-013: only ASG records (被指派); null otherwise. */
   assignment: OptionTradeAssignment | null
+  /** FEAT-014: only EXR records (行权); null otherwise (optional: older fixtures). */
+  exercise?: OptionTradeExercise | null
+}
+
+/** FEAT-014: `exercise` of an EXR record; every value is the backend's (current replay). */
+export interface OptionTradeExercise {
+  /** New York date; the record time is that date 16:00 NY. */
+  exerciseDate: LocalDateString
+  exerciseFee: MoneyString
+  /** Sum of the exercised lots' opening net amounts (positive). */
+  premium: MoneyString
+  shares: number
+  /** Call: strike × shares, rounded up to the cent (Q96); null for a put. */
+  purchaseAmount: MoneyString | null
+  /** Call: purchaseAmount + premium + exerciseFee; null for a put. */
+  stockCost: MoneyString | null
+  /** Call: HALF_UP to 4 decimals, display only; null for a put. */
+  stockCostPerShare: PriceString | null
+  /** Put: strike × shares, rounded down to the cent (Q99); null for a call. */
+  saleAmount: MoneyString | null
+  /** Put: saleAmount − premium − exerciseFee; null for a call. */
+  proceeds: MoneyString | null
+  /** Put: FIFO cost of the delivered shares; null for a call. */
+  soldCost: MoneyString | null
+  /** Put: proceeds − soldCost (may be negative); null for a call. */
+  stockRealizedPnl: MoneyString | null
+  /** Put: delivered stock lots (FIFO order); null for a call. */
+  soldLots: StockSoldLot[] | null
+  /** The generated stock record: EXERCISE_BUY (call) or EXERCISE_SELL (put). */
+  stockTradeId: number
 }
 
 /** FEAT-013: `assignment` of an ASG record; every value is the backend's (current replay). */
@@ -249,8 +284,11 @@ export interface OptionTradeAssignment {
 // FEAT-002 交易列表与筛选
 // ---------------------------------------------------------------------------
 
-/** Trade actions accepted by the list filter (FEAT-012 adds EXP 到期作废, FEAT-013 ASG 被指派). */
-export type TradeAction = 'BTO' | 'STO' | 'BTC' | 'STC' | 'EXP' | 'ASG'
+/**
+ * Trade actions accepted by the list filter (FEAT-012 adds EXP 到期作废, FEAT-013 ASG 被指派,
+ * FEAT-014 EXR 行权).
+ */
+export type TradeAction = 'BTO' | 'STO' | 'BTC' | 'STC' | 'EXP' | 'ASG' | 'EXR'
 
 /**
  * Contract: `GET /api/option-trades` query parameters. All filters optional; omitted = no filter.
@@ -365,7 +403,23 @@ export interface OptionPosition {
   daysPastExpiration: number
   lotCount: number
   lots: OptionPositionLot[]
-  /** FEAT-041: short call rows → current shares of the underlying held (may be 0); null otherwise. */
+  /**
+   * FEAT-014: long position (call or put) at any time; the 行权 button is shown only when true.
+   * Optional: older fixtures.
+   */
+  exercisable?: boolean
+  /** FEAT-014: whole earliest-lot choices, ascending; [] when not exercisable. */
+  exerciseChoices?: AssignChoice[]
+  /** FEAT-014: latest selectable exercise date (NY); null when not exercisable. */
+  exerciseDateMax?: LocalDateString | null
+  /** FEAT-014: default exercise date (NY); null when not exercisable. */
+  exerciseDateDefault?: LocalDateString | null
+  /** FEAT-014: long call rows → current available cash (display only); null otherwise. */
+  availableCash?: MoneyString | null
+  /**
+   * FEAT-041: short call rows → current shares of the underlying held (may be 0). FEAT-014: also
+   * long put rows. null otherwise — so a non-null value does NOT mean "short call row".
+   */
   underlyingShares?: number | null
   /** FEAT-039 (short call rows; null otherwise): shares needed by CHECKED lots (0 when none). */
   coveredShares?: number | null
@@ -373,7 +427,10 @@ export interface OptionPosition {
   uncoveredContracts?: number | null
   /** FEAT-039: shares needed by LEGACY lots. */
   uncoveredShares?: number | null
-  /** FEAT-039: current available shares of the underlying (may be 0). */
+  /**
+   * FEAT-039: current available shares of the underlying (may be 0) on short call rows; FEAT-014:
+   * also on long put rows (the other coverage fields stay null there).
+   */
   availableShares?: number | null
   /** FEAT-039: earliest shortfall instant among LEGACY lots; null when none. */
   uncoveredShortfallAt?: InstantString | null
@@ -476,6 +533,37 @@ export interface CreateAssignmentRequest {
 export const ASSIGNMENT_DATE_INVALID = 'ASSIGNMENT_DATE_INVALID'
 export const ASSIGNMENT_NOT_EDITABLE = 'ASSIGNMENT_NOT_EDITABLE'
 export const STOCK_TRADE_FROM_ASSIGNMENT = 'STOCK_TRADE_FROM_ASSIGNMENT'
+// ---------------------------------------------------------------------------
+// FEAT-014 主动行权
+// ---------------------------------------------------------------------------
+
+/**
+ * Contract: `POST /api/option-trades/exercises` request body; 201 returns the EXR record
+ * (`OptionTrade` with `exercise`).
+ */
+export interface CreateExerciseRequest {
+  symbol: string
+  expirationDate: LocalDateString
+  strike: string
+  optionType: OptionType
+  /** One of the position's `exerciseChoices[].contracts`. */
+  contracts: number
+  /** New York date; recorded at that date 16:00 NY. */
+  exerciseDate: LocalDateString
+  /** null / empty = "0.00"; ≥ 0, ≤ 2 decimals. */
+  exerciseFee: MoneyString | null
+  /** At most 500 characters; null / blank = no note. */
+  note: string | null
+}
+
+/** FEAT-014 error codes (HTTP 422; `message` is user-facing Chinese, shown verbatim). */
+export const EXERCISE_SHORT_POSITION = 'EXERCISE_SHORT_POSITION'
+export const EXERCISE_DATE_INVALID = 'EXERCISE_DATE_INVALID'
+export const NO_POSITION_TO_EXERCISE = 'NO_POSITION_TO_EXERCISE'
+export const EXERCISE_PROCEEDS_NOT_POSITIVE = 'EXERCISE_PROCEEDS_NOT_POSITIVE'
+export const EXERCISE_NOT_EDITABLE = 'EXERCISE_NOT_EDITABLE'
+export const STOCK_TRADE_FROM_EXERCISE = 'STOCK_TRADE_FROM_EXERCISE'
+
 /**
  * FEAT-041 error code (HTTP 422; shown verbatim). FEAT-041 also returns SHARES_INSUFFICIENT
  * (declared with FEAT-011) for a call assignment without enough shares.
@@ -600,9 +688,10 @@ export interface ClosedOptionRecord extends ClosedRecordBase {
   contractLabel: string
   /**
    * FEAT-012 adds EXP (到期作废: close net "0.00", recorded at the expiration date 16:00 NY);
-   * FEAT-013 adds ASG (被指派: realized P&L always "0.00", the premium goes into the stock cost).
+   * FEAT-013 adds ASG (被指派: realized P&L always "0.00", the premium goes into the stock cost);
+   * FEAT-014 adds EXR (行权: realized P&L always "0.00").
    */
-  action: ClosingAction | 'EXP' | 'ASG' | (string & {})
+  action: ClosingAction | 'EXP' | 'ASG' | 'EXR' | (string & {})
   /** Direction of the closed position: BTC → SHORT, STC → LONG, EXP → the expired position's. */
   closedDirection: PositionDirection
   contracts: number
@@ -618,6 +707,21 @@ export interface ClosedOptionRecord extends ClosedRecordBase {
   soldLots: null
   /** FEAT-013: only ASG rows; null otherwise. */
   assignment: ClosedAssignment | null
+  /** FEAT-014: only EXR rows; null otherwise (optional: older fixtures). */
+  exercise?: ClosedExercise | null
+  /** FEAT-014: always null on option rows. */
+  exerciseTradeId?: null
+}
+
+/** FEAT-014: `exercise` of an EXR closed row (small text 权利金已计入股票成本… / 已从…扣除). */
+export interface ClosedExercise {
+  shares: number
+  /** Call: stock cost; null for a put. */
+  stockCost: MoneyString | null
+  /** Put: stock sale proceeds; null for a call. */
+  proceeds: MoneyString | null
+  /** The generated EXERCISE_BUY (call) / EXERCISE_SELL (put) stock record. */
+  stockTradeId: number
 }
 
 /** FEAT-013: `assignment` of an ASG closed row (small text 权利金已计入股票成本…). */
@@ -655,8 +759,8 @@ export interface ClosedStockRecord extends ClosedRecordBase {
   strike: null
   optionType: null
   contractLabel: null
-  /** FEAT-041 adds ASSIGN_SELL (指派卖出, generated by a call assignment). */
-  action: 'SELL' | 'ASSIGN_SELL'
+  /** FEAT-041 adds ASSIGN_SELL (指派卖出), FEAT-014 EXERCISE_SELL (行权卖出, from a put exercise). */
+  action: 'SELL' | 'ASSIGN_SELL' | 'EXERCISE_SELL'
   closedDirection: null
   contracts: null
   multiplier: null
@@ -673,6 +777,10 @@ export interface ClosedStockRecord extends ClosedRecordBase {
   assignment: null
   /** FEAT-041: ASSIGN_SELL rows → the ASG record that generated it (来自被指派 #N); else null. */
   assignmentTradeId?: number | null
+  /** FEAT-014: always null on stock rows. */
+  exercise?: null
+  /** FEAT-014: EXERCISE_SELL rows → the EXR record that generated it (来自行权 #N); else null. */
+  exerciseTradeId?: number | null
 }
 
 /** Contract: `GET /api/closed-trades` → `items[]`. Every amount is signed by cash direction. */
@@ -802,8 +910,16 @@ export interface SaveAccountRequest {
 /** BUY 买入 / SELL 卖出 / TRANSFER_IN 转入（期初持仓） — the types that can be entered. */
 export type StockTradeType = 'BUY' | 'SELL' | 'TRANSFER_IN'
 
-/** Every stock record type: the entered ones plus FEAT-013 ASSIGN_BUY (指派买入, generated only). */
-export type StockRecordType = StockTradeType | 'ASSIGN_BUY' | 'ASSIGN_SELL'
+/**
+ * Every stock record type: the entered ones plus the generated ones — FEAT-013 ASSIGN_BUY (指派买入),
+ * FEAT-041 ASSIGN_SELL (指派卖出), FEAT-014 EXERCISE_BUY (行权买入) / EXERCISE_SELL (行权卖出).
+ */
+export type StockRecordType =
+  | StockTradeType
+  | 'ASSIGN_BUY'
+  | 'ASSIGN_SELL'
+  | 'EXERCISE_BUY'
+  | 'EXERCISE_SELL'
 
 /** Decimal with scale 4 as a string, display only (e.g. "7.5033"). */
 export type PriceString = string
@@ -846,7 +962,7 @@ export interface StockTrade {
   createdAt: InstantString
   /** True once the record has been edited (shows 历史). */
   hasAuditLog: boolean
-  /** Only SELL / ASSIGN_SELL (FEAT-041). */
+  /** Only SELL / ASSIGN_SELL (FEAT-041) / EXERCISE_SELL (FEAT-014). */
   soldCost: MoneyString | null
   /** Only SELL / ASSIGN_SELL: amount − soldCost (profit +, loss −). */
   realizedPnl: MoneyString | null
@@ -854,9 +970,14 @@ export interface StockTrade {
   soldLots: StockSoldLot[] | null
   /** FEAT-013 / FEAT-041: ASSIGN_BUY / ASSIGN_SELL → the ASG record that generated it; else null. */
   assignmentTradeId: number | null
-  /** FEAT-013: false for ASSIGN_BUY (no 修改). */
+  /**
+   * FEAT-014: EXERCISE_BUY / EXERCISE_SELL → the EXR record that generated it; else null
+   * (optional: older fixtures).
+   */
+  exerciseTradeId?: number | null
+  /** FEAT-013 / FEAT-014: false for generated records (no 修改). */
   editable: boolean
-  /** FEAT-013: false for ASSIGN_BUY (no 删除). */
+  /** FEAT-013 / FEAT-014: false for generated records (no 删除). */
   deletable: boolean
 }
 

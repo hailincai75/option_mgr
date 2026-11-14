@@ -2,6 +2,7 @@ import { apiRequest } from './client'
 import type {
   CreateAssignmentRequest,
   CreateCloseTradeRequest,
+  CreateExerciseRequest,
   CreateExpirationRequest,
   CreateOptionTradeRequest,
   OptionTrade,
@@ -48,6 +49,18 @@ export function createExpiration(request: CreateExpirationRequest): Promise<Opti
  */
 export function createAssignment(request: CreateAssignmentRequest): Promise<OptionTrade> {
   return apiRequest<OptionTrade>('/api/option-trades/assignments', {
+    method: 'POST',
+    body: request,
+  })
+}
+
+/**
+ * `POST /api/option-trades/exercises` → 201 (FEAT-014 行权 of a long call / put: the EXR record with
+ * `exercise`; also creates the EXERCISE_BUY / EXERCISE_SELL stock record and the OPTION_EXERCISE
+ * ledger entry).
+ */
+export function createExercise(request: CreateExerciseRequest): Promise<OptionTrade> {
+  return apiRequest<OptionTrade>('/api/option-trades/exercises', {
     method: 'POST',
     body: request,
   })

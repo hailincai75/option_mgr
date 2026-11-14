@@ -10,6 +10,9 @@ import com.optionmgr.trade.domain.OpenTradeTerms;
 import com.optionmgr.trade.domain.PositionDirection;
 import com.optionmgr.trade.domain.TradeAction;
 import com.optionmgr.trade.service.OptionAssignmentService;
+import com.optionmgr.trade.service.OptionExerciseService;
+import com.optionmgr.trade.web.OptionTradeDtos.ExerciseRequest;
+import com.optionmgr.trade.web.OptionTradeDtos.ExerciseResponse;
 import com.optionmgr.trade.service.OptionExpiryService;
 import com.optionmgr.trade.web.OptionTradeDtos.AssignRequest;
 import com.optionmgr.trade.web.OptionTradeDtos.AssignmentResponse;
@@ -52,13 +55,25 @@ public class OptionTradeController {
     private final OptionTradeEditService edits;
     private final OptionExpiryService expiries;
     private final OptionAssignmentService assignments;
+    private final OptionExerciseService exercises;
 
     public OptionTradeController(OptionTradeService service, OptionTradeEditService edits,
-                                 OptionExpiryService expiries, OptionAssignmentService assignments) {
+                                 OptionExpiryService expiries, OptionAssignmentService assignments,
+                                 OptionExerciseService exercises) {
         this.service = service;
         this.edits = edits;
         this.expiries = expiries;
         this.assignments = assignments;
+        this.exercises = exercises;
+    }
+
+    /** FEAT-014: a long call or put is exercised (recorded at 16:00 New York of the exercise date). */
+    @PostMapping("/exercises")
+    @ResponseStatus(HttpStatus.CREATED)
+    public TradeResponse exercise(AccountRef account, @Valid @RequestBody ExerciseRequest req) {
+        ContractKey contract = new ContractKey(req.symbol(), req.expirationDate(), req.strike(), req.optionType());
+        return toResponse(exercises.exercise(account.id(), new OptionExerciseService.ExerciseCommand(contract,
+                req.contracts().intValueExact(), req.exerciseDate(), req.exerciseFee(), req.note())));
     }
 
     /** FEAT-013 / FEAT-041: a short put or call is assigned (recorded at 16:00 New York of the assignment date). */
@@ -153,21 +168,41 @@ public class OptionTradeController {
                 view.closeMatch().map(m -> m.coveredLots().stream().map(OptionTradeController::toCovered).toList())
                         .orElse(null),
                 view.closeMatch().map(CloseMatch::realizedPnl).orElse(null), t.hasAuditLog(), expiredDirection,
-                assignment(view));
+                t.getAction() == TradeAction.ASG ? assignment(view) : null,
+                t.getAction() == TradeAction.EXR ? exercise(view) : null);
+    }
+
+    /** FEAT-014: figures of an EXR record (premium positive), null for every other record. */
+    static ExerciseResponse exercise(OptionTradeService.TradeView view) {
+        java.time.LocalDate date = MarketTime.toLocal(view.trade().getTradedAt()).toLocalDate();
+        Long stockTradeId = view.assignedLot() == null ? null : view.assignedLot().getId();
+        java.math.BigDecimal fee = Money.of(view.trade().getAssignmentFee());
+        ExerciseResponse call = view.buyLeg().map(a -> new ExerciseResponse(date, fee, a.premium().negate(),
+                a.shares(), a.purchaseAmount(), a.stockCost(), a.stockCostPerShare(), null, null, null, null, null,
+                stockTradeId)).orElse(null);
+        if (call != null) {
+            return call;
+        }
+        SaleMatch sale = view.assignedSale();
+        return view.sellLeg().map(a -> new ExerciseResponse(date, fee, a.premium().negate(), a.shares(), null,
+                null, null, a.saleAmount(), a.proceeds(), sale == null ? null : sale.soldCost(),
+                sale == null ? null : sale.realizedPnl(),
+                sale == null ? null : sale.lots().stream().map(StockTradeController::toSoldLot).toList(),
+                stockTradeId)).orElse(null);
     }
 
     /** FEAT-013 / FEAT-041: figures of an ASG record, null for every other record. */
     static AssignmentResponse assignment(OptionTradeService.TradeView view) {
         java.time.LocalDate date = MarketTime.toLocal(view.trade().getTradedAt()).toLocalDate();
         Long stockTradeId = view.assignedLot() == null ? null : view.assignedLot().getId();
-        AssignmentResponse put = view.assignment().map(a -> new AssignmentResponse(date,
+        AssignmentResponse put = view.buyLeg().map(a -> new AssignmentResponse(date,
                 Money.of(view.trade().getAssignmentFee()), a.premium(), a.shares(), a.purchaseAmount(), a.stockCost(),
                 a.stockCostPerShare(), null, null, null, null, null, stockTradeId)).orElse(null);
         if (put != null) {
             return put;
         }
         SaleMatch sale = view.assignedSale();
-        return view.callAssignment().map(a -> new AssignmentResponse(date,
+        return view.sellLeg().map(a -> new AssignmentResponse(date,
                 Money.of(view.trade().getAssignmentFee()), a.premium(), a.shares(), null, null, null,
                 a.saleAmount(), a.proceeds(), sale == null ? null : sale.soldCost(),
                 sale == null ? null : sale.realizedPnl(),

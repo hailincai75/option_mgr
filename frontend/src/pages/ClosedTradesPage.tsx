@@ -35,6 +35,10 @@ const ASSIGNMENT_NOTE =
 const CALL_ASSIGNMENT_NOTE =
   '被指派（卖出 call，暂定口径）的期权已实现盈亏为 0.00，权利金计入股票卖出实收；股票“指派卖出”行按 FIFO 显示股票盈亏，一次被指派计 2 笔。'
 
+/** FEAT-014: page note sentence about exercises (Q111, Q114). */
+const EXERCISE_NOTE =
+  '行权（多头）的期权已实现盈亏为 0.00：call 行权的权利金计入股票成本，put 行权的权利金从股票卖出实收中扣除；put 行权另有“行权卖出”股票行，一次计 2 笔。'
+
 /** FEAT-040: page note sentence about stock sales (requirement wording). */
 const STOCK_NOTE =
   '股票卖出：成本为按 FIFO 被卖出批次的成本（部分卖出按比例四舍五入到分），每股数字保留 4 位小数，仅供参考；股票转入和买入没有已实现盈亏。'
@@ -52,7 +56,7 @@ function serverFilterErrors(error: Error | null): Partial<Record<ClosedFilterFie
 }
 
 /**
- * 已平仓 page (FEAT-006): read-only closed trades (BTC / STC, FEAT-012 EXP, FEAT-013 ASG) and (FEAT-040) stock
+ * 已平仓 page (FEAT-006): read-only closed trades (BTC / STC, FEAT-012 EXP, FEAT-013 ASG, FEAT-014 EXR) and (FEAT-040) stock
  * sales, newest first, with the count and realized P&L total over ALL filtered results (Q46).
  * Filters, page and size live in the URL with the same parameter names and rules as the trade
  * list (FEAT-002) plus the record `type` (OPTION / STOCK). Every number is the backend's.
@@ -160,6 +164,7 @@ export function ClosedTradesPage() {
           <span data-testid="closed-expiry-note">{EXPIRY_NOTE}</span>
           <span data-testid="closed-assignment-note">{ASSIGNMENT_NOTE}</span>
           <span data-testid="closed-call-assignment-note">{CALL_ASSIGNMENT_NOTE}</span>
+          <span data-testid="closed-exercise-note">{EXERCISE_NOTE}</span>
           <span data-testid="closed-stock-note">{STOCK_NOTE}</span>
         </Typography.Text>
         <ClosedTradeTable

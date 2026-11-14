@@ -7,8 +7,10 @@ import type { OptionTrade } from '../../api/types'
 import { decimalSign, EMPTY_VALUE, formatDateTimeNY, formatMoney } from '../../utils/format'
 import {
   assignmentRowText,
+  exerciseRowText,
   isAssignmentAction,
   isDeleteOnlyAction,
+  isExerciseAction,
   SIGNED_MONEY_COLORS,
   SPECIAL_ACTION_COLORS,
   tradeActionLabel,
@@ -27,7 +29,8 @@ interface TradeTableProps {
 
 /**
  * Trade rows in the order returned by the backend; values are only formatted. Each row has
- * 修改 / 删除 / 历史 (FEAT-005); 到期作废 (FEAT-012) and 被指派 (FEAT-013) rows have no 修改.
+ * 修改 / 删除 / 历史 (FEAT-005); 到期作废 (FEAT-012), 被指派 (FEAT-013) and 行权 (FEAT-014) rows have
+ * no 修改.
  */
 export function TradeTable({
   trades,
@@ -71,6 +74,7 @@ export function TradeTable({
       key: 'contract',
       render: (_value: unknown, trade) => {
         const assignmentText = assignmentRowText(trade)
+        const exerciseText = exerciseRowText(trade)
         return (
           <>
             <Button
@@ -96,6 +100,17 @@ export function TradeTable({
                 </Typography.Text>
               </div>
             )}
+            {exerciseText !== null && (
+              <div>
+                <Typography.Text
+                  type="secondary"
+                  style={{ fontSize: 12, whiteSpace: 'nowrap' }}
+                  data-testid="trade-cell-exercise"
+                >
+                  {exerciseText}
+                </Typography.Text>
+              </div>
+            )}
           </>
         )
       },
@@ -118,7 +133,8 @@ export function TradeTable({
       render: (_value: unknown, trade) =>
         // FEAT-013: a 被指派 has no option cash of its own — net 0.00 uncolored (its cash change,
         // the stock purchase, is in the small text under the contract).
-        isAssignmentAction(trade.action) ? (
+        // FEAT-014: same for a 行权 (the stock purchase / sale cash is in the small text).
+        isAssignmentAction(trade.action) || isExerciseAction(trade.action) ? (
           <span data-testid="trade-cell-net-amount" style={{ fontVariantNumeric: 'tabular-nums' }}>
             {formatMoney(trade.netAmount)}
           </span>

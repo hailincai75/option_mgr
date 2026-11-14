@@ -72,7 +72,8 @@ class ClosedRecordsTest {
     void stockSalesFilterKeepsSymbolAndDatesAndSelectsSells() {
         ClosedRecordFilter f = new ClosedRecordFilter(options(null, null, null, Set.of()), null);
         assertThat(f.stockSales().symbol()).isEqualTo("IXQZ");
-        assertThat(f.stockSales().types()).containsExactlyInAnyOrder(StockTradeType.SELL, StockTradeType.ASSIGN_SELL);
+        assertThat(f.stockSales().types()).containsExactlyInAnyOrder(StockTradeType.SELL, StockTradeType.ASSIGN_SELL,
+                StockTradeType.EXERCISE_SELL);
         assertThat(f.stockSales().startDate()).isEqualTo(LocalDate.of(2026, 11, 1));
         assertThat(f.stockSales().endDate()).isNull();
     }

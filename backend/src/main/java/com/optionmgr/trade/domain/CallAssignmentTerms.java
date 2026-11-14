@@ -9,6 +9,8 @@ import java.util.Objects;
  * FEAT-041 figures of a short-call assignment (Q8 provisional, Q74, Q99). The shares are delivered at the strike;
  * the premium of the assigned lots is added to the sale proceeds, so the option's realized P&amp;L is 0 and the stock
  * sale carries it. The time rules are those of {@link AssignmentTerms}. Pure Java.
+ * <p>FEAT-014: also the figures of a long-put exercise (Q111): with the cash-signed premium of long lots (negative)
+ * the proceeds are strike amount (rounded down) - |premium| - fee and the cash change +(strike amount - fee).
  *
  * @param strike     the contract's strike
  * @param contracts  assigned contracts
@@ -66,7 +68,15 @@ public record CallAssignmentTerms(BigDecimal strike, int contracts, int multipli
 
     /** Ledger description: "被指派 3 张 IXQZ 2026-11-20 9 C，卖出 300 股 IXQZ" (+ "（multiplier 1）" after the contract). */
     public static String describe(ContractKey contract, int contracts, int multiplier) {
-        return OpenTradeTerms.describe(TradeAction.ASG, contracts, multiplier, contract) + "，卖出 "
+        return describe(TradeAction.ASG, contract, contracts, multiplier);
+    }
+
+    /**
+     * Ledger description of a record that sells the shares (ASG call, FEAT-014 EXR put):
+     * "行权 1 张 XYZ 2026-11-20 45 P，卖出 100 股 XYZ".
+     */
+    public static String describe(TradeAction action, ContractKey contract, int contracts, int multiplier) {
+        return OpenTradeTerms.describe(action, contracts, multiplier, contract) + "，卖出 "
                 + contracts * multiplier + " 股 " + contract.symbol();
     }
 }

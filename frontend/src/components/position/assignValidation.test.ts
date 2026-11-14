@@ -54,11 +54,11 @@ describe('FEAT-013 links and filters', () => {
     expect(validateTradeFilters({ ...EMPTY_TRADE_FILTERS, action: ['ASG'] })).toEqual({})
     expect(validateClosedFilters({ ...EMPTY_CLOSED_FILTERS, action: ['ASG'] })).toEqual({})
     expect(validateClosedFilters({ ...EMPTY_CLOSED_FILTERS, action: ['STO'] })).toEqual({
-      action: '方向只能是 BTC、STC、EXP、ASG',
+      action: '方向只能是 BTC、STC、EXP、ASG、EXR',
     })
     expect(validateStockFilters({ ...EMPTY_STOCK_FILTERS, type: ['ASSIGN_BUY'] })).toEqual({})
     expect(validateStockFilters({ ...EMPTY_STOCK_FILTERS, type: ['X'] })).toEqual({
-      type: '类型只能是 BUY、SELL、TRANSFER_IN、ASSIGN_BUY、ASSIGN_SELL',
+      type: '类型只能是 BUY、SELL、TRANSFER_IN、ASSIGN_BUY、ASSIGN_SELL、EXERCISE_BUY、EXERCISE_SELL',
     })
   })
 })

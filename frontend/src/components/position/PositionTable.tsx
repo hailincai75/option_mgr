@@ -91,8 +91,8 @@ const EXPIRY_PENDING_HINT = '16:00 已停止交易；17:30 前仍可能被指派
 
 /**
  * FEAT-012 (Q10 / Q83): 到期待确认 between 16:00 and 17:30 NY on the expiration date, shown from
- * the backend's `expiryPending` (never computed here); meanwhile only short puts have a button
- * (被指派, FEAT-013).
+ * the backend's `expiryPending` (never computed here); meanwhile short rows only have 被指派
+ * (FEAT-013 / FEAT-041) and long rows only 行权 (FEAT-014).
  */
 function ExpiryPendingTag() {
   return (
@@ -186,6 +186,7 @@ function positionColumns(
   onClosePosition: (position: OptionPosition) => void,
   onExpirePosition: (position: OptionPosition) => void,
   onAssignPosition: (position: OptionPosition) => void,
+  onExercisePosition: (position: OptionPosition) => void,
 ): ColumnsType<OptionPosition> {
   return [
     {
@@ -277,9 +278,13 @@ function positionColumns(
       key: 'actions',
       // Backend flags only: 平仓 before 16:00 NY on the expiration date (`closable`), 作废 from
       // 17:30 (`expirable`, FEAT-012), and 被指派 on short puts / calls at any time (`assignable`,
-      // FEAT-013 / FEAT-041 Q95 — the only button while 到期待确认).
+      // FEAT-013 / FEAT-041 Q95 — the only button while 到期待确认), and 行权 on long calls / puts at
+      // any time (`exercisable`, FEAT-014 Q81 — next to 平仓 / 作废, alone while 到期待确认).
       render: (_value: unknown, position) => {
-        if (!position.closable && !position.expirable && !position.assignable) return null
+        const exercisable = position.exercisable === true
+        if (!position.closable && !position.expirable && !position.assignable && !exercisable) {
+          return null
+        }
         return (
           <Space size={4} style={{ whiteSpace: 'nowrap' }}>
             {position.closable && (
@@ -316,6 +321,17 @@ function positionColumns(
                 被指派
               </Button>
             )}
+            {exercisable && (
+              <Button
+                size="small"
+                onClick={() => {
+                  onExercisePosition(position)
+                }}
+                data-testid="position-exercise"
+              >
+                行权
+              </Button>
+            )}
           </Space>
         )
       },
@@ -333,11 +349,14 @@ interface PositionTableProps {
   onExpirePosition: (position: OptionPosition) => void
   /** Opens the 被指派 dialog for an assignable position (FEAT-013). */
   onAssignPosition: (position: OptionPosition) => void
+  /** Opens the 行权 dialog for an exercisable long position (FEAT-014). */
+  onExercisePosition: (position: OptionPosition) => void
 }
 
 /**
  * Positions in backend order; each row expands to its FIFO lots and has 平仓 (closable),
- * 作废 (expirable, FEAT-012) and 被指派 (assignable, FEAT-013) by the backend's flags.
+ * 作废 (expirable, FEAT-012), 被指派 (assignable, FEAT-013) and 行权 (exercisable, FEAT-014) by
+ * the backend's flags.
  */
 export function PositionTable({
   positions,
@@ -346,12 +365,18 @@ export function PositionTable({
   onClosePosition,
   onExpirePosition,
   onAssignPosition,
+  onExercisePosition,
 }: PositionTableProps) {
   return (
     <Table<OptionPosition>
       rowKey="contractLabel"
       size="small"
-      columns={positionColumns(onClosePosition, onExpirePosition, onAssignPosition)}
+      columns={positionColumns(
+        onClosePosition,
+        onExpirePosition,
+        onAssignPosition,
+        onExercisePosition,
+      )}
       dataSource={positions}
       loading={loading}
       pagination={false}

@@ -112,7 +112,63 @@ public final class OptionTradeDtos {
             /* FEAT-012: side of the expired position for EXP, null otherwise */
             PositionDirection expiredDirection,
             /* FEAT-013: figures of an assignment (ASG), null otherwise */
-            AssignmentResponse assignment) {
+            AssignmentResponse assignment,
+            /* FEAT-014: figures of an exercise (EXR), null otherwise */
+            ExerciseResponse exercise) {
+    }
+
+    /**
+     * FEAT-014 figures of an exercise under its current match; {@code premium} is positive. Call-only fields
+     * (purchaseAmount, stockCost, stockCostPerShare) are null for a put; put-only fields (saleAmount … soldLots) are
+     * null for a call.
+     */
+    public record ExerciseResponse(LocalDate exerciseDate, BigDecimal exerciseFee, BigDecimal premium, int shares,
+                                   BigDecimal purchaseAmount, BigDecimal stockCost, BigDecimal stockCostPerShare,
+                                   BigDecimal saleAmount, BigDecimal proceeds, BigDecimal soldCost,
+                                   BigDecimal stockRealizedPnl,
+                                   List<com.optionmgr.stock.web.StockTradeDtos.SoldLotResponse> soldLots,
+                                   Long stockTradeId) {
+    }
+
+    /** FEAT-014 record an exercise of a long call / put. {@code exerciseFee}: null = 0.00. Other properties ignored. */
+    public record ExerciseRequest(
+            @NotEmpty(message = "标的不能为空")
+            @Size(max = Symbols.MAX_LENGTH, message = "标的最多 10 个字符")
+            @Pattern(regexp = Symbols.NORMALIZED_PATTERN, message = "标的只能包含字母、数字和点")
+            String symbol,
+
+            @NotNull(message = "到期日不能为空")
+            LocalDate expirationDate,
+
+            @NotNull(message = "行权价不能为空")
+            @Positive(message = "行权价必须大于 0")
+            @Digits(integer = 100, fraction = 3, message = "行权价最多 3 位小数")
+            @DecimalMax(value = "9999999.999", message = "行权价过大")
+            BigDecimal strike,
+
+            @NotNull(message = "请选择 Call 或 Put")
+            OptionType optionType,
+
+            @NotNull(message = "张数不能为空")
+            @Positive(message = "张数必须是正整数")
+            @Digits(integer = 100, fraction = 0, message = "张数必须是正整数")
+            @DecimalMax(value = "100000", message = "张数过大")
+            BigDecimal contracts,
+
+            @NotNull(message = "行权日期不能为空")
+            LocalDate exerciseDate,
+
+            @PositiveOrZero(message = "行权费不能为负数")
+            @Digits(integer = 100, fraction = 2, message = "行权费最多 2 位小数")
+            @DecimalMax(value = "9999999999999.99", message = "行权费过大")
+            BigDecimal exerciseFee,
+
+            @Size(max = 500, message = "备注最多 500 个字符")
+            String note) {
+
+        public ExerciseRequest {
+            symbol = Symbols.normalize(symbol);
+        }
     }
 
     /**

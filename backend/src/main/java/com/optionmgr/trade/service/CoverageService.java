@@ -123,18 +123,24 @@ public class CoverageService {
 
     /** E2 for a stock sale ({@code stockId}): its shares must not exceed the shares available right before it. */
     public void checkSale(Snapshot s, long stockId, long shares) {
+        checkSale(s, stockId, shares, false);
+    }
+
+    /** As above; {@code exercise} (FEAT-014 put exercise, Q113): worded "行权需要卖出 …". */
+    public void checkSale(Snapshot s, long stockId, long shares, boolean exercise) {
         Key key = s.stockKeys().get(stockId);
         if (key == null) {
             throw new IllegalArgumentException("stock record " + stockId + " not in snapshot");
         }
         CoverageTimeline.State before = s.timeline().before(key, CoverageTimeline.checked());
         if (shares > before.available()) {
-            throw new ApiException(ErrorCode.COVERAGE_INSUFFICIENT,
-                    CoverageMessages.saleOfCoveredShares(shares, before));
+            throw new ApiException(ErrorCode.COVERAGE_INSUFFICIENT, exercise
+                    ? CoverageMessages.exerciseOfCoveredShares(shares, before)
+                    : CoverageMessages.saleOfCoveredShares(shares, before));
         }
     }
 
-    /** E3: from {@code from} on, held &gt;= covered at every point; {@code verb} = 补录 / 修改 / 删除 / 被指派. */
+    /** E3: from {@code from} on, held &gt;= covered at every point; {@code verb} = 补录 / 修改 / 删除 / 被指派 / 行权. */
     public void checkInvariant(Snapshot s, Instant from, String verb) {
         s.timeline().firstShortfall(CoverageTimeline.checked(), from).ifPresent(sf -> {
             throw new ApiException(ErrorCode.COVERAGE_INSUFFICIENT, CoverageMessages.changeUncovers(verb, s.symbol(), sf));

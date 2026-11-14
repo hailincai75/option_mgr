@@ -63,7 +63,12 @@ public class OptionPositionController {
                                    /* FEAT-039: short call rows only (null otherwise) */
                                    Long coveredShares, Integer uncoveredContracts, Long uncoveredShares,
                                    Long availableShares, Instant uncoveredShortfallAt,
-                                   String uncoveredShortfallAtLocal, Long uncoveredShortfallHeldShares) {
+                                   String uncoveredShortfallAtLocal, Long uncoveredShortfallHeldShares,
+                                   /* FEAT-014: long rows, any time (Q81) */
+                                   boolean exercisable, List<AssignChoice> exerciseChoices,
+                                   LocalDate exerciseDateMax, LocalDate exerciseDateDefault,
+                                   /* FEAT-014: long call rows: current available cash; null otherwise */
+                                   BigDecimal availableCash) {
     }
 
     /** FEAT-013: one selectable assignment size (earliest whole lots) and its shares. */
@@ -93,8 +98,18 @@ public class OptionPositionController {
         long dte = p.dte(today);
         Instant cutoff = ExpirationTimes.tradingCutoff(c.expirationDate());
         boolean assignable = p.direction() == PositionDirection.SHORT;
-        Long underlyingShares = assignable && c.optionType() == OptionType.CALL ? s.underlyingShares(p) : null;
+        boolean exercisable = p.direction() == PositionDirection.LONG;
+        boolean longPut = exercisable && c.optionType() == OptionType.PUT;
+        Long underlyingShares = (assignable && c.optionType() == OptionType.CALL) || longPut
+                ? s.underlyingShares(p) : null;
         OptionPositionService.RowCoverage rc = s.coverage(p);
+        Long availableShares = null;
+        if (rc != null) {
+            availableShares = rc.availableShares();
+        } else if (longPut) {
+            availableShares = s.availableShares(p);
+        }
+        LocalDate latestExercise = exercisable ? AssignmentTerms.latestDate(c.expirationDate(), now) : null;
         CoverageTimeline.Shortfall sf = rc == null ? null : rc.shortfall();
         LocalDate latest = assignable ? AssignmentTerms.latestDate(c.expirationDate(), now) : null;
         return new PositionResponse(c.symbol(), c.expirationDate(), ContractKey.strikeText(c.strike()),
@@ -108,9 +123,14 @@ public class OptionPositionController {
                         : List.of(),
                 latest, latest, underlyingShares,
                 rc == null ? null : rc.coveredShares(), rc == null ? null : rc.uncoveredContracts(),
-                rc == null ? null : rc.uncoveredShares(), rc == null ? null : rc.availableShares(),
+                rc == null ? null : rc.uncoveredShares(), availableShares,
                 sf == null ? null : sf.at(), sf == null ? null : LOCAL_SECONDS.format(MarketTime.toLocal(sf.at())),
-                sf == null ? null : sf.held());
+                sf == null ? null : sf.held(), exercisable,
+                exercisable
+                        ? p.allowedCloseContracts().stream().map(n -> new AssignChoice(n, n * p.multiplier())).toList()
+                        : List.of(),
+                latestExercise, latestExercise,
+                exercisable && c.optionType() == OptionType.CALL ? s.availableCash() : null);
     }
 
     private static LotResponse toResponse(PositionLot l, OptionPositionService.RowCoverage rc) {

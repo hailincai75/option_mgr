@@ -69,12 +69,40 @@ const CALL_ASSIGNMENT_FIELDS: SnapshotField[] = [
   { key: 'stockTradeId', label: '股票记录 ID', format: 'text' },
 ]
 
+/** FEAT-014: extra flat fields of a call 行权 (EXR) snapshot (contract: audit `before`). */
+const CALL_EXERCISE_FIELDS: SnapshotField[] = [
+  { key: 'exerciseDate', label: '行权日期', format: 'text' },
+  { key: 'exerciseFee', label: '行权费', format: 'money' },
+  { key: 'shares', label: '股数', format: 'text' },
+  { key: 'premium', label: '权利金', format: 'money' },
+  { key: 'purchaseAmount', label: '买股金额', format: 'money' },
+  { key: 'stockCost', label: '股票成本', format: 'money' },
+  { key: 'stockTradeId', label: '股票记录 ID', format: 'text' },
+]
+
+/** FEAT-014: extra flat fields of a put 行权 (EXR) snapshot. */
+const PUT_EXERCISE_FIELDS: SnapshotField[] = [
+  { key: 'exerciseDate', label: '行权日期', format: 'text' },
+  { key: 'exerciseFee', label: '行权费', format: 'money' },
+  { key: 'shares', label: '股数', format: 'text' },
+  { key: 'premium', label: '权利金', format: 'money' },
+  { key: 'saleAmount', label: '行权金额', format: 'money' },
+  { key: 'proceeds', label: '卖出实收', format: 'money' },
+  { key: 'soldCost', label: '交出成本', format: 'money' },
+  { key: 'stockRealizedPnl', label: '股票已实现盈亏', format: 'signedMoney' },
+  { key: 'stockTradeId', label: '股票记录 ID', format: 'text' },
+]
+
 /**
  * Option trade snapshot; a 被指派 also shows its assignment fields: put (FEAT-013) or call
- * (FEAT-041, by the snapshot's `optionType`).
+ * (FEAT-041, by the snapshot's `optionType`); a 行权 (FEAT-014) its exercise fields.
  */
 function optionTradeFields(snapshot: AuditSnapshot | null): SnapshotField[] {
   const base = SNAPSHOT_FIELDS.OPTION_TRADE ?? []
+  if (snapshot?.action === 'EXR') {
+    const isCall = snapshot.optionType === 'CALL'
+    return [...base, ...(isCall ? CALL_EXERCISE_FIELDS : PUT_EXERCISE_FIELDS)]
+  }
   if (snapshot?.action !== 'ASG') return base
   const isCall = snapshot.optionType === 'CALL' || 'saleAmount' in snapshot
   return [...base, ...(isCall ? CALL_ASSIGNMENT_FIELDS : ASSIGNMENT_FIELDS)]

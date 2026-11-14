@@ -33,6 +33,7 @@ public record SideEffect(long tradeId, String action, String contractLabel, Stri
         String subject = switch (action) {
             case "EXP" -> "到期作废 #" + tradeId;
             case "ASG" -> "被指派 #" + tradeId;
+            case "EXR" -> "行权 #" + tradeId;
             default -> "交易 #" + tradeId + " " + action;
         };
         String label = switch (field) {

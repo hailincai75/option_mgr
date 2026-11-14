@@ -33,7 +33,7 @@ public class StockTradeEntity {
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.VARCHAR)
-    @Column(nullable = false, length = 12)
+    @Column(nullable = false, length = 16)
     private StockTradeType type;
 
     @Column(nullable = false, length = 10)
@@ -58,7 +58,10 @@ public class StockTradeEntity {
     @Column(name = "has_audit_log", nullable = false)
     private boolean hasAuditLog;
 
-    /** FEAT-013 / FEAT-041: the ASG option record that generated this ASSIGN_BUY / ASSIGN_SELL; null otherwise. */
+    /**
+     * FEAT-013 / FEAT-041 / FEAT-014: the ASG / EXR option record that generated this ASSIGN_* / EXERCISE_* record;
+     * null otherwise.
+     */
     @Column(name = "option_trade_id")
     private Long optionTradeId;
 
@@ -91,6 +94,19 @@ public class StockTradeEntity {
                                                 Instant assignedAt, long optionTradeId, Instant createdAt) {
         StockTradeEntity e = new StockTradeEntity(accountId, StockTradeType.ASSIGN_SELL, symbol, shares, proceeds,
                 assignedAt, null, createdAt);
+        e.optionTradeId = optionTradeId;
+        return e;
+    }
+
+    /** FEAT-014: the lot bought by a call exercise (amount = stock cost) or the sale of a put exercise (proceeds). */
+    public static StockTradeEntity exercised(long accountId, StockTradeType type, String symbol, int shares,
+                                             BigDecimal amount, Instant exercisedAt, long optionTradeId,
+                                             Instant createdAt) {
+        if (!type.isFromExercise()) {
+            throw new IllegalArgumentException("not an exercise type: " + type);
+        }
+        StockTradeEntity e = new StockTradeEntity(accountId, type, symbol, shares, amount, exercisedAt, null,
+                createdAt);
         e.optionTradeId = optionTradeId;
         return e;
     }

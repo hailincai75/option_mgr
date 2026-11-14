@@ -26,6 +26,7 @@ import { TradeTable } from '../components/trade/TradeTable'
 import {
   isAssignmentAction,
   isCallAssignment,
+  isExerciseAction,
   isExpiryAction,
   tradeActionLabel,
 } from '../components/trade/tradeLabels'
@@ -35,7 +36,8 @@ import { formatDateTimeNY, formatInteger, formatMoney } from '../utils/format'
  * e.g. "STO 1 张 AAPL 2026-12-18 200 P，2026-11-04 11:00，+360.00", or for FEAT-012
  * "到期作废 3 张 XYZ 2026-11-20 45 P，2026-11-20 16:00，0.00", or for FEAT-013
  * "被指派 3 张 XYZ 2026-11-20 45 P，2026-11-20 16:00，买入 300 股 XYZ" (FEAT-041 call: "卖出 300 股
- * IXQZ") (backend values, formatted).
+ * IXQZ"), or for FEAT-014 "行权 3 张 QRTV 2026-11-20 30 C，2026-11-20 16:00，买入 300 股 QRTV"
+ * (put: "卖出 100 股 XYZ") (backend values, formatted).
  */
 function tradeSummary(trade: OptionTrade): string {
   const time = formatDateTimeNY(trade.tradedAt)
@@ -43,6 +45,12 @@ function tradeSummary(trade: OptionTrade): string {
   if (isAssignmentAction(trade.action) && trade.assignment !== null) {
     const shares = formatInteger(trade.assignment.shares)
     const verb = isCallAssignment(trade) ? '卖出' : '买入'
+    return `${tradeActionLabel(trade.action)} ${head}，${verb} ${shares} 股 ${trade.symbol}`
+  }
+  const exercise = trade.exercise ?? null
+  if (isExerciseAction(trade.action) && exercise !== null) {
+    const shares = formatInteger(exercise.shares)
+    const verb = trade.optionType === 'CALL' ? '买入' : '卖出'
     return `${tradeActionLabel(trade.action)} ${head}，${verb} ${shares} 股 ${trade.symbol}`
   }
   const cash = formatMoney(trade.cashChange, { signed: true })
@@ -61,10 +69,19 @@ const ASSIGNMENT_DELETE_WARNING =
 const CALL_ASSIGNMENT_DELETE_WARNING =
   '删除后期权持仓、现金恢复，交出的股票恢复为持仓，生成的股票记录一起删除，会写入审计记录。'
 
+/** FEAT-014: deleting a 行权 call removes the bought shares (and gives the cash back). */
+const CALL_EXERCISE_DELETE_WARNING =
+  '删除后期权持仓、现金恢复，行权买入的股票一起删除，会写入审计记录。'
+
+/** FEAT-014: deleting a 行权 put gives back the delivered shares. */
+const PUT_EXERCISE_DELETE_WARNING =
+  '删除后期权持仓、现金恢复，交出的股票恢复为持仓，生成的股票记录一起删除，会写入审计记录。'
+
 function deleteTitle(trade: OptionTrade): string {
   const id = String(trade.id)
   if (isExpiryAction(trade.action)) return `删除到期作废 #${id}`
   if (isAssignmentAction(trade.action)) return `删除被指派 #${id}`
+  if (isExerciseAction(trade.action)) return `删除行权 #${id}`
   return `删除交易 #${id}`
 }
 
@@ -72,6 +89,9 @@ function deleteWarning(trade: OptionTrade): string | undefined {
   if (isExpiryAction(trade.action)) return EXPIRY_DELETE_WARNING
   if (isAssignmentAction(trade.action)) {
     return isCallAssignment(trade) ? CALL_ASSIGNMENT_DELETE_WARNING : ASSIGNMENT_DELETE_WARNING
+  }
+  if (isExerciseAction(trade.action)) {
+    return trade.optionType === 'CALL' ? CALL_EXERCISE_DELETE_WARNING : PUT_EXERCISE_DELETE_WARNING
   }
   return undefined
 }

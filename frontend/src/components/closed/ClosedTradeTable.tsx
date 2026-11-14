@@ -2,7 +2,13 @@ import { Button, Space, Table, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { HTMLAttributes, ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import type { ClosedSoldLot, ClosedTrade, CoveredLot } from '../../api/types'
+import type {
+  ClosedExercise,
+  ClosedOptionRecord,
+  ClosedSoldLot,
+  ClosedTrade,
+  CoveredLot,
+} from '../../api/types'
 import {
   decimalSign,
   EMPTY_VALUE,
@@ -11,7 +17,11 @@ import {
   formatMoney,
 } from '../../utils/format'
 import { auditUrl } from '../audit/auditLinks'
-import { tradesUrlForAssignment, tradesUrlForContract } from '../position/positionLinks'
+import {
+  tradesUrlForAssignment,
+  tradesUrlForContract,
+  tradesUrlForExercise,
+} from '../position/positionLinks'
 import { stockTimeText, stockTypeLabel, STOCK_TYPE_COLORS } from '../stock/stockLabels'
 import { stocksUrlForAssignment, stocksUrlForSymbol } from '../stock/stockListFilters'
 import {
@@ -156,6 +166,50 @@ const soldLotColumns: ColumnsType<ClosedSoldLot> = [
   },
 ]
 
+/**
+ * FEAT-014: the option P&L of a 行权 is 0.00; the premium went into the stock cost (call) or was
+ * deducted from the stock sale proceeds (put). Backend values only.
+ */
+function ExerciseNote({
+  trade,
+  exercise,
+  pnl,
+}: {
+  trade: ClosedOptionRecord
+  exercise: ClosedExercise
+  pnl: ReactNode
+}) {
+  const isCall = trade.optionType === 'CALL'
+  const shares = `${formatInteger(exercise.shares)} 股 ${trade.symbol}`
+  return (
+    <div style={{ textAlign: 'right' }}>
+      {pnl}
+      <div>
+        <Typography.Text
+          type="secondary"
+          style={{ fontSize: 12, whiteSpace: 'nowrap' }}
+          data-testid="closed-cell-exercise"
+        >
+          {isCall
+            ? `权利金已计入股票成本（${shares}，成本 ${formatMoney(exercise.stockCost)}）`
+            : `权利金已从股票卖出实收中扣除（${shares}，实收 ${formatMoney(exercise.proceeds)}）`}
+        </Typography.Text>{' '}
+        <Link
+          to={stocksUrlForAssignment(
+            trade.symbol,
+            trade.tradedAtLocal,
+            isCall ? 'EXERCISE_BUY' : 'EXERCISE_SELL',
+          )}
+          style={{ fontSize: 12, whiteSpace: 'nowrap' }}
+          data-testid="closed-exercise-stock-link"
+        >
+          股票记录 #{exercise.stockTradeId}
+        </Link>
+      </div>
+    </div>
+  )
+}
+
 const columns: ColumnsType<ClosedTrade> = [
   {
     title: '平仓时间（美东时间）',
@@ -205,8 +259,9 @@ const columns: ColumnsType<ClosedTrade> = [
     key: 'action',
     render: (_value: unknown, trade) => {
       if (trade.type === 'STOCK') {
-        // Same tag as 卖出 / 指派卖出 on the 股票 page; stocks have no 空头 / 多头.
+        // Same tag as 卖出 / 指派卖出 / 行权卖出 on the 股票 page; stocks have no 空头 / 多头.
         const assignmentTradeId = trade.assignmentTradeId ?? null
+        const exerciseTradeId = trade.exerciseTradeId ?? null
         return (
           <Space size={4} style={{ whiteSpace: 'nowrap' }}>
             <Tag
@@ -226,6 +281,16 @@ const columns: ColumnsType<ClosedTrade> = [
                 来自被指派 #{assignmentTradeId}
               </Link>
             )}
+            {exerciseTradeId !== null && (
+              // FEAT-014: the 行权卖出 row links back to its 行权 record.
+              <Link
+                to={tradesUrlForExercise(trade.symbol, trade.tradedAtLocal)}
+                style={{ fontSize: 12 }}
+                data-testid="closed-stock-exercise-link"
+              >
+                来自行权 #{exerciseTradeId}
+              </Link>
+            )}
           </Space>
         )
       }
@@ -233,7 +298,7 @@ const columns: ColumnsType<ClosedTrade> = [
       return (
         <Space size={4} style={{ whiteSpace: 'nowrap' }}>
           {isDeleteOnlyAction(trade.action) ? (
-            // FEAT-012 到期作废 / FEAT-013 被指派 (both recorded at a date's 16:00 NY).
+            // FEAT-012 到期作废 / FEAT-013 被指派 / FEAT-014 行权 (recorded at a date's 16:00 NY).
             <Tag
               color={SPECIAL_ACTION_COLORS[trade.action]}
               data-testid="closed-cell-action"
@@ -306,6 +371,9 @@ const columns: ColumnsType<ClosedTrade> = [
     align: 'right',
     render: (_value: unknown, trade) => {
       const pnl = <SignedMoney value={trade.realizedPnl} testId="closed-cell-pnl" strong />
+      if (trade.type === 'OPTION' && trade.exercise != null) {
+        return <ExerciseNote trade={trade} exercise={trade.exercise} pnl={pnl} />
+      }
       const assignment = trade.assignment
       if (assignment === null) return pnl
       // FEAT-013 / FEAT-041: the option P&L of a 被指派 is 0.00; the premium went into the stock

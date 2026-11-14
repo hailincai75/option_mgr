@@ -61,6 +61,10 @@ public class ClosedTradeController {
                                       AssignedStockResponse assignment,
                                       /* FEAT-041: ASSIGN_SELL stock rows: the call assignment (option trade id); null otherwise */
                                       Long assignmentTradeId,
+                                      /* FEAT-014: EXR rows only (shares, stock cost (call) or proceeds (put), generated record id) */
+                                      AssignedStockResponse exercise,
+                                      /* FEAT-014: EXERCISE_SELL stock rows: the exercise (option trade id); null otherwise */
+                                      Long exerciseTradeId,
                                       /* the closing trade's / sale's (id) stored flag: it has been edited */
                                       boolean hasAuditLog) {
     }
@@ -93,7 +97,7 @@ public class ClosedTradeController {
             @RequestParam(defaultValue = "20") int size) {
         ClosedRecordFilter filter = TradeListQuery.parseClosed(type, symbol, expirationDate, strike, optionType,
                 actions, startDate, endDate, page, size, ClosedTradeService.CLOSING_ACTIONS,
-                "方向只能是 BTC、STC、EXP、ASG");
+                "方向只能是 BTC、STC、EXP、ASG、EXR");
         ClosedTradeService.ClosedTradePage p = service.page(account.id(), filter, page, size);
         return new ClosedTradePageResponse(p.items().stream().map(ClosedTradeController::toResponse).toList(),
                 p.page(), p.size(), p.totalItems(), p.totalPages(), p.totalItems(), p.filteredRealizedPnlTotal());
@@ -110,20 +114,22 @@ public class ClosedTradeController {
         OptionTradeEntity t = v.trade().trade();
         ClosedTrade f = v.figures();
         ContractKey c = t.contract();
+        boolean isExercise = t.getAction() == com.optionmgr.trade.domain.TradeAction.EXR;
         return new ClosedTradeResponse(ClosedRecordType.OPTION, t.getId(), t.getTradedAt(), local(t.getTradedAt()),
                 t.getSymbol(), t.getExpirationDate(), ContractKey.strikeText(t.getStrike()), t.getOptionType(),
                 c.label(), t.getAction().name(), f.closedDirection(), t.getContracts(), t.getMultiplier(), null,
                 f.openingNetTotal(), f.openingNetPerContract(), null, f.closeNetAmount(), f.closeNetPerContract(),
                 null, f.realizedPnl(), t.getNote(), f.coveredLots().stream().map(ClosedTradeController::toLot).toList(),
-                null, assignedStock(v.trade()), null, t.hasAuditLog());
+                null, isExercise ? null : assignedStock(v.trade()), null, isExercise ? assignedStock(v.trade()) : null,
+                null, t.hasAuditLog());
     }
 
     /** FEAT-013 put: shares + stock cost; FEAT-041 call: shares + proceeds; null for other records. */
     private static AssignedStockResponse assignedStock(OptionTradeService.TradeView view) {
         Long stockTradeId = view.assignedLot() == null ? null : view.assignedLot().getId();
-        return view.assignment()
+        return view.buyLeg()
                 .map(a -> new AssignedStockResponse(a.shares(), a.stockCost(), null, stockTradeId))
-                .or(() -> view.callAssignment()
+                .or(() -> view.sellLeg()
                         .map(a -> new AssignedStockResponse(a.shares(), null, a.proceeds(), stockTradeId)))
                 .orElse(null);
     }
@@ -136,7 +142,8 @@ public class ClosedTradeController {
                 f.openingNetTotal(), null, f.costPerShare(), f.closeNetAmount(), null, f.pricePerShare(),
                 f.realizedPnl(), t.getNote(), null,
                 f.match().lots().stream().map(ClosedTradeController::toSoldLot).toList(), null,
-                t.getType() == StockTradeType.ASSIGN_SELL ? t.getOptionTradeId() : null, t.hasAuditLog());
+                t.getType() == StockTradeType.ASSIGN_SELL ? t.getOptionTradeId() : null, null,
+                t.getType() == StockTradeType.EXERCISE_SELL ? t.getOptionTradeId() : null, t.hasAuditLog());
     }
 
     private static CoveredLotResponse toLot(PositionLot l) {

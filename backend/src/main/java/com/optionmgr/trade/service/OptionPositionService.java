@@ -60,7 +60,13 @@ public class OptionPositionService {
      */
     public record PositionSummary(Instant now, LocalDate asOfDate, List<OptionPosition> positions,
                                   BigDecimal frozenTotal, Map<ContractKey, Integer> expiryContracts,
-                                  Map<String, Long> stockShares, Map<ContractKey, RowCoverage> coverage) {
+                                  Map<String, Long> stockShares, Map<ContractKey, RowCoverage> coverage,
+                                  BigDecimal availableCash, Map<String, Long> availableShares) {
+
+        /** FEAT-014: current available shares (held - covered by CHECKED short calls) of a long put's underlying. */
+        public long availableShares(OptionPosition p) {
+            return availableShares.getOrDefault(p.contract().symbol(), 0L);
+        }
 
         /** FEAT-039: coverage of a short call row; null for every other row. */
         public RowCoverage coverage(OptionPosition p) {
@@ -125,15 +131,24 @@ public class OptionPositionService {
         }
         Map<ContractKey, RowCoverage> rows = new HashMap<>();
         Map<String, CoverageService.Snapshot> snapshots = new HashMap<>();
+        Map<String, Long> availableShares = new HashMap<>();
         for (OptionPosition p : positions) {
             if (p.direction() == PositionDirection.SHORT && p.contract().optionType() == OptionType.CALL) {
                 CoverageService.Snapshot snapshot = snapshots.computeIfAbsent(p.contract().symbol(),
                         sym -> coverage.snapshot(accountId, sym));
                 rows.put(p.contract(), rowCoverage(p, snapshot.timeline()));
             }
+            if (p.direction() == PositionDirection.LONG && p.contract().optionType() == OptionType.PUT) {
+                // FEAT-014: what a put exercise could deliver now (Q113)
+                CoverageService.Snapshot snapshot = snapshots.computeIfAbsent(p.contract().symbol(),
+                        sym -> coverage.snapshot(accountId, sym));
+                availableShares.put(p.contract().symbol(),
+                        Math.max(0, snapshot.timeline().current(CoverageTimeline.checked()).available()));
+            }
         }
+        BigDecimal availableCash = ledger.currentBalance(accountId).available();
         return new PositionSummary(now, today, positions, frozenTotal, Map.copyOf(expiryContracts),
-                Map.copyOf(stockShares), Map.copyOf(rows));
+                Map.copyOf(stockShares), Map.copyOf(rows), availableCash, Map.copyOf(availableShares));
     }
 
     static RowCoverage rowCoverage(OptionPosition p, CoverageTimeline timeline) {

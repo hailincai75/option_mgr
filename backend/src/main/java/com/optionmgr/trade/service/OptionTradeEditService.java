@@ -66,6 +66,7 @@ public class OptionTradeEditService {
     public static final String NO_CHANGES_MESSAGE = "没有修改";
     public static final String EXPIRY_NOT_EDITABLE_MESSAGE = "到期作废不能修改，记错请删除后重新作废";
     public static final String ASSIGNMENT_NOT_EDITABLE_MESSAGE = "被指派不能修改，记错请删除后重新记录";
+    public static final String EXERCISE_NOT_EDITABLE_MESSAGE = "行权不能修改，记错请删除后重新记录";
 
     private static final DateTimeFormatter LOCAL_SECONDS = DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss");
 
@@ -116,6 +117,9 @@ public class OptionTradeEditService {
         }
         if (trade.getAction() == TradeAction.ASG) {
             throw new ApiException(ErrorCode.ASSIGNMENT_NOT_EDITABLE, ASSIGNMENT_NOT_EDITABLE_MESSAGE);
+        }
+        if (trade.getAction() == TradeAction.EXR) {
+            throw new ApiException(ErrorCode.EXERCISE_NOT_EDITABLE, EXERCISE_NOT_EDITABLE_MESSAGE);
         }
         ContractKey contract = trade.contract();
         boolean opening = trade.getAction().isOpening();
@@ -261,8 +265,9 @@ public class OptionTradeEditService {
                 history, id);
         OptionTradeService.rejectNonPositiveCost(costs, "删除");
 
-        // FEAT-013: deleting an assignment removes its generated lot; every later sale must stay covered (Q15)
-        boolean assignment = trade.getAction() == TradeAction.ASG;
+        // FEAT-013 / FEAT-014: deleting an assignment / exercise removes its generated stock record; every later sale
+        // must stay covered (Q15)
+        boolean assignment = trade.getAction().hasStockLeg();
         StockTradeEntity lot = assignment
                 ? tradeService.assignedLots(accountId, List.of(id)).get(id)
                 : null;
@@ -291,20 +296,26 @@ public class OptionTradeEditService {
         Map<String, Object> before = snapshot(trade, cashChange, frozenChange);
         if (assignment) {
             OptionTradeService.TradeView view = tradeService.views(accountId, List.of(trade)).get(0);
-            before.put("assignmentDate", MarketTime.toLocal(trade.getTradedAt()).toLocalDate().toString());
-            before.put("assignmentFee", Money.of(trade.getAssignmentFee()));
-            if (trade.getOptionType() == OptionType.CALL) {
-                // FEAT-041: the figures of rule 3 (premium, strike amount, proceeds, delivered cost, stock P&L)
-                CallAssignmentTerms terms = view.callAssignment().orElseThrow();
+            boolean exercise = trade.getAction() == TradeAction.EXR;
+            before.put(exercise ? "exerciseDate" : "assignmentDate",
+                    MarketTime.toLocal(trade.getTradedAt()).toLocalDate().toString());
+            before.put(exercise ? "exerciseFee" : "assignmentFee", Money.of(trade.getAssignmentFee()));
+            if (!trade.getAction().buysStock(trade.getOptionType())) {
+                // FEAT-041: the figures of rule 3 (premium, strike amount, proceeds, delivered cost, stock P&L);
+                // FEAT-014 put exercise: the same, premium shown positive
+                CallAssignmentTerms terms = view.sellLeg().orElseThrow();
                 before.put("shares", terms.shares());
-                before.put("premium", terms.premium());
+                before.put("premium", exercise ? terms.premium().negate() : terms.premium());
                 before.put("saleAmount", terms.saleAmount());
                 before.put("proceeds", terms.proceeds());
                 before.put("soldCost", view.assignedSale() == null ? null : view.assignedSale().soldCost());
                 before.put("stockRealizedPnl", view.assignedSale() == null ? null : view.assignedSale().realizedPnl());
             } else {
-                AssignmentTerms terms = view.assignment().orElseThrow();
+                AssignmentTerms terms = view.buyLeg().orElseThrow();
                 before.put("shares", terms.shares());
+                if (exercise) {
+                    before.put("premium", terms.premium().negate());
+                }
                 before.put("purchaseAmount", terms.purchaseAmount());
                 before.put("stockCost", terms.stockCost());
             }
@@ -404,7 +415,7 @@ public class OptionTradeEditService {
             }
         });
         for (OptionTradeService.CostCorrection c : costs) {
-            effects.add(new SideEffect(c.assignmentId(), TradeAction.ASG.name(), c.contract().label(),
+            effects.add(new SideEffect(c.assignmentId(), c.action().name(), c.contract().label(),
                     c.call() ? SideEffect.PROCEEDS : SideEffect.STOCK_COST, Money.display(c.before()),
                     Money.display(c.after())));
         }
@@ -456,9 +467,10 @@ public class OptionTradeEditService {
         if (t.getAction() == TradeAction.EXP) {
             return t.getAction().displayName() + " " + t.contract().label() + " " + t.getContracts() + " 张";
         }
-        if (t.getAction() == TradeAction.ASG) {
-            // "被指派 XYZ 2026-11-20 45 P 3 张（买入 300 股 XYZ）"; a call (FEAT-041): "…（卖出 300 股 IXQZ）"
-            String verb = t.getOptionType() == OptionType.CALL ? "卖出" : "买入";
+        if (t.getAction().hasStockLeg()) {
+            // "被指派 XYZ 2026-11-20 45 P 3 张（买入 300 股 XYZ）"; a call (FEAT-041): "…（卖出 300 股 IXQZ）";
+            // FEAT-014: "行权 QRTV 2026-11-20 30 C 3 张（买入 300 股 QRTV）"
+            String verb = t.getAction().buysStock(t.getOptionType()) ? "买入" : "卖出";
             return t.getAction().displayName() + " " + t.contract().label() + " " + t.getContracts() + " 张（" + verb + " "
                     + t.getContracts() * t.getMultiplier() + " 股 " + t.getSymbol() + "）";
         }

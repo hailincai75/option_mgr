@@ -520,7 +520,7 @@ describe('ClosedTradesPage', () => {
   it('rejects BTO / STO in the URL action filter without querying', async () => {
     const queries = startFakeServer({ closed: SCENARIO_P })
     renderPage('/closed?action=STO')
-    expect(await screen.findByText('方向只能是 BTC、STC、EXP、ASG')).toBeInTheDocument()
+    expect(await screen.findByText('方向只能是 BTC、STC、EXP、ASG、EXR')).toBeInTheDocument()
     expect(queries).toHaveLength(0)
   })
 

@@ -877,7 +877,7 @@ class Feat041CallAssignmentSystemTest extends OptionTradeSystemTestBase {
     void stockTypeFilterMessage() {
         Resp bad = get(STOCKS + "?type=BUY,FOO");
         assertErrorShape(bad, 400, "BAD_REQUEST", STOCKS);
-        assertThat(details(bad)).containsExactly("type=类型只能是 BUY、SELL、TRANSFER_IN、ASSIGN_BUY、ASSIGN_SELL");
+        assertThat(details(bad)).containsExactly("type=类型只能是 BUY、SELL、TRANSFER_IN、ASSIGN_BUY、ASSIGN_SELL、EXERCISE_BUY、EXERCISE_SELL");
         Resp closedBad = get(CLOSED + "?action=ASSIGN_SELL");
         assertErrorShape(closedBad, 400, "BAD_REQUEST", CLOSED);
     }

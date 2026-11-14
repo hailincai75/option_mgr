@@ -41,8 +41,27 @@ public final class StockMessages {
      */
     public static String laterAssignmentExceedsHolding(String verb, int contracts, String contractLabel,
                                                        StockReplay.Step step) {
-        return verb + "后 " + MarketTime.displayMinute(step.record().tradedAt()) + " 的被指派 " + contracts + " 张 "
+        return laterRecordExceedsHolding(verb, "被指派", contracts, contractLabel, step);
+    }
+
+    /**
+     * As above for any option record that sells shares ({@code name} = 被指派 / 行权, FEAT-014):
+     * "补录后 2026-11-27 16:00 的行权 1 张 XYZ 2026-11-27 45 P 需要 100 股，当时持股 0 股，请先删除该行权".
+     */
+    public static String laterRecordExceedsHolding(String verb, String name, int contracts, String contractLabel,
+                                                   StockReplay.Step step) {
+        return verb + "后 " + MarketTime.displayMinute(step.record().tradedAt()) + " 的" + name + " " + contracts + " 张 "
                 + contractLabel + " 需要 " + step.record().shares() + " 股，当时持股 " + step.holdingBefore()
-                + " 股，请先删除该被指派";
+                + " 股，请先删除该" + name;
+    }
+
+    /**
+     * FEAT-014, the put exercise being recorded:
+     * "持股不足：行权需要 100 股 XYZ，2026-11-20 16:00 时持有 0 股。请先录入股票（转入或更早的买入）".
+     */
+    public static String exerciseExceedsHolding(String symbol, StockReplay.Step step) {
+        return "持股不足：行权需要 " + step.record().shares() + " 股 " + symbol + "，"
+                + MarketTime.displayMinute(step.record().tradedAt()) + " 时持有 " + step.holdingBefore()
+                + " 股。请先录入股票（转入或更早的买入）";
     }
 }

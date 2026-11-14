@@ -24,7 +24,14 @@ public enum TradeAction {
      * is "the wrong side"), recorded at 16:00 New York of the assignment date, net amount 0, option realized P&amp;L
      * 0 (the premium goes into the cost of the generated stock lot, Q8). Cannot be edited, only deleted.
      */
-    ASG(1, false);
+    ASG(1, false),
+    /**
+     * FEAT-014 a long call / put is exercised: closes the earliest whole long lots like an STC (sign -1, so a short
+     * position is "the wrong side"), recorded at 16:00 New York of the exercise date, net amount 0, option realized
+     * P&amp;L 0 (the premium goes into the generated stock lot's cost / the stock sale's proceeds, Q111). Cannot be
+     * edited, only deleted.
+     */
+    EXR(-1, false);
 
     private final int sign;
     private final boolean opening;
@@ -53,18 +60,35 @@ public enum TradeAction {
         return this == BTC || this == STC;
     }
 
-    /** User-facing name in texts: the code, except "到期作废" for EXP and "被指派" for ASG. */
+    /** User-facing name in texts: the code, except "到期作废" for EXP, "被指派" for ASG and "行权" for EXR. */
     public String displayName() {
         return switch (this) {
             case EXP -> "到期作废";
             case ASG -> "被指派";
+            case EXR -> "行权";
             default -> name();
         };
     }
 
-    /** EXP / ASG: closing records shaped by the system; they can only be deleted, never edited. */
+    /** EXP / ASG / EXR: closing records shaped by the system; they can only be deleted, never edited. */
     public boolean isDeleteOnly() {
-        return this == EXP || this == ASG;
+        return this == EXP || this == ASG || this == EXR;
+    }
+
+    /**
+     * ASG (FEAT-013 / 041) and EXR (FEAT-014): the option leg has no cash (net 0, option P&amp;L 0); the record
+     * generates one stock record and one ledger entry (the stock leg).
+     */
+    public boolean hasStockLeg() {
+        return this == ASG || this == EXR;
+    }
+
+    /**
+     * For a record with a stock leg: true if it buys the shares (put assignment, call exercise), false if it sells
+     * them (call assignment, put exercise).
+     */
+    public boolean buysStock(OptionType optionType) {
+        return (this == ASG && optionType == OptionType.PUT) || (this == EXR && optionType == OptionType.CALL);
     }
 
     public int signedContracts(int contracts) {

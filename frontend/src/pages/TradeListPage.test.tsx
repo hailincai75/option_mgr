@@ -615,7 +615,7 @@ describe('TradeListPage', () => {
     ).toBeInTheDocument()
     expect(
       within(formItemOf(byTestId('trade-filter-action-bto'))).getByText(
-        '方向只能是 BTO、STO、BTC、STC、EXP、ASG',
+        '方向只能是 BTO、STO、BTC、STC、EXP、ASG、EXR',
       ),
     ).toBeInTheDocument()
     expect(byTestId('trade-filter-strike')).toHaveValue('abc')

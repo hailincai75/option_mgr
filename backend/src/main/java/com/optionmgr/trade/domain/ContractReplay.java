@@ -66,8 +66,9 @@ public final class ContractReplay {
                     lots.subList(0, covered).clear();
                     BigDecimal released = closed.stream().map(PositionLot::remainingFrozen)
                             .reduce(Money.ZERO, BigDecimal::add);
-                    // FEAT-013 Q8: an assignment's option P&L is 0 (the premium goes into the stock cost)
-                    BigDecimal pnl = t.action() == TradeAction.ASG
+                    // FEAT-013 Q8 / FEAT-014 Q111: an assignment's / exercise's option P&L is 0 (the premium goes
+                    // into the stock leg)
+                    BigDecimal pnl = t.action().hasStockLeg()
                             ? Money.ZERO
                             : closed.stream().map(PositionLot::remainingNetAmount)
                                     .reduce(t.cashChange(), BigDecimal::add);

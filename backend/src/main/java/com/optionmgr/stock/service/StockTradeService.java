@@ -224,10 +224,11 @@ public class StockTradeService {
             String message;
             if (step.record().id() == subjectId) {
                 message = subjectMessage.apply(step);
-            } else if (step.record().type() == StockTradeType.ASSIGN_SELL) {
+            } else if (step.record().type().isGenerated()) {
+                // FEAT-041 call assignment / FEAT-014 put exercise
                 OptionTradeEntity assignment = assignmentOf(step.record().id());
-                message = StockMessages.laterAssignmentExceedsHolding(verb, assignment.getContracts(),
-                        assignment.contract().label(), step);
+                message = StockMessages.laterRecordExceedsHolding(verb, assignment.getAction().displayName(),
+                        assignment.getContracts(), assignment.contract().label(), step);
             } else {
                 message = StockMessages.laterSaleExceedsHolding(verb, symbol, step);
             }
@@ -243,28 +244,29 @@ public class StockTradeService {
     public List<SideEffect> assignedSaleCostEffects(long accountId, String symbol,
                                                     UnaryOperator<List<StockRecord>> change) {
         List<StockRecord> current = records(accountId, symbol);
-        if (current.stream().noneMatch(r -> r.type() == StockTradeType.ASSIGN_SELL)) {
+        if (current.stream().noneMatch(r -> r.type().isSale() && r.type().isGenerated())) {
             return List.of();
         }
         StockReplay.History before = StockReplay.replay(current);
         StockReplay.History after = StockReplay.replay(change.apply(current));
         List<SideEffect> effects = new ArrayList<>();
         for (StockReplay.Step b : before.steps()) {
-            if (b.record().type() != StockTradeType.ASSIGN_SELL || b.sale().isEmpty()) {
+            if (!b.record().type().isSale() || !b.record().type().isGenerated() || b.sale().isEmpty()) {
                 continue;
             }
             Optional<SaleMatch> a = after.step(b.record().id()).flatMap(StockReplay.Step::sale);
             BigDecimal was = b.sale().get().soldCost();
             if (a.isPresent() && a.get().soldCost().compareTo(was) != 0) {
                 OptionTradeEntity assignment = assignmentOf(b.record().id());
-                effects.add(new SideEffect(assignment.getId(), "ASG", assignment.contract().label(),
+                effects.add(new SideEffect(assignment.getId(), assignment.getAction().name(),
+                        assignment.contract().label(),
                         SideEffect.SOLD_COST, Money.display(was), Money.display(a.get().soldCost())));
             }
         }
         return effects;
     }
 
-    /** The ASG option record that generated the stock record {@code stockTradeId}. */
+    /** The ASG / EXR option record that generated the stock record {@code stockTradeId}. */
     private OptionTradeEntity assignmentOf(long stockTradeId) {
         Long optionTradeId = trades.findById(stockTradeId).map(StockTradeEntity::getOptionTradeId)
                 .orElseThrow(() -> new IllegalStateException("stock trade " + stockTradeId + " has no assignment"));

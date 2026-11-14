@@ -107,7 +107,9 @@ public class StockTradeController {
                 sale == null ? null : sale.soldCost(),
                 sale == null ? null : sale.realizedPnl(),
                 sale == null ? null : sale.lots().stream().map(StockTradeController::toSoldLot).toList(),
-                t.getOptionTradeId(), !t.getType().isGenerated(), !t.getType().isGenerated());
+                t.getType().isFromExercise() ? null : t.getOptionTradeId(),
+                t.getType().isFromExercise() ? t.getOptionTradeId() : null,
+                !t.getType().isGenerated(), !t.getType().isGenerated());
     }
 
     /** One sold lot part (also used for a call assignment's delivered shares, FEAT-041). */

@@ -36,7 +36,7 @@ public class ClosedTradeService {
 
     /** Option records listed as closed trades: user closes and (FEAT-012) expiries. */
     public static final Set<TradeAction> CLOSING_ACTIONS = EnumSet.of(TradeAction.BTC, TradeAction.STC, TradeAction.EXP,
-            TradeAction.ASG);
+            TradeAction.ASG, TradeAction.EXR);
 
     private final OptionTradeRepository trades;
     private final OptionTradeService tradeService;
@@ -137,8 +137,8 @@ public class ClosedTradeService {
                 OptionTradeService.LIST_ORDER);
         return tradeService.views(accountId, all).stream()
                 .map(v -> new ClosedTradeView(v, new ClosedTrade(v.trade().getAction(), v.trade().getContracts(),
-                        // FEAT-013: an assignment's cash pays for the shares; its option close net is 0
-                        v.trade().getAction() == TradeAction.ASG ? Money.ZERO : v.cashChange(), v.closeMatch().orElseThrow(
+                        // FEAT-013 / FEAT-014: an assignment's / exercise's cash is the stock leg; option close net 0
+                        v.trade().getAction().hasStockLeg() ? Money.ZERO : v.cashChange(), v.closeMatch().orElseThrow(
                                 () -> new IllegalStateException("close " + v.trade().getId() + " has no match")))))
                 .toList();
     }

@@ -23,6 +23,7 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
   OPTION_CLOSE: '期权平仓',
   OPTION_EXPIRE: '到期作废',
   OPTION_ASSIGN: '被指派',
+  OPTION_EXERCISE: '行权',
   STOCK_BUY: '股票买入',
   STOCK_SELL: '股票卖出',
 }

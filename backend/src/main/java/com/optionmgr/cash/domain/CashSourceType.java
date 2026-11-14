@@ -19,6 +19,9 @@ public enum CashSourceType {
      *  option_trade.id of the ASG record. Put: amount = -(purchase + fee),
      *  frozen change = -released; the frozen change may be corrected (Q39). */
     OPTION_ASSIGN,
+    /** FEAT-014 long call / put exercised; source id = option_trade.id of the EXR record. Call: amount =
+     *  -(purchase + fee); put: amount = +(strike amount - fee); frozen change 0. */
+    OPTION_EXERCISE,
     /** FEAT-011 stock purchase; source id = stock_trade.id; amount = -paid, frozen change 0. */
     STOCK_BUY,
     /** FEAT-011 stock sale; source id = stock_trade.id; amount = +received, frozen change 0. */
