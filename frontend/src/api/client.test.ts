@@ -116,7 +116,14 @@ describe('X-Account-Id (FEAT-033)', () => {
     expect(getApiAccountId()).toBe(2)
   })
 
-  it.each(['/api/health', '/api/accounts', '/api/accounts/2', '/api/test-support/reset'])(
+  it.each([
+    '/api/health',
+    '/api/accounts',
+    '/api/accounts/2',
+    '/api/test-support/reset',
+    '/api/market-data/status',
+    '/api/market-data/overrides/underlyings/QRTV',
+  ])(
     'does not send it to %s',
     async (path) => {
       const fetchMock = mockFetch({ accounts: false })

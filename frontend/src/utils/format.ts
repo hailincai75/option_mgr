@@ -185,3 +185,15 @@ export function formatInteger(value: number | null | undefined): string {
   const sign = value < 0 ? MINUS_SIGN : ''
   return sign + String(Math.abs(value)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 }
+
+/**
+ * FEAT-016: a New York local date-time from the backend ("2026-11-23T09:45:00") as "MM-DD HH:mm"
+ * ("11-23 09:45"), without any time-zone conversion. Returns EMPTY_VALUE for null / malformed input.
+ */
+export function formatMonthDayTime(local: string | null | undefined): string {
+  if (local == null) return EMPTY_VALUE
+  const match = LOCAL_DATE_TIME_PATTERN.exec(local.trim())
+  if (!match) return EMPTY_VALUE
+  const [, date = '', time = ''] = match
+  return `${date.slice(5)} ${time}`
+}

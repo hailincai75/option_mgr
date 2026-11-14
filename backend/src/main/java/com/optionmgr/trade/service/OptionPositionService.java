@@ -152,19 +152,32 @@ public class OptionPositionService {
                               CoverageTimeline.Shortfall shortfall, Map<Long, LotCoverage> lots) {
     }
 
+    /** FEAT-016: contracts with an open position in the account (net contracts != 0, expired-unprocessed included). */
     @Transactional(readOnly = true)
-    public PositionSummary currentPositions(long accountId) {
-        Instant now = clock.instant();
-        LocalDate today = MarketTime.toLocal(now).toLocalDate();
+    public Set<ContractKey> openContracts(long accountId) {
+        Set<ContractKey> out = new java.util.HashSet<>();
+        replayInput(accountId).forEach((contract, lotTrades) ->
+                PositionBuilder.build(contract, lotTrades).ifPresent(p -> out.add(contract)));
+        return out;
+    }
+
+    private Map<ContractKey, List<LotTrade>> replayInput(long accountId) {
         List<OptionTradeEntity> all = trades.findByAccountIdOrderByTradedAtAscIdAsc(accountId);
         Map<Long, CashLedgerEntryEntity> entries = ledger.findBySources(accountId, OptionTradeService.TRADE_SOURCE_TYPES,
                 all.stream().map(OptionTradeEntity::getId).toList());
-
         Map<ContractKey, List<LotTrade>> byContract = new LinkedHashMap<>();
         for (OptionTradeEntity t : all) {
             CashLedgerEntryEntity e = OptionTradeService.entry(t, entries);
             byContract.computeIfAbsent(t.contract(), k -> new ArrayList<>()).add(OptionTradeService.toLotTrade(t, e));
         }
+        return byContract;
+    }
+
+    @Transactional(readOnly = true)
+    public PositionSummary currentPositions(long accountId) {
+        Instant now = clock.instant();
+        LocalDate today = MarketTime.toLocal(now).toLocalDate();
+        Map<ContractKey, List<LotTrade>> byContract = replayInput(accountId);
 
         List<OptionPosition> positions = byContract.entrySet().stream()
                 .map(en -> PositionBuilder.build(en.getKey(), en.getValue()))

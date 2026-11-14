@@ -12,3 +12,8 @@ optionmgr:
     read-system-env: false
     env-files: ["build/no-env-in-e2e/.env"]
     base-url: http://127.0.0.1:9
+  quotes:
+    # FEAT-016: never call the real CBOE / Finnhub in E2E runs; fake sources via PUT /api/test-support/market-data/sources
+    fetch-enabled: false
+    transport: in-memory
+    cboe-base-url: http://127.0.0.1:9

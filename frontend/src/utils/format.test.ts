@@ -6,6 +6,7 @@ import {
   formatInteger,
   formatLocalDateTime,
   formatMoney,
+  formatMonthDayTime,
   nowLocalDateTimeNY,
 } from './format'
 
@@ -133,5 +134,20 @@ describe('formatInteger', () => {
 
   it.each([null, undefined, 1.5, Number.NaN])('returns the placeholder for %s', (input) => {
     expect(formatInteger(input)).toBe(EMPTY_VALUE)
+  })
+})
+
+describe('formatMonthDayTime (FEAT-016)', () => {
+  it('shows a New York local date-time as MM-DD HH:mm without conversion', () => {
+    expect(formatMonthDayTime('2026-11-23T09:45:00')).toBe('11-23 09:45')
+    expect(formatMonthDayTime('2026-11-23T10:05:30')).toBe('11-23 10:05')
+    expect(formatMonthDayTime('2026-01-02T16:20')).toBe('01-02 16:20')
+  })
+
+  it('returns the placeholder for null or malformed input', () => {
+    expect(formatMonthDayTime(null)).toBe(EMPTY_VALUE)
+    expect(formatMonthDayTime(undefined)).toBe(EMPTY_VALUE)
+    expect(formatMonthDayTime('2026-11-23T14:45:00Z')).toBe(EMPTY_VALUE)
+    expect(formatMonthDayTime('')).toBe(EMPTY_VALUE)
   })
 })

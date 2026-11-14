@@ -47,3 +47,10 @@ optionmgr:
     base-url: https://finnhub.io
     env-files: [".env", "../.env"]
     fetch-enabled: true
+  quotes:
+    # FEAT-016: CBOE delayed quotes (no key) + Finnhub quote fallback (key as for optionmgr.finnhub). Every 15 minutes
+    # 09:30-16:00 + 16:20 New York on trading days, and once at startup inside that window.
+    fetch-enabled: true
+    transport: http
+    cboe-base-url: https://cdn-api.cboe.com
+    index-symbols: [SPX, SPXW, NDX, NDXP, RUT, RUTW, VIX, VIXW, XSP, DJX, OEX, XEO]

@@ -79,6 +79,8 @@ const ACCOUNT_FREE_PREFIXES = [
   '/api/test-support',
   // FEAT-009: one calendar for the whole system (Q53); usable before an account is resolved.
   '/api/trading-calendar',
+  // FEAT-016: one set of quotes and manual overrides for the whole system (rule 1).
+  '/api/market-data',
 ] as const
 
 let currentAccountId: number | null = null

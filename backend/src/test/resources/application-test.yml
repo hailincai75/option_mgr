@@ -10,3 +10,9 @@ optionmgr:
     read-system-env: false
     env-files: ["build/no-env-in-tests/.env"]
     base-url: http://127.0.0.1:9
+  quotes:
+    # FEAT-016: tests never call the real CBOE / Finnhub; a test that needs fetches uses transport in-memory
+    # (InMemoryQuoteTransport) or points cboe-base-url at a fake server.
+    fetch-enabled: false
+    transport: http
+    cboe-base-url: http://127.0.0.1:9

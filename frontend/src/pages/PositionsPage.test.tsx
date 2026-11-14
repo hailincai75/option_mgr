@@ -314,13 +314,18 @@ describe('PositionsPage', () => {
     })
     expect(screen.getAllByText('每张平均净额（仅供参考）').length).toBeGreaterThan(0)
     expect(screen.getByText(/空头为实收、多头为实付，均已含手续费/)).toBeInTheDocument()
-    // Only expand toggles and (FEAT-004) one 平仓 button per closable row; nothing else.
+    // Only expand toggles, the two FEAT-016 手动设置 quote buttons (标的价, Mark) and (FEAT-004)
+    // one 平仓 button per closable row; nothing else (no edit / delete).
     // querySelectorAll instead of getAllByRole: role queries over the whole table are very slow.
     const others = [...byTestId('positions-page').querySelectorAll('button')].filter(
       (b) => b.getAttribute('data-testid') !== 'position-expand',
     )
     expect(others.map((b) => b.getAttribute('data-testid'))).toEqual(
-      Array(5).fill('position-close'),
+      Array.from({ length: 5 }, () => [
+        'position-underlying-price-set',
+        'position-mark-set',
+        'position-close',
+      ]).flat(),
     )
   })
 

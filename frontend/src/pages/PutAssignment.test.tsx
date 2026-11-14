@@ -270,10 +270,14 @@ describe('FEAT-013 positions page 被指派 button (AC 1, Q95)', () => {
     await screen.findAllByTestId('position-row')
 
     // Plain DOM query: role queries walk the whole antd tree and are slow in jsdom.
-    const buttons = (contract: string) =>
-      Array.from(rowOf(contract).querySelectorAll('button'))
+    // FEAT-016: every row starts with the two 手动设置 quote buttons; the rest are the actions.
+    const buttons = (contract: string) => {
+      const ids = Array.from(rowOf(contract).querySelectorAll('button'))
         .map((button) => button.getAttribute('data-testid'))
         .filter((id) => id !== 'position-expand')
+      expect(ids.slice(0, 2)).toEqual(['position-underlying-price-set', 'position-mark-set'])
+      return ids.slice(2)
+    }
 
     expect(buttons('AAA 2026-11-20 45 P')).toEqual(['position-close', 'position-assign'])
     expect(buttons('BBB 2026-11-20 45 P')).toEqual(['position-assign'])

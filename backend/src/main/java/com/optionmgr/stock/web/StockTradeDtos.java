@@ -139,7 +139,9 @@ public final class StockTradeDtos {
     /** FEAT-039: {@code coveredShares} = shares covered by CHECKED short calls now; available = shares - covered. */
     public record StockPositionResponse(String symbol, long shares, long coveredShares, long availableShares,
                                         BigDecimal totalCost, BigDecimal averageCost,
-                                        int lotCount, List<StockLotResponse> lots) {
+                                        int lotCount, List<StockLotResponse> lots,
+                                        /* FEAT-016: current price (one set for all accounts) */
+                                        com.optionmgr.quote.service.QuoteViews.UnderlyingQuote quote) {
     }
 
     public record StockPositionsResponse(int positionCount, List<StockPositionResponse> positions) {

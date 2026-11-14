@@ -342,10 +342,13 @@ async function openExerciseDialog(contract: string, post: Handler): Promise<Reco
 }
 
 /** data-testids of the row's action buttons, in order. */
+/** Action buttons of a row, after checking it starts with exactly the two FEAT-016 quote buttons. */
 function buttonsOf(contract: string): string[] {
-  return Array.from(rowOf(contract).querySelectorAll('button[data-testid^="position-"]'))
+  const ids = Array.from(rowOf(contract).querySelectorAll('button[data-testid^="position-"]'))
     .map((button) => button.getAttribute('data-testid') ?? '')
     .filter((id) => id !== 'position-expand')
+  expect(ids.slice(0, 2)).toEqual(['position-underlying-price-set', 'position-mark-set'])
+  return ids.slice(2)
 }
 
 // ---------------------------------------------------------------------------

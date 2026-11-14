@@ -48,10 +48,13 @@ public class TestSupportController {
     private final TradingCalendarService calendar;
     private final SettableClock clock;
     private final ObjectMapper mapper;
+    private final org.springframework.beans.factory.ObjectProvider<com.optionmgr.quote.service.InMemoryQuoteTransport> quoteSources;
 
     public TestSupportController(DatabaseResetService resetService, OptionTradeService trades,
                                  HolidayFetchService holidayFetches, TradingCalendarService calendar,
-                                 SettableClock clock, ObjectMapper mapper) {
+                                 SettableClock clock, ObjectMapper mapper,
+                                 org.springframework.beans.factory.ObjectProvider<com.optionmgr.quote.service.InMemoryQuoteTransport> quoteSources) {
+        this.quoteSources = quoteSources;
         this.resetService = resetService;
         this.trades = trades;
         this.holidayFetches = holidayFetches;
@@ -146,5 +149,7 @@ public class TestSupportController {
     public void reset() {
         resetService.reset();
         clock.reset();
+        // FEAT-016: fake quote sources back to empty, request log cleared (quote tables: by the reset snapshot)
+        quoteSources.ifAvailable(com.optionmgr.quote.service.InMemoryQuoteTransport::reset);
     }
 }

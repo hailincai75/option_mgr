@@ -9,7 +9,7 @@
 - **时间点**（交易时间等 `Instant`）：ISO-8601 UTC，带 `Z` 后缀，如 `"2026-11-10T14:30:00Z"`；小数秒位数不固定（0~9 位），解析时不要假设位数
 - 字段名 camelCase；值为空时字段输出 `null`（不省略）
 - 在线文档：运行后端后访问 `/swagger-ui.html`（OpenAPI JSON：`/v3/api-docs`）。以本文件为准，两者冲突时报告给 backend-dev
-- **账户（FEAT-033 起）**：除 `/api/health`、`/api/accounts/**`、`/api/test-support/**`、`/api/trading-calendar/**`（FEAT-009，全系统一份）外，所有接口都必须带请求头 `X-Account-Id: <账户 id>`，只读写该账户的数据；规则与错误见下方「FEAT-033 多账户」。本文件中 FEAT-007 ~ FEAT-008 的示例省略了这个请求头
+- **账户（FEAT-033 起）**：除 `/api/health`、`/api/accounts/**`、`/api/test-support/**`、`/api/trading-calendar/**`（FEAT-009，全系统一份）、`/api/market-data/**`（FEAT-016，全系统一份）外，所有接口都必须带请求头 `X-Account-Id: <账户 id>`，只读写该账户的数据；规则与错误见下方「FEAT-033 多账户」。本文件中 FEAT-007 ~ FEAT-008 的示例省略了这个请求头
 
 ## 统一错误格式
 所有 `/api/**` 接口出错时（HTTP 4xx/5xx）返回同一结构：
@@ -145,3 +145,4 @@
 | [FEAT-009.md](FEAT-009.md) | FEAT-009 美股交易日历（`GET /api/trading-calendar/non-trading-days`、`/status`；持仓新增 `remainingTradingDays`；**行为变化：开仓到期日非交易日被 422 `EXPIRATION_NOT_TRADING_DAY` 拒绝**；测试支持假拉取与假时钟） |
 | [FEAT-042.md](FEAT-042.md) | FEAT-042 临时休市检测与提醒（`GET /api/adhoc-closure-alerts` 按账户；`GET /api/trading-calendar/adhoc-closures` 全系统、FEAT-043 复用；持仓新增 `expiresOnAdhocClosure`、`adhocClosureEventName`；拉取成功后检测，测试支持无新增接口） |
 | [FEAT-043.md](FEAT-043.md) | FEAT-043 临时休市时调整到期日（`POST /api/option-trades/expiration-adjustments`；持仓新增 `expirationAdjustable` 等；审计新 `operation` `ADJUST_EXPIRATION` 与 `expirationAdjustment` 字段，`objectId` 筛选也匹配调整涉及的交易；测试支持 `legacy-option-trades` 扩展到 put / BTO；迁移 V15） |
+| [FEAT-016.md](FEAT-016.md) | FEAT-016 自动行情（CBOE 延迟报价 + Finnhub 股价兜底；`GET /api/market-data/status`、`POST /api/market-data/refresh`（60 秒冷却，冷却中 200 `performed:false`）、手动覆盖 `PUT` / `DELETE /api/market-data/overrides/**`，均不要求 `X-Account-Id`；指数标的、已过期合约不拉取（Q150）；期权持仓新增 `underlyingQuote` / `optionQuote`，股票持仓新增 `quote`（纯新增）；测试支持假数据源 / 请求记录 / 定时 tick / 存储查看；迁移 V16，failing-migration fixture 改 V17） |

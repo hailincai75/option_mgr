@@ -28,6 +28,7 @@ import { TradingCalendarStaleAlert } from '../components/calendar/TradingCalenda
 import { firstAdhocClosureRow } from '../components/position/adhocClosure'
 import { PositionTable } from '../components/position/PositionTable'
 import { QueryError } from '../components/QueryError'
+import { MarketDataBar } from '../components/quote/MarketDataBar'
 import { StockPositionsCard } from '../components/stock/StockPositionsCard'
 import type { AdhocClosureAlert, OptionPosition } from '../api/types'
 import { formatMoney } from '../utils/format'
@@ -178,6 +179,8 @@ export function PositionsPage() {
       <AdhocClosureAlerts onAdjust={adjustTo} />
       {/* FEAT-009 rule 6: shown only while the holiday data is stale. */}
       <TradingCalendarStaleAlert />
+      {/* FEAT-016: quote warning (backend text) and 立即刷新. */}
+      <MarketDataBar />
       <Card title="期权持仓" data-testid="positions-page">
         <div
           style={{ marginBottom: 12 }}

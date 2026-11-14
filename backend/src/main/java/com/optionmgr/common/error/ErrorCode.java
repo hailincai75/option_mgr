@@ -91,6 +91,8 @@ public enum ErrorCode {
     TRADE_AFTER_NEW_EXPIRATION(HttpStatus.UNPROCESSABLE_ENTITY),
     /** FEAT-043 Q132: the contract on the new date already has records. */
     TARGET_CONTRACT_EXISTS(HttpStatus.UNPROCESSABLE_ENTITY),
+    /** FEAT-016: a manual price for a symbol / contract that no account holds. */
+    QUOTE_TARGET_NOT_HELD(HttpStatus.UNPROCESSABLE_ENTITY),
     /** FEAT-033: an account-scoped endpoint was called without the X-Account-Id header. */
     ACCOUNT_REQUIRED(HttpStatus.BAD_REQUEST),
     /** FEAT-033: the X-Account-Id / path account does not exist. */

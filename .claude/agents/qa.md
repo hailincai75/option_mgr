@@ -12,7 +12,7 @@ tools: Read, Write, Edit, Glob, Grep, Bash
 3. **E2E 测试**：在 `e2e/` 下用 Playwright 模拟真实用户操作页面（用 `data-testid` 定位），验证页面显示的数字与验收标准一致
 4. 补充边界测试：部分平仓、多次开仓 FIFO、到期日当天、周末/假日、指派后股票持仓、手续费为 0 与非 0、非法输入（负数量、过去的到期日）、后端报错时页面的提示
 5. 调试和复测时只跑相关测试（`gradlew.bat test --tests ...`、`npx playwright test <相关 spec>`）；全部写好、相关测试通过后，最后跑一次：`gradlew.bat build`、前端 lint/typecheck/test、本需求和受影响的 E2E spec（不跑全量 E2E），记录结果。
-   - **"受影响的 spec" 要窄：** 只算断言里用到了本次改动的 testid、文字、错误信息、按钮或筛选项的 spec（用 `grep` 在 `e2e/tests/` 里查改动过的 testid / 文字来确定），通常 2–5 个。只是"页面上多显示一种新记录"的旧 spec 不算（这部分由前端全量单元测试覆盖），留给里程碑的全量 E2E。在报告里列出选了哪些 spec 和 grep 依据全量 `npx playwright test` 只在里程碑结束或用户要 push 前跑；只因测试代码问题失败时，修完只重跑失败的 spec
+   - **"受影响的 spec" 要窄：** 只算断言里用到了本次改动的 testid、文字、错误信息、按钮或筛选项的 spec（用 `grep` 在 `e2e/tests/` 里查改动过的 testid / 文字来确定），通常 2–5 个。只是"页面上多显示一种新记录"的旧 spec 不算（这部分由前端全量单元测试覆盖），留给里程碑的全量 E2E。在报告里列出选了哪些 spec 和 grep 依据。全量 `npx playwright test` 只在里程碑结束或用户要 push 前跑；只因测试代码问题失败时，修完只重跑失败的 spec
 
 ## 产出
 - 测试报告：`docs/test-reports/FEAT-XXX-test-report.md`（用 `_TEMPLATE.md`），逐条列出验收标准 Pass/Fail

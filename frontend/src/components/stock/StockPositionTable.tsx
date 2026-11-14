@@ -4,6 +4,7 @@ import type { HTMLAttributes, ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { StockPosition, StockPositionLot } from '../../api/types'
 import { EMPTY_VALUE, formatInteger, formatMoney } from '../../utils/format'
+import { QuoteTimeCell, UnderlyingPriceCell } from '../quote/QuoteCells'
 import { stockTimeText, stockTypeLabel } from './stockLabels'
 import { stocksUrlForSymbol } from './stockListFilters'
 
@@ -128,6 +129,26 @@ export function StockPositionTable({ positions, loading, empty, onSell }: StockP
         <span data-testid="stock-position-shares" style={NUMERIC}>
           {formatInteger(position.shares)}
         </span>
+      ),
+    },
+    // FEAT-016: 现价 / 报价时间 from the backend's quote (shared across accounts).
+    {
+      title: '现价',
+      key: 'price',
+      align: 'right',
+      render: (_value: unknown, position) => (
+        <UnderlyingPriceCell
+          symbol={position.symbol}
+          quote={position.quote}
+          testId="stock-position-price"
+        />
+      ),
+    },
+    {
+      title: '报价时间',
+      key: 'quoteTime',
+      render: (_value: unknown, position) => (
+        <QuoteTimeCell quote={position.quote} testId="stock-position-quote-time" />
       ),
     },
     // FEAT-039: shares covering short calls and the rest (both from the backend).

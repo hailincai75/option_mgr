@@ -4,6 +4,7 @@ import type { HTMLAttributes, ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { OptionPosition, OptionPositionLot } from '../../api/types'
 import { decimalSign, EMPTY_VALUE, formatDateTimeNY, formatMoney } from '../../utils/format'
+import { BidAskCell, OptionMarkCell, QuoteTimeCell, UnderlyingPriceCell } from '../quote/QuoteCells'
 import { SIGNED_MONEY_COLORS, tradeActionLabel } from '../trade/tradeLabels'
 import { ADHOC_CLOSURE_TAG_TEXT } from './adhocClosure'
 import { coverageTags } from './coverageLabels'
@@ -240,6 +241,38 @@ function positionColumns(
           {position.contracts}
           {position.multiplier !== 100 && `（multiplier ${String(position.multiplier)}）`}
         </span>
+      ),
+    },
+    // FEAT-016: quotes from the backend (shared across accounts), shown as-is.
+    {
+      title: '标的价',
+      key: 'underlyingPrice',
+      align: 'right',
+      render: (_value: unknown, position) => (
+        <UnderlyingPriceCell
+          symbol={position.symbol}
+          quote={position.underlyingQuote}
+          testId="position-underlying-price"
+        />
+      ),
+    },
+    {
+      title: 'Bid / Ask',
+      key: 'bidAsk',
+      align: 'right',
+      render: (_value: unknown, position) => <BidAskCell position={position} />,
+    },
+    {
+      title: 'Mark',
+      key: 'mark',
+      align: 'right',
+      render: (_value: unknown, position) => <OptionMarkCell position={position} />,
+    },
+    {
+      title: '报价时间',
+      key: 'quoteTime',
+      render: (_value: unknown, position) => (
+        <QuoteTimeCell quote={position.optionQuote} testId="position-quote-time" />
       ),
     },
     {

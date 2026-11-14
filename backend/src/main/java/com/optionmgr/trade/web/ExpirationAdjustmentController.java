@@ -1,6 +1,7 @@
 package com.optionmgr.trade.web;
 
 import com.optionmgr.account.web.AccountRef;
+import com.optionmgr.quote.service.QuoteQueryService;
 import com.optionmgr.trade.domain.ContractKey;
 import com.optionmgr.trade.domain.OptionType;
 import com.optionmgr.trade.service.ExpirationAdjustmentService;
@@ -19,9 +20,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class ExpirationAdjustmentController {
 
     private final ExpirationAdjustmentService service;
+    private final QuoteQueryService quotes;
 
-    public ExpirationAdjustmentController(ExpirationAdjustmentService service) {
+    public ExpirationAdjustmentController(ExpirationAdjustmentService service, QuoteQueryService quotes) {
         this.service = service;
+        this.quotes = quotes;
     }
 
     public record AdjustExpirationResponse(long auditId, String symbol, String strike, OptionType optionType,
@@ -38,6 +41,6 @@ public class ExpirationAdjustmentController {
         ContractKey c = r.newContract();
         return new AdjustExpirationResponse(r.auditId(), c.symbol(), ContractKey.strikeText(c.strike()),
                 c.optionType(), r.oldContract().expirationDate(), c.expirationDate(), c.label(), r.tradeIds(),
-                r.position().map(p -> OptionPositionController.toResponse(p, r.summary())).orElse(null));
+                r.position().map(p -> OptionPositionController.toResponse(p, r.summary(), quotes.book())).orElse(null));
     }
 }

@@ -463,6 +463,13 @@ export interface OptionPosition {
   newExpirationDateMin?: LocalDateString | null
   /** FEAT-043: latest selectable new expiration date (inclusive); null when not adjustable. */
   newExpirationDateMax?: LocalDateString | null
+  /**
+   * FEAT-016: quote of the underlying (shared across accounts). Never null in the contract;
+   * optional here for older fixtures (missing → shown as 无报价).
+   */
+  underlyingQuote?: UnderlyingQuote
+  /** FEAT-016: quote of this contract (shared across accounts). Optional: older fixtures. */
+  optionQuote?: OptionQuote
 }
 
 /** Contract: `GET /api/option-positions` → 200. */
@@ -1146,6 +1153,8 @@ export interface StockPosition {
   averageCost: PriceString
   lotCount: number
   lots: StockPositionLot[]
+  /** FEAT-016: 现价 of the symbol. Never null in the contract; optional for older fixtures. */
+  quote?: UnderlyingQuote
 }
 
 /** Contract: `GET /api/stock-positions` → 200 (positions by symbol ascending). */
@@ -1269,3 +1278,129 @@ export interface AuditExpirationAdjustment {
   tradeIds: number[]
   note: string | null
 }
+
+// ---------------------------------------------------------------------------
+// FEAT-016 自动行情（只读）
+// ---------------------------------------------------------------------------
+
+/** FEAT-016: where an automatic underlying price came from. */
+export type UnderlyingQuoteSource = 'CBOE' | 'FINNHUB'
+
+/**
+ * Contract: 标的行情对象 — `positions[].underlyingQuote` (option positions), `positions[].quote`
+ * (stock positions) and the `PUT /api/market-data/overrides/underlyings/{symbol}` response.
+ * Prices are display-ready strings (≥ 2 decimals); the frontend never computes or rounds them.
+ */
+export interface UnderlyingQuote {
+  symbol: string
+  /** Display price: the manual override when set, else `automaticPrice`; null → 无报价. */
+  price: PriceString | null
+  automaticPrice: PriceString | null
+  source: UnderlyingQuoteSource | (string & {}) | null
+  quoteTime: InstantString | null
+  quoteTimeLocal: LocalDateTimeString | null
+  manual: boolean
+  manualEnteredAt: InstantString | null
+  manualEnteredAtLocal: LocalDateTimeString | null
+  /** Latest fetch of this symbol got no price (CBOE and Finnhub both failed). */
+  fetchFailed: boolean
+  lastSuccessAt: InstantString | null
+  lastSuccessAtLocal: LocalDateTimeString | null
+  /** Row label when `fetchFailed` (shown verbatim); null otherwise. */
+  staleLabel: string | null
+}
+
+/** FEAT-016 (Q143). */
+export type ContractQuoteStatus = 'QUOTED' | 'MISSING_FROM_SOURCE' | 'NEVER_QUOTED'
+
+/** FEAT-016 (Q139): basis of `automaticMark`. */
+export type MarkBasis = 'MID' | 'THEO'
+
+/**
+ * Contract: `positions[].optionQuote` of `GET /api/option-positions` and the
+ * `PUT /api/market-data/overrides/options` response.
+ */
+export interface OptionQuote {
+  bid: PriceString | null
+  ask: PriceString | null
+  /** Display mark: manual override when set, else `automaticMark`; null → 无报价. */
+  mark: PriceString | null
+  automaticMark: PriceString | null
+  markBasis: MarkBasis | (string & {}) | null
+  source: string | null
+  quoteTime: InstantString | null
+  quoteTimeLocal: LocalDateTimeString | null
+  contractStatus: ContractQuoteStatus | (string & {})
+  /** `数据源已无该合约（最后报价：…）` when MISSING_FROM_SOURCE (shown verbatim); null otherwise. */
+  contractStatusLabel: string | null
+  manual: boolean
+  manualEnteredAt: InstantString | null
+  manualEnteredAtLocal: LocalDateTimeString | null
+  /** Latest fetch of the underlying's option chain failed. */
+  fetchFailed: boolean
+  lastSuccessAt: InstantString | null
+  lastSuccessAtLocal: LocalDateTimeString | null
+  /** Row label when `fetchFailed` (shown verbatim); null otherwise. */
+  staleLabel: string | null
+}
+
+/** Contract: `GET /api/market-data/status` → 200 (one for the whole system). */
+export interface MarketDataStatus {
+  /** The top warning is shown only when true. */
+  stale: boolean
+  /** Complete warning text when stale (shown verbatim); null otherwise. */
+  warning: string | null
+  lastSuccessAt: InstantString | null
+  lastSuccessAtLocal: LocalDateTimeString | null
+  lastAttemptAt: InstantString | null
+  lastAttemptAtLocal: LocalDateTimeString | null
+  lastRefreshAt: InstantString | null
+  lastRefreshAtLocal: LocalDateTimeString | null
+  /** `lastRefreshAt + 60 s`; null when never refreshed. */
+  refreshAvailableAt: InstantString | null
+  /** The 立即刷新 button is disabled when false. */
+  refreshAllowed: boolean
+  trackedSymbolCount: number
+}
+
+export type MarketDataSymbolResult = 'SUCCESS' | 'FALLBACK' | 'FAILED'
+
+/** Contract: `POST /api/market-data/refresh` → `results[]` (hint / troubleshooting only). */
+export interface MarketDataRefreshResult {
+  symbol: string
+  result: MarketDataSymbolResult | (string & {})
+  cboeResult: string
+  finnhubResult: string | null
+  underlyingPriceSource: UnderlyingQuoteSource | (string & {}) | null
+  failureDetail: string | null
+}
+
+/** Contract: `POST /api/market-data/refresh` → 200. */
+export interface MarketDataRefreshResponse {
+  /** false: within the 60 s cooldown, nothing was fetched. */
+  performed: boolean
+  reason: 'COOLDOWN' | (string & {}) | null
+  results: MarketDataRefreshResult[]
+  status: MarketDataStatus
+}
+
+/** Contract: `PUT /api/market-data/overrides/underlyings/{symbol}` request body. */
+export interface UnderlyingOverrideRequest {
+  price: PriceString
+}
+
+/** Identifies a contract for `/api/market-data/overrides/options`. */
+export interface OptionContractKey {
+  symbol: string
+  expirationDate: LocalDateString
+  strike: string
+  optionType: OptionType
+}
+
+/** Contract: `PUT /api/market-data/overrides/options` request body. */
+export interface OptionOverrideRequest extends OptionContractKey {
+  mark: PriceString
+}
+
+/** FEAT-016 (422): no account holds the symbol / contract; `message` is Chinese, shown verbatim. */
+export const QUOTE_TARGET_NOT_HELD = 'QUOTE_TARGET_NOT_HELD'

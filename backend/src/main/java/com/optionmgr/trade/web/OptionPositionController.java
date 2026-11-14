@@ -2,6 +2,8 @@ package com.optionmgr.trade.web;
 
 import com.optionmgr.account.web.AccountRef;
 import com.optionmgr.common.time.MarketTime;
+import com.optionmgr.quote.service.QuoteQueryService;
+import com.optionmgr.quote.service.QuoteViews;
 import com.optionmgr.trade.domain.AssignmentTerms;
 import com.optionmgr.trade.domain.ContractKey;
 import com.optionmgr.trade.domain.CoverageStatus;
@@ -31,9 +33,11 @@ public class OptionPositionController {
     private static final DateTimeFormatter LOCAL_SECONDS = DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss");
 
     private final OptionPositionService service;
+    private final QuoteQueryService quotes;
 
-    public OptionPositionController(OptionPositionService service) {
+    public OptionPositionController(OptionPositionService service, QuoteQueryService quotes) {
         this.service = service;
+        this.quotes = quotes;
     }
 
     public record PositionsResponse(LocalDate asOfDate, int positionCount, BigDecimal frozenTotal,
@@ -76,7 +80,9 @@ public class OptionPositionController {
                                    /* FEAT-043: "调整到期日" button and its dialog data (0 / null when not adjustable) */
                                    boolean expirationAdjustable, int expirationAdjustmentRecordCount,
                                    LocalDate defaultNewExpirationDate, LocalDate newExpirationDateMin,
-                                   LocalDate newExpirationDateMax) {
+                                   LocalDate newExpirationDateMax,
+                                   /* FEAT-016: quotes (one set for all accounts) */
+                                   QuoteViews.UnderlyingQuote underlyingQuote, QuoteViews.OptionQuote optionQuote) {
     }
 
     /** FEAT-013: one selectable assignment size (earliest whole lots) and its shares. */
@@ -95,12 +101,14 @@ public class OptionPositionController {
     @GetMapping
     public PositionsResponse positions(AccountRef account) {
         OptionPositionService.PositionSummary s = service.currentPositions(account.id());
-        List<PositionResponse> positions = s.positions().stream().map(p -> toResponse(p, s)).toList();
+        QuoteViews.QuoteBook book = quotes.book();
+        List<PositionResponse> positions = s.positions().stream().map(p -> toResponse(p, s, book)).toList();
         return new PositionsResponse(s.asOfDate(), positions.size(), s.frozenTotal(), positions);
     }
 
     /** One row; also the "position" of the FEAT-043 adjustment response. */
-    static PositionResponse toResponse(OptionPosition p, OptionPositionService.PositionSummary s) {
+    static PositionResponse toResponse(OptionPosition p, OptionPositionService.PositionSummary s,
+                                       QuoteViews.QuoteBook book) {
         ContractKey c = p.contract();
         LocalDate today = s.asOfDate();
         Instant now = s.now();
@@ -144,7 +152,7 @@ public class OptionPositionController {
                 exercisable && c.optionType() == OptionType.CALL ? s.availableCash() : null,
                 adhocClosureName != null, adhocClosureName, adj != null, adj == null ? 0 : adj.recordCount(),
                 adj == null ? null : adj.defaultDate(), adj == null ? null : adj.minDate(),
-                adj == null ? null : adj.maxDate());
+                adj == null ? null : adj.maxDate(), book.underlying(c.symbol()), book.option(c));
     }
 
     private static LotResponse toResponse(PositionLot l, OptionPositionService.RowCoverage rc) {
