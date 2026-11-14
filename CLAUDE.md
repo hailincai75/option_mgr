@@ -73,7 +73,7 @@ docs/bugs/                 QA 写：BUG-XXX-<short-name>.md，标明 backend / f
 
 **测试分两层（节省时间）：**
 - 开发和复测过程中只跑相关测试：后端用 `gradlew.bat test --tests <本功能及受影响的测试类>`；E2E 只跑本功能和受影响的 spec；前端 `npm test -- <相关文件>`。
-- 每个需求验证时（qa，commit 前）跑一次：`gradlew.bat build`（全部后端测试）、前端 `npm run lint && npm run typecheck && npm test`、**本需求和受影响的 E2E spec**。dev 不跑全量。
+- 每个需求验证时（qa，commit 前）跑一次：`gradlew.bat build`（全部后端测试）、前端 `npm run lint && npm run typecheck && npm test`、**本需求和受影响的 E2E spec**。dev 不跑全量。"受影响"只算断言里用到本次改动的 testid / 文字 / 错误信息的 spec（grep 确定，通常 2–5 个）；只是页面多显示一种新记录的旧 spec 不算，留给里程碑全量。
 - **全量 E2E** 只在每个里程碑结束时、或用户要 push 前跑一次（由 qa），不在每个需求都跑。
 - frontend-dev 开发时只跑自己新建或直接修改的测试文件，其余前端测试留给 qa 的全量 `npm test`。
 
