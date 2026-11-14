@@ -9,13 +9,13 @@ import { decimalSign, EMPTY_VALUE, formatLocalDateTime, formatMoney } from '../.
 import { CoveredLotTable } from '../trade/TradeConfirmation'
 import { refreshAfterTradeSaved, type SubmitError } from '../trade/tradeFormSupport'
 import { SIGNED_MONEY_COLORS } from '../trade/tradeLabels'
-
-const DIRECTION_LABELS: Record<string, string> = { SHORT: '空头', LONG: '多头' }
+import { directionLabel, frozenText } from './expireLabels'
 
 const EXPLANATION =
   '到期作废记在到期日 16:00；空头保留全部权利金、多头亏掉全部开仓成本；记错可以在交易列表中删除'
 
-function SignedMoney({ value, testId }: { value: string; testId: string }) {
+/** Signed backend amount, green when positive and red when negative (also used by FEAT-015). */
+export function SignedMoney({ value, testId }: { value: string; testId: string }) {
   return (
     <span
       data-testid={testId}
@@ -24,16 +24,6 @@ function SignedMoney({ value, testId }: { value: string; testId: string }) {
       {formatMoney(value, { signed: true })}
     </span>
   )
-}
-
-/** Frozen amounts: "—" for zero, otherwise the backend value (`signed` for changes). */
-function frozenText(value: string, signed: boolean): string {
-  return decimalSign(value) === 0 ? EMPTY_VALUE : formatMoney(value, { signed })
-}
-
-function directionLabel(direction: string | null): string {
-  if (direction === null) return EMPTY_VALUE
-  return DIRECTION_LABELS[direction] ?? direction
 }
 
 interface ExpirePositionModalProps {

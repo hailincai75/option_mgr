@@ -260,6 +260,29 @@ public final class OptionTradeDtos {
     }
 
     /**
+     * FEAT-015 batch expiry: the items are validated one by one in the controller (so that duplicate contracts and
+     * field errors are reported together, with {@code items[i].field} names); other properties are ignored.
+     */
+    public record BatchExpireRequest(List<ExpireRequest> items) {
+    }
+
+    /** FEAT-015 batch expiry result: expiries in processing order and their totals. */
+    public record BatchExpireResponse(int count, BigDecimal realizedPnlTotal, BigDecimal frozenChangeTotal,
+                                      List<TradeResponse> expirations) {
+    }
+
+    /** FEAT-015: one failed item of a rejected batch (an extension of the common error body). */
+    public record BatchExpireFailure(int index, String symbol, LocalDate expirationDate, String strike,
+                                     OptionType optionType, String contractLabel, String code, String message) {
+    }
+
+    /** FEAT-015: the common error body plus {@code failures} (only for BATCH_EXPIRATION_REJECTED). */
+    public record BatchExpireErrorResponse(String code, String message, int status, String path, Instant timestamp,
+                                           List<com.optionmgr.common.error.ErrorResponse.FieldError> details,
+                                           List<BatchExpireFailure> failures) {
+    }
+
+    /**
      * FEAT-005 edit (Q43): only editable fields; contract and action are not part of it (extra properties ignored).
      * {@code multiplier}: opens only, null = unchanged; ignored for closes.
      */

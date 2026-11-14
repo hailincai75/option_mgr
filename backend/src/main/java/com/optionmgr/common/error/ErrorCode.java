@@ -36,6 +36,8 @@ public enum ErrorCode {
     POSITION_CHANGED(HttpStatus.UNPROCESSABLE_ENTITY),
     /** FEAT-012 Q83: a trade stored before FEAT-012 is later than the cutoff and conflicts with the expiry. */
     EXPIRY_BLOCKED_BY_LATE_TRADE(HttpStatus.UNPROCESSABLE_ENTITY),
+    /** FEAT-015 Q116: some items of a batch expiry failed FEAT-012 checks; nothing saved (body has "failures"). */
+    BATCH_EXPIRATION_REJECTED(HttpStatus.UNPROCESSABLE_ENTITY),
     /** FEAT-012 Q66: an expiry cannot be edited, only deleted. */
     EXPIRY_NOT_EDITABLE(HttpStatus.UNPROCESSABLE_ENTITY),
     /** FEAT-011 Q15: a stock sale exceeds the shares held at its time (also after a back-fill / edit / delete). */

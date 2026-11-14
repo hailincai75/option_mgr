@@ -14,6 +14,11 @@ export class ApiError extends Error {
   readonly status: number
   readonly details: ApiFieldError[]
   readonly path: string | null
+  /**
+   * The parsed contract error body, when there was one (`undefined` otherwise). Lets callers read
+   * endpoint-specific extension fields, e.g. FEAT-015 `failures` of `BATCH_EXPIRATION_REJECTED`.
+   */
+  readonly body: unknown
 
   constructor(params: {
     code: string
@@ -21,6 +26,7 @@ export class ApiError extends Error {
     status: number
     details?: ApiFieldError[]
     path?: string | null
+    body?: unknown
     cause?: unknown
   }) {
     super(params.message, { cause: params.cause })
@@ -29,6 +35,7 @@ export class ApiError extends Error {
     this.status = params.status
     this.details = params.details ?? []
     this.path = params.path ?? null
+    this.body = params.body
   }
 }
 
@@ -174,6 +181,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
         status: data.status,
         details: data.details,
         path: data.path,
+        body: data,
       })
     }
     throw new ApiError({

@@ -500,6 +500,60 @@ export interface CreateExpirationRequest {
 }
 
 // ---------------------------------------------------------------------------
+// FEAT-015 到期批量作废
+// ---------------------------------------------------------------------------
+
+/**
+ * Contract: `POST /api/option-trades/expirations/batch` request body. Each item is exactly a
+ * FEAT-012 expire request (`contracts` = the position's `expiryContracts`, passed back unchanged).
+ */
+export interface CreateExpirationBatchRequest {
+  items: CreateExpirationRequest[]
+}
+
+/** Contract: `POST /api/option-trades/expirations/batch` → 201. */
+export interface ExpirationBatchResponse {
+  count: number
+  /** Sum of `expirations[].realizedPnl`, scale 2. */
+  realizedPnlTotal: MoneyString
+  /** Sum of `expirations[].frozenChange`, scale 2, ≤ 0. */
+  frozenChangeTotal: MoneyString
+  /**
+   * One EXP record per item, in processing order (same representation as the FEAT-012 201
+   * response). Match to rows by contract, never by index.
+   */
+  expirations: OptionTrade[]
+}
+
+/** FEAT-015 failure codes (FEAT-012 checks 2–5); other values are shown as-is. */
+export type ExpirationFailureCode =
+  | 'EXPIRY_TOO_EARLY'
+  | 'NO_POSITION_TO_EXPIRE'
+  | 'POSITION_CHANGED'
+  | 'EXPIRY_BLOCKED_BY_LATE_TRADE'
+  | (string & {})
+
+/** Contract: 422 `BATCH_EXPIRATION_REJECTED` → `failures[]` (extension of the unified error). */
+export interface ExpirationBatchFailure {
+  /** Index of the item in the request `items` (0-based). */
+  index: number
+  /** Normalized contract (symbol upper-case, strike without trailing zeros). */
+  symbol: string
+  expirationDate: LocalDateString
+  strike: string
+  optionType: OptionType
+  contractLabel: string
+  code: ExpirationFailureCode
+  /** Same text as the single expire would return; shown verbatim beside the row. */
+  message: string
+}
+
+/** Contract: the 422 `BATCH_EXPIRATION_REJECTED` body (unified error + `failures`). */
+export interface ExpirationBatchRejectedResponse extends ApiErrorResponse {
+  failures: ExpirationBatchFailure[]
+}
+
+// ---------------------------------------------------------------------------
 // FEAT-013 卖出 put 被指派
 // ---------------------------------------------------------------------------
 

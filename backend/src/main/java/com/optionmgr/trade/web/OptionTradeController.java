@@ -56,10 +56,12 @@ public class OptionTradeController {
     private final OptionExpiryService expiries;
     private final OptionAssignmentService assignments;
     private final OptionExerciseService exercises;
+    private final jakarta.validation.Validator validator;
 
     public OptionTradeController(OptionTradeService service, OptionTradeEditService edits,
                                  OptionExpiryService expiries, OptionAssignmentService assignments,
-                                 OptionExerciseService exercises) {
+                                 OptionExerciseService exercises, jakarta.validation.Validator validator) {
+        this.validator = validator;
         this.service = service;
         this.edits = edits;
         this.expiries = expiries;
@@ -112,6 +114,25 @@ public class OptionTradeController {
         ContractKey contract = new ContractKey(req.symbol(), req.expirationDate(), req.strike(), req.optionType());
         return toResponse(expiries.expire(account.id(),
                 new OptionExpiryService.ExpireCommand(contract, req.contracts().intValueExact())));
+    }
+
+    /**
+     * FEAT-015: expire several positions all-or-nothing (Q116). The items are validated by
+     * {@link BatchExpireValidation}; a rejected batch is rendered by {@link BatchExpirationErrorHandler}.
+     */
+    @PostMapping("/expirations/batch")
+    @ResponseStatus(HttpStatus.CREATED)
+    public OptionTradeDtos.BatchExpireResponse expireBatch(AccountRef account,
+                                                           @RequestBody OptionTradeDtos.BatchExpireRequest req) {
+        List<ContractKey> contracts = BatchExpireValidation.validate(validator, req);
+        List<OptionExpiryService.ExpireCommand> cmds = new java.util.ArrayList<>();
+        for (int i = 0; i < contracts.size(); i++) {
+            cmds.add(new OptionExpiryService.ExpireCommand(contracts.get(i),
+                    req.items().get(i).contracts().intValueExact()));
+        }
+        OptionExpiryService.BatchResult result = expiries.expireAll(account.id(), cmds);
+        return new OptionTradeDtos.BatchExpireResponse(result.expirations().size(), result.realizedPnlTotal(),
+                result.frozenChangeTotal(), result.expirations().stream().map(OptionTradeController::toResponse).toList());
     }
 
     /** FEAT-002 trade list; all filters optional, see TradeListQuery. */

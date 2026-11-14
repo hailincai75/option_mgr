@@ -17,6 +17,7 @@ import com.optionmgr.trade.domain.ExpirationTimes;
 import com.optionmgr.trade.domain.ExpiryReplay;
 import com.optionmgr.trade.domain.LotTrade;
 import com.optionmgr.trade.domain.OpenTradeTerms;
+import com.optionmgr.trade.domain.OptionType;
 import com.optionmgr.trade.domain.PositionLot;
 import com.optionmgr.trade.domain.ReplayedTrade;
 import com.optionmgr.trade.domain.TradeAction;
@@ -28,6 +29,8 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -71,6 +74,43 @@ public class OptionExpiryService {
         }
     }
 
+    /** One item of a batch that failed a FEAT-012 check: its index in the request and the single-expire error. */
+    public record BatchFailure(int index, ContractKey contract, ErrorCode code, String message) {
+    }
+
+    /** FEAT-015: at least one item of a batch failed; nothing was saved. Failures are in processing order. */
+    public static class BatchExpirationRejectedException extends RuntimeException {
+        private final List<BatchFailure> failures;
+
+        public BatchExpirationRejectedException(List<BatchFailure> failures) {
+            super("有 " + failures.size() + " 个持仓不能作废，整批未保存");
+            this.failures = List.copyOf(failures);
+        }
+
+        public List<BatchFailure> failures() {
+            return failures;
+        }
+    }
+
+    /**
+     * FEAT-015 result: the expiries in processing order and their totals (scale 2).
+     *
+     * @param realizedPnlTotal  sum of the expiries' realized P&amp;L
+     * @param frozenChangeTotal sum of their frozen changes (released frozen cash, so &le; 0)
+     */
+    public record BatchResult(List<OptionTradeService.TradeView> expirations, BigDecimal realizedPnlTotal,
+                              BigDecimal frozenChangeTotal) {
+    }
+
+    /**
+     * Q116 / Q35 processing order: expiration date, symbol, strike (by value), call before put. The request order
+     * does not matter.
+     */
+    public static final Comparator<ContractKey> PROCESSING_ORDER = Comparator.comparing(ContractKey::expirationDate)
+            .thenComparing(ContractKey::symbol)
+            .thenComparing(ContractKey::strike)
+            .thenComparing(k -> k.optionType() == OptionType.CALL ? 0 : 1);
+
     /**
      * Checks in the order of the API contract (time, position at the cutoff, same contracts, no late trades, cash)
      * and saves the expiry (+ ledger entry if it releases frozen cash); any failure throws {@link ApiException} and
@@ -78,8 +118,58 @@ public class OptionExpiryService {
      */
     @Transactional
     public OptionTradeService.TradeView expire(long accountId, ExpireCommand cmd) {
+        ledger.lockAccount(accountId);
+        return save(accountId, cmd.contract(), check(accountId, cmd));
+    }
+
+    /**
+     * FEAT-015: expire several positions (distinct contracts, validated by the caller) all-or-nothing (Q116). Every
+     * item gets FEAT-012 checks 2-5 in processing order; all failures are collected and thrown together as
+     * {@link BatchExpirationRejectedException}. Otherwise each item is saved exactly like a single expiry, in
+     * processing order (so same-cutoff expiries replay in that order by id), in one transaction.
+     */
+    @Transactional
+    public BatchResult expireAll(long accountId, List<ExpireCommand> cmds) {
+        ledger.lockAccount(accountId);
+        List<Integer> order = new ArrayList<>();
+        for (int i = 0; i < cmds.size(); i++) {
+            order.add(i);
+        }
+        order.sort(Comparator.comparing(i -> cmds.get(i).contract(), PROCESSING_ORDER));
+
+        List<BatchFailure> failures = new ArrayList<>();
+        List<Checked> checked = new ArrayList<>();
+        for (int i : order) {
+            ExpireCommand cmd = cmds.get(i);
+            try {
+                checked.add(check(accountId, cmd));
+            } catch (ApiException e) {
+                failures.add(new BatchFailure(i, cmd.contract(), e.code(), e.getMessage()));
+            }
+        }
+        if (!failures.isEmpty()) {
+            throw new BatchExpirationRejectedException(failures);
+        }
+
+        List<OptionTradeService.TradeView> saved = new ArrayList<>();
+        BigDecimal pnl = Money.ZERO;
+        BigDecimal frozen = Money.ZERO;
+        for (int n = 0; n < order.size(); n++) {
+            OptionTradeService.TradeView view = save(accountId, cmds.get(order.get(n)).contract(), checked.get(n));
+            saved.add(view);
+            pnl = pnl.add(view.closeMatch().orElseThrow().realizedPnl());
+            frozen = frozen.add(view.frozenChange());
+        }
+        return new BatchResult(saved, Money.of(pnl), Money.of(frozen));
+    }
+
+    /** The contract's trades and its size at the cutoff, after checks 2-5 passed. */
+    private record Checked(OptionTradeService.ContractTrades existing, int held) {
+    }
+
+    /** FEAT-012 checks 2-5 for one contract (the account must be locked); throws {@link ApiException}. */
+    private Checked check(long accountId, ExpireCommand cmd) {
         ContractKey contract = cmd.contract();
-        Instant cutoff = ExpirationTimes.tradingCutoff(contract.expirationDate());
 
         // 2. Q10: from 17:30 New York on the expiration date
         if (!ExpirationTimes.expirable(contract.expirationDate(), clock.instant())) {
@@ -87,7 +177,6 @@ public class OptionExpiryService {
                     "到期日（" + contract.expirationDate() + "）美东 17:30 起才能作废");
         }
 
-        ledger.lockAccount(accountId);
         OptionTradeService.ContractTrades existing = tradeService.load(accountId, contract);
 
         // 3. a position at the cutoff (records at the same instant are earlier entries, so they come first)
@@ -108,6 +197,14 @@ public class OptionExpiryService {
                     + t.action().displayName() + " " + t.contracts() + " 张晚于到期日美东 16:00，与到期作废冲突；"
                     + "请先把这笔交易的时间改为 16:00 或之前，或删除它");
         }
+        return new Checked(existing, held);
+    }
+
+    /** Check 6 (cash) and save the expiry of a checked contract. */
+    private OptionTradeService.TradeView save(long accountId, ContractKey contract, Checked checked) {
+        Instant cutoff = ExpirationTimes.tradingCutoff(contract.expirationDate());
+        OptionTradeService.ContractTrades existing = checked.existing();
+        int held = checked.held();
 
         // the expiry covers every lot at the cutoff; nothing after it, so the whole history stays valid
         LotTrade candidate = new LotTrade(LotTrade.NOT_YET_ENTERED, cutoff, TradeAction.EXP, held,

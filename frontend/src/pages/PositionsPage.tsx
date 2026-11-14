@@ -1,9 +1,15 @@
 import { useAccountQuery } from '../account/useAccountQuery'
-import { Card, Radio, Space, Spin, Typography } from 'antd'
+import { Button, Card, Radio, Space, Spin, Typography } from 'antd'
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { getOptionPositions, optionPositionQueryKeys } from '../api/optionPositions'
 import { AssignPositionModal } from '../components/position/AssignPositionModal'
+import { BatchExpireModal } from '../components/position/BatchExpireModal'
+import {
+  batchExpirableRows,
+  batchExpireButtonLabel,
+  showsBatchExpire,
+} from '../components/position/batchExpire'
 import { ClosePositionModal } from '../components/position/ClosePositionModal'
 import { ExercisePositionModal } from '../components/position/ExercisePositionModal'
 import { ExpirePositionModal } from '../components/position/ExpirePositionModal'
@@ -35,6 +41,8 @@ export function PositionsPage() {
   const [expiring, setExpiring] = useState<OptionPosition | null>(null)
   const [assigning, setAssigning] = useState<OptionPosition | null>(null)
   const [exercising, setExercising] = useState<OptionPosition | null>(null)
+  /** FEAT-015: snapshot of the batch-expirable rows when 批量作废 was clicked. */
+  const [batchExpiring, setBatchExpiring] = useState<OptionPosition[] | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
   const expiryFilter = parseExpirySearch(searchParams)
   const filtering = expiryFilter !== 'all'
@@ -64,6 +72,8 @@ export function PositionsPage() {
   } else {
     const shown = filterPositionsByExpiry(data.positions, expiryFilter)
     const filteredEmpty = expiryEmptyMessage(expiryFilter)
+    // FEAT-015 rule 1 (Q118): 已过期未处理 / 今天到期 only; N = shown rows the backend lets expire.
+    const batchRows = showsBatchExpire(expiryFilter) ? batchExpirableRows(shown) : []
     content = (
       <Space orientation="vertical" size={12} style={{ width: '100%' }}>
         <Space size={24} wrap data-testid="positions-summary">
@@ -85,6 +95,19 @@ export function PositionsPage() {
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           开仓净额：空头为实收、多头为实付，均已含手续费；每张平均净额四舍五入到分，仅供参考。点击合约查看该合约的交易。
         </Typography.Text>
+        {batchRows.length > 0 && (
+          <div>
+            <Button
+              danger
+              onClick={() => {
+                setBatchExpiring(batchRows)
+              }}
+              data-testid="positions-batch-expire"
+            >
+              {batchExpireButtonLabel(batchRows.length)}
+            </Button>
+          </div>
+        )}
         <PositionTable
           positions={shown}
           loading={isFetching}
@@ -156,6 +179,14 @@ export function PositionsPage() {
             position={expiring}
             onDone={() => {
               setExpiring(null)
+            }}
+          />
+        )}
+        {batchExpiring !== null && (
+          <BatchExpireModal
+            positions={batchExpiring}
+            onDone={() => {
+              setBatchExpiring(null)
             }}
           />
         )}

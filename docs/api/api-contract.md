@@ -140,4 +140,5 @@
 | [FEAT-013.md](FEAT-013.md) | FEAT-013 卖出 put 被指派（`ASG`） |
 | [FEAT-041.md](FEAT-041.md) | FEAT-041 卖出 call 被指派（`ASG` 扩展到空头 call） |
 | [FEAT-014.md](FEAT-014.md) | FEAT-014 主动行权（`EXR`，多头 call / put；股票类型 `EXERCISE_BUY` / `EXERCISE_SELL`，流水 `OPTION_EXERCISE`） |
+| [FEAT-015.md](FEAT-015.md) | FEAT-015 到期批量作废（`POST /api/option-trades/expirations/batch`，全部成功或全部不保存；422 `BATCH_EXPIRATION_REJECTED` 带 `failures` 扩展字段） |
 | [FEAT-039.md](FEAT-039.md) | FEAT-039 covered call 股票覆盖检查与锁定（**行为变化：STO call、股票卖出及多种修改 / 删除可能被 `COVERAGE_INSUFFICIENT` 拒绝**） |

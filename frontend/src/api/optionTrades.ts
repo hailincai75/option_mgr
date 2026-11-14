@@ -1,9 +1,12 @@
-import { apiRequest } from './client'
+import { ApiError, apiRequest } from './client'
 import type {
   CreateAssignmentRequest,
   CreateCloseTradeRequest,
   CreateExerciseRequest,
+  CreateExpirationBatchRequest,
   CreateExpirationRequest,
+  ExpirationBatchFailure,
+  ExpirationBatchResponse,
   CreateOptionTradeRequest,
   OptionTrade,
   OptionTradeListParams,
@@ -41,6 +44,53 @@ export function createExpiration(request: CreateExpirationRequest): Promise<Opti
     method: 'POST',
     body: request,
   })
+}
+
+/**
+ * `POST /api/option-trades/expirations/batch` → 201 (FEAT-015 批量作废: all items expire or nothing
+ * is saved). A 422 `BATCH_EXPIRATION_REJECTED` carries `failures[]`; read them with
+ * `expirationBatchFailures(error)`.
+ */
+export function createExpirationBatch(
+  request: CreateExpirationBatchRequest,
+): Promise<ExpirationBatchResponse> {
+  return apiRequest<ExpirationBatchResponse>('/api/option-trades/expirations/batch', {
+    method: 'POST',
+    body: request,
+  })
+}
+
+/** FEAT-015 error code whose body has the `failures` extension field. */
+export const BATCH_EXPIRATION_REJECTED = 'BATCH_EXPIRATION_REJECTED'
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function isExpirationBatchFailure(value: unknown): value is ExpirationBatchFailure {
+  return (
+    isRecord(value) &&
+    typeof value.index === 'number' &&
+    typeof value.symbol === 'string' &&
+    typeof value.expirationDate === 'string' &&
+    typeof value.strike === 'string' &&
+    (value.optionType === 'CALL' || value.optionType === 'PUT') &&
+    typeof value.contractLabel === 'string' &&
+    typeof value.code === 'string' &&
+    typeof value.message === 'string'
+  )
+}
+
+/**
+ * The `failures[]` of a `BATCH_EXPIRATION_REJECTED` error (malformed entries dropped); `[]` for any
+ * other error.
+ */
+export function expirationBatchFailures(error: unknown): ExpirationBatchFailure[] {
+  if (!(error instanceof ApiError) || error.code !== BATCH_EXPIRATION_REJECTED) return []
+  const body = error.body
+  if (!isRecord(body) || !Array.isArray(body.failures)) return []
+  const failures: unknown[] = body.failures
+  return failures.filter(isExpirationBatchFailure)
 }
 
 /**
