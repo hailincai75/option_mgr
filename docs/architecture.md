@@ -197,7 +197,7 @@ frontend/
     │   ├── audit/        AuditTable（可展开修改前后）、auditSearch（审计页 URL 状态与校验）、auditLinks（各行"历史"链接）（FEAT-005）
     │   ├── pnl/          pnlSummarySearch（盈亏汇总页 URL 状态、月份范围交集、到已平仓页的链接）（FEAT-008）
     │   ├── closed/       ClosedTradeTable（已平仓记录，可展开被平批次；FEAT-040 股票卖出行可展开被卖出批次，行 key = 类型 + id）（FEAT-006）、closedListFilters（FEAT-040：已平仓页 URL 状态 = 交易列表筛选 + `type`，校验、API 参数）
-    │   ├── position/     PositionTable（可展开批次、平仓 / 作废按钮、到期待确认标签、空头 call 覆盖标签）、coverageLabels（FEAT-039 覆盖标签与悬停文案）、ClosePositionModal（平仓对话框，FEAT-004）、ExpirePositionModal（到期作废对话框，FEAT-012）、AssignPositionModal + assignValidation（记录被指派对话框，FEAT-013）、positionLinks（合约 → 交易列表 URL，`tradesUrlForContract`，持仓和已平仓共用；`tradesUrlForAssignment` 被指派记录 → 交易列表）（FEAT-003）
+    │   ├── position/     PositionTable（可展开批次、平仓 / 作废按钮、到期待确认标签、空头 call 覆盖标签）、coverageLabels（FEAT-039 覆盖标签与悬停文案）、ClosePositionModal（平仓对话框，FEAT-004）、ExpirePositionModal（到期作废对话框，FEAT-012）、AssignPositionModal + assignValidation（记录被指派对话框，FEAT-013）、positionLinks（合约 → 交易列表 URL，`tradesUrlForContract`，持仓和已平仓共用；`tradesUrlForAssignment` 被指派记录 → 交易列表）、expiryFilter（FEAT-010：到期过滤 URL 状态、按 `dte` 匹配、空结果文案、`positionsUrlForExpiry`）（FEAT-003）
     │   └── stock/        FEAT-011 股票：StockTradeForm（录入买入/卖出/转入）+ StockTradeConfirmation、EditStockTradeModal、StockTradeTable（可展开被卖出批次）+ SoldLotTable、StockFilterForm、StockPositionsCard + StockPositionTable（持仓页股票部分，可展开批次）、stockLabels（类型文案/颜色、金额标签、时间文本、删除摘要）、stockListFilters（股票页 URL 状态与校验、`stocksUrlForSymbol`、`stockSellUrl`）、stockValidation（股数、金额、转入日期）、stockPositionsAnchor（FEAT-040：持仓页股票部分锚点 `#stock-positions`）
     ├── utils/format.ts   统一的显示格式化（时间、金额；`formatLocalDateTime` 原样显示后端的美东本地时间；`formatInteger` 股数千分位）
     └── test/             setup.ts（jest-dom、matchMedia / ResizeObserver polyfill、清理 mock、清空当前账户和 localStorage）、render.tsx（renderWithProviders、jsonResponse、mockFetch——默认回答 `GET /api/accounts`）、userEvent.ts（无延迟、不做 pointer-events 检查的 user-event）、homeFixtures.ts
@@ -207,10 +207,10 @@ frontend/
 ### 路由
 | 路径 | 页面 | 说明 |
 |------|------|------|
-| `/` | `HomePage` | FEAT-008 首页概览（只读）：现金卡（`CashSummaryCard`）、已实现盈亏卡与持仓卡（`GET /api/dashboard`；FEAT-040 已实现盈亏含股票，持仓卡"期权持仓 N 个" + "股票持仓 N 个标的"链接到 `/positions#stock-positions`）、录入交易入口；底部一行后端状态（`GET /api/health`） |
+| `/` | `HomePage` | FEAT-008 首页概览（只读）：现金卡（`CashSummaryCard`）、已实现盈亏卡与持仓卡（`GET /api/dashboard`；FEAT-040 已实现盈亏含股票，持仓卡"期权持仓 N 个" + "股票持仓 N 个标的"链接到 `/positions#stock-positions`；FEAT-010 "7 天内到期 / 已过期未处理 N 个"链接到 `/positions?expiry=7` / `?expiry=expired`，0 也是链接）、录入交易入口；底部一行后端状态（`GET /api/health`） |
 | `/pnl-summary` | `PnlSummaryPage` | FEAT-008 盈亏汇总：平仓 / 卖出日期范围（URL `startDate`/`endDate`）、总计（FEAT-040 另有小字"期权 N 笔 ±X · 股票 N 笔 ±X"）、按标的 / 按月两个表格（FEAT-040 列：笔数、期权、股票、合计；某类 0 笔显示 `—`；合计行用后端总计），标的/月份链接到 `/closed`（不带类型）（导航"盈亏汇总"） |
 | `/trades` | `TradeListPage` | FEAT-002 交易列表：筛选 + 只读表格 + 分页；筛选/页码/每页条数都在 URL 查询参数里（导航"交易"） |
-| `/positions` | `PositionsPage` | FEAT-003 期权持仓：截至日期/持仓数/冻结合计 + 持仓表（可展开 FIFO 批次，合约链接到 `/trades` 筛选；FEAT-004 可平仓行有"平仓"按钮，打开平仓对话框；FEAT-012 可作废行有"作废"按钮，打开作废对话框，16:00–17:30 显示"到期待确认"；FEAT-013 空头 put 行（FEAT-041 起空头 call 行也）有"被指派"按钮，打开记录被指派对话框）；下方 FEAT-011"股票持仓"卡片（`GET /api/stock-positions`，可展开批次，标的链接到 `/stocks?symbol=`，"卖出"到 `/stocks/new?type=SELL&symbol=`；FEAT-040 卡片 `id="stock-positions"`，地址带 `#stock-positions` 时在期权与股票部分都加载后滚动到该卡片）（导航"持仓"） |
+| `/positions` | `PositionsPage` | FEAT-003 期权持仓：截至日期/持仓数/冻结合计 + 持仓表（可展开 FIFO 批次，合约链接到 `/trades` 筛选；FEAT-004 可平仓行有"平仓"按钮，打开平仓对话框；FEAT-012 可作废行有"作废"按钮，打开作废对话框，16:00–17:30 显示"到期待确认"；FEAT-013 空头 put 行（FEAT-041 起空头 call 行也）有"被指派"按钮，打开记录被指派对话框）；下方 FEAT-011"股票持仓"卡片（`GET /api/stock-positions`，可展开批次，标的链接到 `/stocks?symbol=`，"卖出"到 `/stocks/new?type=SELL&symbol=`；FEAT-040 卡片 `id="stock-positions"`，地址带 `#stock-positions` 时在期权与股票部分都加载后滚动到该卡片）；FEAT-010 期权表上方"到期"过滤（`?expiry=expired|today|7|14|30`，其它值按"全部"），只按后端 `dte` 比较、保留后端顺序，过滤时显示"显示 M / N 个持仓"并隐藏股票部分（导航"持仓"） |
 | `/stocks` | `StockTradesPage` | FEAT-011 股票交易列表：筛选（标的、类型多选、美东日期范围）+ 表格（卖出行可展开被卖出批次，修改 / 删除 / 历史）+ 分页；筛选/页码/每页条数在 URL（`symbol`、`type`、`startDate`、`endDate`、`page`、`size`）（导航"股票"） |
 | `/stocks/new` | `StockTradeEntryPage` | FEAT-011 录入股票交易（买入 / 卖出 / 转入）：现金汇总 + 表单 + 成功结果；`?type=SELL&symbol=…` 预选卖出并预填标的（持仓页股票行"卖出"） |
 | `/trades/new` | `TradeEntryPage` | 录入交易（FEAT-001 开仓 BTO/STO + FEAT-004 平仓 BTC/STC，按方向调用不同接口）：现金汇总 + 表单 + 成功确认（导航"录入交易"） |

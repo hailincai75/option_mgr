@@ -169,6 +169,11 @@ describe('HomePage: dashboard (FEAT-008)', () => {
       'href',
       '/closed?startDate=2026-11-01&endDate=2026-11-12',
     )
+    // FEAT-010 (Q105): the two expiry counts link to the filtered positions page.
+    expect(byTestId('dashboard-expiring-link')).toHaveAttribute('href', '/positions?expiry=7')
+    expect(byTestId('dashboard-expiring-link')).toHaveTextContent('7 天内到期 1 个')
+    expect(byTestId('dashboard-expired-link')).toHaveAttribute('href', '/positions?expiry=expired')
+    expect(byTestId('dashboard-expired-link')).toHaveTextContent('已过期未处理 1 个')
   })
 
   it('shows a negative total in red and zero counts without highlight', async () => {
@@ -210,6 +215,9 @@ describe('HomePage: dashboard (FEAT-008)', () => {
     expect(byTestId('dashboard-frozen-total')).toHaveTextContent('0.00')
     expect(byTestId('dashboard-positions-card')).toHaveTextContent('7 天内到期 0 个')
     expect(byTestId('dashboard-positions-card')).toHaveTextContent('已过期未处理 0 个')
+    // FEAT-010 (Q108): still links when the count is 0.
+    expect(byTestId('dashboard-expiring-link')).toHaveAttribute('href', '/positions?expiry=7')
+    expect(byTestId('dashboard-expired-link')).toHaveAttribute('href', '/positions?expiry=expired')
   })
 
   it('keeps other cards working when the dashboard request fails, and retries', async () => {

@@ -1,11 +1,20 @@
 import { useAccountQuery } from '../account/useAccountQuery'
-import { Card, Space, Spin, Typography } from 'antd'
+import { Card, Radio, Space, Spin, Typography } from 'antd'
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { getOptionPositions, optionPositionQueryKeys } from '../api/optionPositions'
 import { AssignPositionModal } from '../components/position/AssignPositionModal'
 import { ClosePositionModal } from '../components/position/ClosePositionModal'
 import { ExpirePositionModal } from '../components/position/ExpirePositionModal'
+import {
+  EXPIRY_FILTER_OPTIONS,
+  expiryEmptyMessage,
+  filterPositionsByExpiry,
+  parseExpirySearch,
+  STOCK_HIDDEN_NOTICE,
+  withExpirySearch,
+  type ExpiryFilter,
+} from '../components/position/expiryFilter'
 import { PositionTable } from '../components/position/PositionTable'
 import { QueryError } from '../components/QueryError'
 import { StockPositionsCard } from '../components/stock/StockPositionsCard'
@@ -16,12 +25,16 @@ import { formatMoney } from '../utils/format'
  * 持仓 page (FEAT-003): every current option position from `GET /api/option-positions`,
  * in backend order, with expandable FIFO lots, a 平仓 button (FEAT-004) on closable rows and a
  * 作废 button (FEAT-012) on expirable rows and a 被指派 button (FEAT-013) on short puts; below it the 股票持仓 section (FEAT-011). Every
- * number comes from the backend.
+ * number comes from the backend. FEAT-010: the 到期 filter (`?expiry=`) shows only the matching
+ * option rows (by the backend's DTE, backend order kept) and hides the stock section while active.
  */
 export function PositionsPage() {
   const [closing, setClosing] = useState<OptionPosition | null>(null)
   const [expiring, setExpiring] = useState<OptionPosition | null>(null)
   const [assigning, setAssigning] = useState<OptionPosition | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const expiryFilter = parseExpirySearch(searchParams)
+  const filtering = expiryFilter !== 'all'
   const { data, error, isPending, isFetching, refetch } = useAccountQuery({
     // FEAT-033: per-account key; runs only once the current account is known.
     queryKey: optionPositionQueryKeys.all,
@@ -46,6 +59,8 @@ export function PositionsPage() {
       />
     )
   } else {
+    const shown = filterPositionsByExpiry(data.positions, expiryFilter)
+    const filteredEmpty = expiryEmptyMessage(expiryFilter)
     content = (
       <Space orientation="vertical" size={12} style={{ width: '100%' }}>
         <Space size={24} wrap data-testid="positions-summary">
@@ -58,23 +73,32 @@ export function PositionsPage() {
           <Typography.Text data-testid="positions-frozen-total">
             冻结现金合计 {formatMoney(data.frozenTotal)}
           </Typography.Text>
+          {filtering && (
+            <Typography.Text data-testid="positions-filter-count">
+              显示 {shown.length} / {data.positionCount} 个持仓
+            </Typography.Text>
+          )}
         </Space>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           开仓净额：空头为实收、多头为实付，均已含手续费；每张平均净额四舍五入到分，仅供参考。点击合约查看该合约的交易。
         </Typography.Text>
         <PositionTable
-          positions={data.positions}
+          positions={shown}
           loading={isFetching}
           onClosePosition={setClosing}
           onExpirePosition={setExpiring}
           onAssignPosition={setAssigning}
           empty={
-            <Space orientation="vertical" data-testid="positions-empty">
-              <span>暂无持仓</span>
-              <Link to="/trades/new" data-testid="positions-empty-new">
-                录入开仓
-              </Link>
-            </Space>
+            filteredEmpty !== null && data.positions.length > 0 ? (
+              <span data-testid="positions-expiry-empty">{filteredEmpty}</span>
+            ) : (
+              <Space orientation="vertical" data-testid="positions-empty">
+                <span>暂无持仓</span>
+                <Link to="/trades/new" data-testid="positions-empty-new">
+                  录入开仓
+                </Link>
+              </Space>
+            )
           }
         />
       </Space>
@@ -84,6 +108,34 @@ export function PositionsPage() {
   return (
     <Space orientation="vertical" size={16} style={{ width: '100%' }}>
       <Card title="期权持仓" data-testid="positions-page">
+        <div
+          style={{ marginBottom: 12 }}
+          data-testid="positions-expiry-filter"
+          data-value={expiryFilter}
+        >
+          <Space size={8} wrap>
+            <Typography.Text>到期</Typography.Text>
+            <Radio.Group
+              optionType="button"
+              size="small"
+              value={expiryFilter}
+              onChange={(event) => {
+                const value: unknown = event.target.value
+                const next: ExpiryFilter =
+                  EXPIRY_FILTER_OPTIONS.find((option) => option.value === value)?.value ?? 'all'
+                setSearchParams(withExpirySearch(searchParams, next))
+              }}
+            >
+              {EXPIRY_FILTER_OPTIONS.map((option) => (
+                <Radio.Button key={option.value} value={option.value}>
+                  <span data-testid={`positions-expiry-filter-${option.value}`}>
+                    {option.label}
+                  </span>
+                </Radio.Button>
+              ))}
+            </Radio.Group>
+          </Space>
+        </div>
         {content}
         {closing !== null && (
           <ClosePositionModal
@@ -113,8 +165,16 @@ export function PositionsPage() {
           />
         )}
       </Card>
-      {/* FEAT-011: stock positions below the option positions. */}
-      <StockPositionsCard layoutReady={!isPending} />
+      {/* FEAT-011: stock positions below the option positions; FEAT-010 (Q109): hidden while filtering. */}
+      {filtering ? (
+        <Card title="股票持仓" data-testid="positions-stock-hidden-card">
+          <Typography.Text type="secondary" data-testid="positions-stock-hidden">
+            {STOCK_HIDDEN_NOTICE}
+          </Typography.Text>
+        </Card>
+      ) : (
+        <StockPositionsCard layoutReady={!isPending} />
+      )}
     </Space>
   )
 }

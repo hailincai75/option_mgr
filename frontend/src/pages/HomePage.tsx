@@ -8,6 +8,7 @@ import { dashboardQueryKeys, getDashboard } from '../api/dashboard'
 import { getHealth, healthQueryKey } from '../api/health'
 import type { Dashboard } from '../api/types'
 import { CashSummaryCard } from '../components/cash/CashSummaryCard'
+import { positionsUrlForExpiry } from '../components/position/expiryFilter'
 import { STOCK_POSITIONS_URL } from '../components/stock/stockPositionsAnchor'
 import { QueryError } from '../components/QueryError'
 import { EMPTY_TRADE_FILTERS, toTradeListSearch } from '../components/trade/tradeListFilters'
@@ -140,15 +141,20 @@ function CountLine({
   count,
   testId,
   tone,
+  to,
+  linkTestId,
 }: {
   label: string
   count: number
   testId: string
   tone?: 'warning' | 'danger'
+  /** FEAT-010 (Q105, Q108): the whole line links to the filtered positions page, also for 0. */
+  to: string
+  linkTestId: string
 }) {
   const highlight = count > 0 ? tone : undefined
   return (
-    <div>
+    <Link to={to} data-testid={linkTestId} style={{ display: 'block' }}>
       {label}{' '}
       <Typography.Text
         strong={highlight !== undefined}
@@ -159,7 +165,7 @@ function CountLine({
         {count}
       </Typography.Text>{' '}
       个
-    </div>
+    </Link>
   )
 }
 
@@ -307,12 +313,16 @@ export function HomePage() {
                     count={d.positions.expiringWithin7DaysCount}
                     testId="dashboard-expiring-count"
                     tone="warning"
+                    to={positionsUrlForExpiry('7')}
+                    linkTestId="dashboard-expiring-link"
                   />
                   <CountLine
                     label="已过期未处理"
                     count={d.positions.expiredUnprocessedCount}
                     testId="dashboard-expired-count"
                     tone="danger"
+                    to={positionsUrlForExpiry('expired')}
+                    linkTestId="dashboard-expired-link"
                   />
                   {/* FEAT-040 (Q89, Q93): shown also for 0, never highlighted. */}
                   <Link to={STOCK_POSITIONS_URL} data-testid="dashboard-stock-positions-link">
