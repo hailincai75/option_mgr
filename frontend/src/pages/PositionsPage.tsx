@@ -1,5 +1,5 @@
 import { useAccountQuery } from '../account/useAccountQuery'
-import { Button, Card, Radio, Space, Spin, Typography } from 'antd'
+import { Button, Card, Radio, Space, Spin, Switch, Typography } from 'antd'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { getOptionPositions, optionPositionQueryKeys } from '../api/optionPositions'
@@ -31,6 +31,12 @@ import { QueryError } from '../components/QueryError'
 import { MarketDataBar } from '../components/quote/MarketDataBar'
 import { StockPositionsCard } from '../components/stock/StockPositionsCard'
 import { UnrealizedSummaryBar } from '../components/unrealized/UnrealizedSummaryBar'
+import {
+  GREEKS_NOTE,
+  GREEKS_TOGGLE_LABEL,
+  readShowGreeks,
+  writeShowGreeks,
+} from '../components/greeks/greeksLabels'
 import type { AdhocClosureAlert, OptionPosition } from '../api/types'
 import { formatMoney } from '../utils/format'
 
@@ -51,6 +57,8 @@ export function PositionsPage() {
   const [adjusting, setAdjusting] = useState<OptionPosition | null>(null)
   /** FEAT-015: snapshot of the batch-expirable rows when 批量作废 was clicked. */
   const [batchExpiring, setBatchExpiring] = useState<OptionPosition[] | null>(null)
+  /** FEAT-018 (Q173): 显示 Greeks switch, default off; remembered in this browser. */
+  const [showGreeks, setShowGreeks] = useState(readShowGreeks)
   const [searchParams, setSearchParams] = useSearchParams()
   const expiryFilter = parseExpirySearch(searchParams)
   const filtering = expiryFilter !== 'all'
@@ -150,8 +158,30 @@ export function PositionsPage() {
             </Button>
           </div>
         )}
+        {/* FEAT-018: 显示 Greeks switch; the source / formula note only while it is on. */}
+        <Space size={12} wrap align="center">
+          <Space size={6} align="center">
+            <Switch
+              size="small"
+              checked={showGreeks}
+              onChange={(checked) => {
+                setShowGreeks(checked)
+                writeShowGreeks(checked)
+              }}
+              aria-label={GREEKS_TOGGLE_LABEL}
+              data-testid="positions-greeks-toggle"
+            />
+            <Typography.Text>{GREEKS_TOGGLE_LABEL}</Typography.Text>
+          </Space>
+          {showGreeks && (
+            <Typography.Text type="secondary" style={{ fontSize: 12 }} data-testid="positions-greeks-note">
+              {GREEKS_NOTE}
+            </Typography.Text>
+          )}
+        </Space>
         <PositionTable
           positions={shown}
+          showGreeks={showGreeks}
           loading={isFetching}
           onClosePosition={setClosing}
           onExpirePosition={setExpiring}

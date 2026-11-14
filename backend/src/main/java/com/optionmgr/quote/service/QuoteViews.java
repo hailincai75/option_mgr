@@ -62,6 +62,11 @@ public final class QuoteViews {
             return QuoteViews.option(options.get(c), underlyings.get(c.symbol()), indexSymbols.contains(c.symbol()),
                     c.expirationDate().isBefore(today));
         }
+
+        /** FEAT-018: the stored quote of the contract (IV / Greeks included); {@code null} = no row. */
+        public OptionState stored(ContractKey c) {
+            return options.get(c);
+        }
     }
 
     static UnderlyingQuote underlying(String symbol, UnderlyingState stored, boolean index, boolean tracked) {

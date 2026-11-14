@@ -7,6 +7,8 @@ import { decimalSign, EMPTY_VALUE, formatDateTimeNY, formatMoney } from '../../u
 import { BidAskCell, OptionMarkCell, QuoteTimeCell, UnderlyingPriceCell } from '../quote/QuoteCells'
 import { SIGNED_MONEY_COLORS, tradeActionLabel } from '../trade/tradeLabels'
 import { MarketValueCell, UnrealizedPnlCell } from '../unrealized/UnrealizedCells'
+import { GreeksHeader, GreeksIvCell, GreekValueCell } from '../greeks/GreeksCells'
+import { GREEKS_COLUMNS } from '../greeks/greeksLabels'
 import { ADHOC_CLOSURE_TAG_TEXT } from './adhocClosure'
 import { coverageTags } from './coverageLabels'
 import { ADJUST_EXPIRATION_BUTTON_TEXT, isExpirationAdjustable } from './expirationAdjustment'
@@ -206,7 +208,22 @@ function positionColumns(
   onAssignPosition: (position: OptionPosition) => void,
   onExercisePosition: (position: OptionPosition) => void,
   onAdjustExpiration: (position: OptionPosition) => void,
+  showGreeks: boolean,
 ): ColumnsType<OptionPosition> {
+  // FEAT-018 (Q173): IV / Delta / Gamma / Theta / Vega right after 未实现盈亏 while 显示 Greeks is on.
+  const greeksColumns: ColumnsType<OptionPosition> = showGreeks
+    ? GREEKS_COLUMNS.map(({ key, title, hint }) => ({
+        title: <GreeksHeader columnKey={key} title={title} hint={hint} />,
+        key: `greeks-${key}`,
+        align: 'right' as const,
+        render: (_value: unknown, position: OptionPosition) =>
+          key === 'iv' ? (
+            <GreeksIvCell greeks={position.greeks} />
+          ) : (
+            <GreekValueCell greeks={position.greeks} greek={key} />
+          ),
+      }))
+    : []
   return [
     {
       title: '合约',
@@ -286,6 +303,7 @@ function positionColumns(
         <UnrealizedPnlCell row={position} testIdPrefix="position" />
       ),
     },
+    ...greeksColumns,
     {
       title: '报价时间',
       key: 'quoteTime',
@@ -467,6 +485,8 @@ interface PositionTableProps {
   onAdjustExpiration?: (position: OptionPosition) => void
   /** FEAT-042: row highlighted after 去调整 (by contract label); null/omitted for none. */
   highlightedContract?: string | null
+  /** FEAT-018: adds the IV / Greeks columns after 未实现盈亏 (显示 Greeks switch, default off). */
+  showGreeks?: boolean
 }
 
 const NO_ADJUST = () => undefined
@@ -486,6 +506,7 @@ export function PositionTable({
   onExercisePosition,
   onAdjustExpiration = NO_ADJUST,
   highlightedContract = null,
+  showGreeks = false,
 }: PositionTableProps) {
   const { token } = theme.useToken()
   return (
@@ -498,6 +519,7 @@ export function PositionTable({
         onAssignPosition,
         onExercisePosition,
         onAdjustExpiration,
+        showGreeks,
       )}
       dataSource={positions}
       loading={loading}

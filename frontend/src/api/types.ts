@@ -470,6 +470,42 @@ export interface OptionPosition extends UnrealizedFields {
   underlyingQuote?: UnderlyingQuote
   /** FEAT-016: quote of this contract (shared across accounts). Optional: older fixtures. */
   optionQuote?: OptionQuote
+  /**
+   * FEAT-018: IV / Greeks of this row. Never null in the contract; optional here for older
+   * fixtures / responses (missing → the five Greeks columns show "—").
+   */
+  greeks?: OptionGreeks
+}
+
+/** FEAT-018 per-row Greeks status (decision order: EXPIRED_PENDING, NO_QUOTE, OK). */
+export type GreeksStatus = 'OK' | 'NO_QUOTE' | 'EXPIRED_PENDING'
+
+/**
+ * Contract: `positions[].greeks` of `GET /api/option-positions` (FEAT-018). Every value is the
+ * backend's; the frontend only formats. All value fields are null unless `status = OK`; a single
+ * null field (CBOE gave none) only affects that field (Q172).
+ */
+export interface OptionGreeks {
+  status: GreeksStatus
+  /** `无报价` / `已到期，待处理`; null when OK. Shown verbatim in all five columns. */
+  label: string | null
+  /** IV percent already ×100, scale 2, no "%" ("35.12"). */
+  ivPercent: string | null
+  /** Per-contract CBOE value (long view, not flipped), scale 4 ("-0.3021"). */
+  deltaPerContract: string | null
+  /** Position value (per contract × contracts × multiplier × direction), scale 2, no "+" ("30.21"). */
+  deltaPosition: string | null
+  gammaPerContract: string | null
+  gammaPosition: string | null
+  thetaPerContract: string | null
+  thetaPosition: string | null
+  vegaPerContract: string | null
+  vegaPosition: string | null
+  /** CBOE quote time the Greeks belong to; null when never quoted. */
+  quoteTime: InstantString | null
+  quoteTimeLocal: LocalDateTimeString | null
+  /** `Greeks 按 CBOE 报价（MM-DD HH:mm），未随手动 Mark 调整` when the mark is manual; else null. */
+  manualMarkNote: string | null
 }
 
 /** Contract: `GET /api/option-positions` → 200. */

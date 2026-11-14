@@ -85,6 +85,16 @@ export function formatPercent(value: string | null | undefined): string {
   return formatted === EMPTY_VALUE ? EMPTY_VALUE : `${formatted}%`
 }
 
+/**
+ * FEAT-018: an unsigned-by-convention percent number from the backend (already ×100, e.g. IV
+ * "35.12") as "35.12%" — no "+" for positives, "−" for negatives. String formatting only; null /
+ * invalid → "—".
+ */
+export function formatPlainPercent(value: string | null | undefined): string {
+  const formatted = formatMoney(value)
+  return formatted === EMPTY_VALUE ? EMPTY_VALUE : `${formatted}%`
+}
+
 /** Sign of a decimal string without converting it to a number: 1, -1 or 0 (also for invalid). */
 export function decimalSign(value: string | null | undefined): -1 | 0 | 1 {
   if (value == null) return 0

@@ -87,7 +87,7 @@ Q135–Q144 已定；契约阶段提出的 12 个细节已由用户确认，记�
 | `lastSuccessAt` / `lastSuccessAtLocal` | string \| null | 该标的最近一次期权链成功的**拉取时间**（run 时间，不是报价时间）；从未成功为 `null`；指数标的为 `null` |
 | `staleLabel` | string \| null | `fetchFailed` 时为该行要显示的文字：`行情未更新（上次：11-23 10:00）`（`lastSuccessAt` 美东 `MM-DD HH:mm`），从未成功过为 `行情未更新（从未成功）`；否则 `null` |
 
-IV / Greeks / last / theo / volume / open interest 只存库不在此返回（给 FEAT-018），测试通过 `GET /api/test-support/market-data/stored` 查看。
+last / theo / volume / open interest / rho 只存库不在此返回；IV / Greeks 由 FEAT-018 在同一行的 `greeks` 对象中返回（见 [FEAT-018.md](FEAT-018.md)）。原值测试通过 `GET /api/test-support/market-data/stored` 查看。
 
 示例（验收 8：10:00 拉取成功，10:05 把 P1 mark 设为 1.40、QRTV 标的价设为 52.00；账户 A 和 B 看到的 QRTV 50P 行情相同）：
 ```json

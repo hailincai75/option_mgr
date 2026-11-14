@@ -8,6 +8,7 @@ import {
   formatMoney,
   formatMonthDayTime,
   formatPercent,
+  formatPlainPercent,
   nowLocalDateTimeNY,
 } from './format'
 
@@ -150,6 +151,21 @@ describe('formatMonthDayTime (FEAT-016)', () => {
     expect(formatMonthDayTime(undefined)).toBe(EMPTY_VALUE)
     expect(formatMonthDayTime('2026-11-23T14:45:00Z')).toBe(EMPTY_VALUE)
     expect(formatMonthDayTime('')).toBe(EMPTY_VALUE)
+  })
+})
+
+describe('formatPlainPercent (FEAT-018)', () => {
+  it('adds % to the backend percent without a plus sign or rounding', () => {
+    expect(formatPlainPercent('35.12')).toBe('35.12%')
+    expect(formatPlainPercent('33.2')).toBe('33.20%')
+    expect(formatPlainPercent('0.00')).toBe('0.00%')
+    expect(formatPlainPercent('-1.5')).toBe('−1.50%')
+  })
+
+  it('returns the placeholder for null / missing / invalid values', () => {
+    expect(formatPlainPercent(null)).toBe(EMPTY_VALUE)
+    expect(formatPlainPercent(undefined)).toBe(EMPTY_VALUE)
+    expect(formatPlainPercent('abc')).toBe(EMPTY_VALUE)
   })
 })
 

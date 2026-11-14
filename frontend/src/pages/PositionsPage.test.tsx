@@ -315,18 +315,22 @@ describe('PositionsPage', () => {
     expect(screen.getAllByText('每张平均净额（仅供参考）').length).toBeGreaterThan(0)
     expect(screen.getByText(/空头为实收、多头为实付，均已含手续费/)).toBeInTheDocument()
     // Only expand toggles, the two FEAT-016 手动设置 quote buttons (标的价, Mark) and (FEAT-004)
-    // one 平仓 button per closable row; nothing else (no edit / delete).
+    // one 平仓 button per closable row, after the FEAT-018 显示 Greeks switch (a role="switch"
+    // button above the table, off by default); nothing else (no edit / delete).
     // querySelectorAll instead of getAllByRole: role queries over the whole table are very slow.
     const others = [...byTestId('positions-page').querySelectorAll('button')].filter(
       (b) => b.getAttribute('data-testid') !== 'position-expand',
     )
-    expect(others.map((b) => b.getAttribute('data-testid'))).toEqual(
-      Array.from({ length: 5 }, () => [
+    expect(others.map((b) => b.getAttribute('data-testid'))).toEqual([
+      'positions-greeks-toggle',
+      ...Array.from({ length: 5 }, () => [
         'position-underlying-price-set',
         'position-mark-set',
         'position-close',
       ]).flat(),
-    )
+    ])
+    expect(byTestId('positions-greeks-toggle')).toHaveAttribute('role', 'switch')
+    expect(byTestId('positions-greeks-toggle')).toHaveAttribute('aria-checked', 'false')
   })
 
   it('expands rows into FIFO lots and collapses them again (AC 2)', async () => {

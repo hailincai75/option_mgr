@@ -16,6 +16,8 @@ import com.optionmgr.trade.domain.PositionDirection;
 import com.optionmgr.trade.domain.PositionLot;
 import com.optionmgr.trade.domain.TradeAction;
 import com.optionmgr.trade.service.OptionPositionService;
+import com.optionmgr.valuation.domain.GreeksStatus;
+import com.optionmgr.valuation.domain.RowGreeks;
 import com.optionmgr.valuation.domain.RowValuation;
 import com.optionmgr.valuation.domain.ValuationStatus;
 import com.optionmgr.valuation.service.UnrealizedValuationService;
@@ -88,7 +90,31 @@ public class OptionPositionController {
                                    QuoteViews.UnderlyingQuote underlyingQuote, QuoteViews.OptionQuote optionQuote,
                                    /* FEAT-017: valued with optionQuote.mark (null unless unrealizedStatus = OK) */
                                    BigDecimal marketValue, BigDecimal unrealizedPnl, BigDecimal unrealizedPnlPercent,
-                                   ValuationStatus unrealizedStatus, String unrealizedLabel) {
+                                   ValuationStatus unrealizedStatus, String unrealizedLabel,
+                                   /* FEAT-018: IV / Greeks from the stored CBOE quote (never null) */
+                                   GreeksResponse greeks) {
+    }
+
+    /**
+     * FEAT-018 {@code greeks} of a row (docs/api/FEAT-018.md): per-contract values scale 4 (CBOE, not flipped),
+     * position values scale 2 (x contracts x multiplier x direction), IV percent scale 2; values {@code null} unless
+     * status OK or when CBOE gave no value. No rho (Q167).
+     */
+    public record GreeksResponse(GreeksStatus status, String label, BigDecimal ivPercent,
+                                 BigDecimal deltaPerContract, BigDecimal deltaPosition,
+                                 BigDecimal gammaPerContract, BigDecimal gammaPosition,
+                                 BigDecimal thetaPerContract, BigDecimal thetaPosition,
+                                 BigDecimal vegaPerContract, BigDecimal vegaPosition,
+                                 Instant quoteTime, String quoteTimeLocal, String manualMarkNote) {
+
+        static GreeksResponse of(RowGreeks g) {
+            return new GreeksResponse(g.status(), g.label(), g.ivPercent(),
+                    g.delta().perContract(), g.delta().position(), g.gamma().perContract(), g.gamma().position(),
+                    g.theta().perContract(), g.theta().position(), g.vega().perContract(), g.vega().position(),
+                    g.quoteTime(),
+                    g.quoteTime() == null ? null : LOCAL_SECONDS.format(MarketTime.toLocal(g.quoteTime())),
+                    g.manualMarkNote());
+        }
     }
 
     /** FEAT-013: one selectable assignment size (earliest whole lots) and its shares. */
@@ -161,7 +187,8 @@ public class OptionPositionController {
                 adhocClosureName != null, adhocClosureName, adj != null, adj == null ? 0 : adj.recordCount(),
                 adj == null ? null : adj.defaultDate(), adj == null ? null : adj.minDate(),
                 adj == null ? null : adj.maxDate(), book.underlying(c.symbol()), optionQuote,
-                v.marketValue(), v.unrealizedPnl(), v.percent(), v.status(), v.label());
+                v.marketValue(), v.unrealizedPnl(), v.percent(), v.status(), v.label(),
+                GreeksResponse.of(UnrealizedValuationService.greeks(p, today, optionQuote, book.stored(c))));
     }
 
     private static LotResponse toResponse(PositionLot l, OptionPositionService.RowCoverage rc) {
