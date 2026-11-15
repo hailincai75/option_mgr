@@ -1,5 +1,7 @@
 # FEAT-019 组合 Greeks 汇总（只读，实时计算，不存库）
 
+> **FEAT-035 修订**：`X-Account-Id: ALL` → 400 `ALL_ACCOUNTS_NOT_SUPPORTED`（跨账户 Greeks 汇总在 FEAT-047，Q224）。见 [FEAT-035.md](FEAT-035.md)。
+
 口径全部已定：Q174–Q182（以及引用的 Q154 / Q157 / Q158 / Q160 / Q161 / Q163–Q173）。行情字段沿用 [FEAT-016.md](FEAT-016.md)，行 Greeks 沿用 [FEAT-018.md](FEAT-018.md)，"未计入"提示文字沿用 [FEAT-017.md](FEAT-017.md)。示例标的均为虚构（QRTV、IXQZ），数字与需求验收一致（今天 2026-11-23 星期一，10:00 拉取成功，标的价 QRTV 52.40、IXQZ 61.10，multiplier 100）。
 
 **兼容性一览**

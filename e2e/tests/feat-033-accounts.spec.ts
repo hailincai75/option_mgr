@@ -297,6 +297,9 @@ test.describe('FEAT-033 多账户', () => {
     await page.getByTestId(`account-option-${sid}`).dispatchEvent('click')
     await expect(page.getByTestId('account-current')).toHaveText('小账户')
     await expect(d).toBeHidden()
+    // the "已切换到账户" toast sits over the top nav and stays while hovered: move the mouse away, let it close
+    await page.mouse.move(5, 400)
+    await expect(page.locator('.ant-message-notice')).toHaveCount(0)
 
     // half-filled entry form is discarded
     await page.getByTestId('nav-open-trade').click()

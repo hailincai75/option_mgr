@@ -36,4 +36,36 @@ class AdhocClosureAlertsTest {
         assertThat(AdhocClosureAlerts.alerts(ACTIVE, List.of(LocalDate.of(2026, 12, 18)))).isEmpty();
         assertThat(AdhocClosureAlerts.alerts(Map.of(), List.of(DEC4))).isEmpty();
     }
+
+    // ---------------------------------------------------------------- FEAT-035
+
+    static final List<AdhocClosureAlerts.AccountPositions> TWO_ACCOUNTS = List.of(
+            new AdhocClosureAlerts.AccountPositions(1, "甲账户", List.of(DEC4, LocalDate.of(2026, 12, 18))),
+            new AdhocClosureAlerts.AccountPositions(2, "乙账户", List.of(DEC4, DEC4, MOURNING)),
+            new AdhocClosureAlerts.AccountPositions(3, "丙账户", List.of()));
+
+    @Test
+    void feat035_allAccounts_sumsRowsAndSplitsByAccountInTheMessage() {
+        List<AdhocClosureAlerts.AccountsAlert> alerts = AdhocClosureAlerts.alerts(ACTIVE, TWO_ACCOUNTS, true);
+        assertThat(alerts).extracting(AdhocClosureAlerts.AccountsAlert::date).containsExactly(MOURNING, DEC4);
+        AdhocClosureAlerts.AccountsAlert dec4 = alerts.get(1);
+        assertThat(dec4.affectedPositionCount()).isEqualTo(3);
+        assertThat(dec4.byAccount()).containsExactly(new AdhocClosureAlerts.AccountCount(1, "甲账户", 1),
+                new AdhocClosureAlerts.AccountCount(2, "乙账户", 2));
+        assertThat(dec4.message()).isEqualTo("2026-12-04 临时休市（National Day of Mourning），你有 3 个持仓在该日到期"
+                + "（甲账户 1 个、乙账户 2 个），期权通常改为前一个交易日到期，请核对并调整到期日");
+        // one affected account: still listed (contract note 4)
+        assertThat(alerts.get(0).byAccount()).containsExactly(new AdhocClosureAlerts.AccountCount(2, "乙账户", 1));
+        assertThat(alerts.get(0).message()).contains("你有 1 个持仓在该日到期（乙账户 1 个），");
+    }
+
+    @Test
+    void feat035_singleAccount_keepsTheFeat042MessageWithItsOwnByAccount() {
+        List<AdhocClosureAlerts.AccountsAlert> alerts = AdhocClosureAlerts.alerts(ACTIVE,
+                List.of(TWO_ACCOUNTS.get(1)), false);
+        AdhocClosureAlerts.AccountsAlert dec4 = alerts.get(1);
+        assertThat(dec4.byAccount()).containsExactly(new AdhocClosureAlerts.AccountCount(2, "乙账户", 2));
+        assertThat(dec4.message()).isEqualTo(AdhocClosureAlerts.message(DEC4, "National Day of Mourning", 2));
+        assertThat(AdhocClosureAlerts.alerts(ACTIVE, List.of(TWO_ACCOUNTS.get(2)), true)).isEmpty();
+    }
 }

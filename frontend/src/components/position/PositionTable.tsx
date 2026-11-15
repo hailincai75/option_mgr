@@ -14,6 +14,8 @@ import { coverageTags } from './coverageLabels'
 import { DirectionTag, DteCell, SignedMoney } from './PositionCells'
 import { ADJUST_EXPIRATION_BUTTON_TEXT, isExpirationAdjustable } from './expirationAdjustment'
 import { tradesUrlForPosition } from './positionLinks'
+import { AccountNameCell } from '../account/AccountNameCell'
+import { rowAccountKey } from '../account/rowAccountKey'
 
 function FrozenMoney({ value, testId }: { value: string; testId: string }) {
   return (
@@ -150,6 +152,7 @@ function positionColumns(
   onExercisePosition: (position: OptionPosition) => void,
   onAdjustExpiration: (position: OptionPosition) => void,
   showGreeks: boolean,
+  allAccounts: boolean,
 ): ColumnsType<OptionPosition> {
   // FEAT-018 (Q173): IV / Delta / Gamma / Theta / Vega right after 未实现盈亏 while 显示 Greeks is on.
   const greeksColumns: ColumnsType<OptionPosition> = showGreeks
@@ -165,7 +168,20 @@ function positionColumns(
           ),
       }))
     : []
-  return [
+  // FEAT-035 (Q214): 账户 first column, only in 全部账户 mode.
+  const accountColumns: ColumnsType<OptionPosition> = allAccounts
+    ? [
+        {
+          title: '账户',
+          key: 'account',
+          render: (_value: unknown, position: OptionPosition) => (
+            <AccountNameCell row={position} testId="position-cell-account" />
+          ),
+        },
+      ]
+    : []
+  const columns: ColumnsType<OptionPosition> = [
+    ...accountColumns,
     {
       title: '合约',
       key: 'contract',
@@ -403,6 +419,8 @@ function positionColumns(
       },
     },
   ]
+  // FEAT-035 rule 5 (Q217): no write buttons at all in 全部账户 mode (hidden, not disabled).
+  return allAccounts ? columns.filter((column) => column.key !== 'actions') : columns
 }
 
 interface PositionTableProps {
@@ -423,6 +441,8 @@ interface PositionTableProps {
   highlightedContract?: string | null
   /** FEAT-018: adds the IV / Greeks columns after 未实现盈亏 (显示 Greeks switch, default off). */
   showGreeks?: boolean
+  /** FEAT-035: 全部账户 mode — adds the 账户 first column and drops the 操作 column. */
+  allAccounts?: boolean
 }
 
 const NO_ADJUST = () => undefined
@@ -443,11 +463,13 @@ export function PositionTable({
   onAdjustExpiration = NO_ADJUST,
   highlightedContract = null,
   showGreeks = false,
+  allAccounts = false,
 }: PositionTableProps) {
   const { token } = theme.useToken()
   return (
     <Table<OptionPosition>
-      rowKey="contractLabel"
+      // FEAT-035 (Q215): the same contract may appear once per account.
+      rowKey={(position) => rowAccountKey(position, position.contractLabel)}
       size="small"
       columns={positionColumns(
         onClosePosition,
@@ -456,6 +478,7 @@ export function PositionTable({
         onExercisePosition,
         onAdjustExpiration,
         showGreeks,
+        allAccounts,
       )}
       dataSource={positions}
       loading={loading}
@@ -464,7 +487,8 @@ export function PositionTable({
         ({
           'data-testid': 'position-row',
           'data-contract': position.contractLabel,
-          ...(position.contractLabel === highlightedContract
+          'data-account-id': position.accountId,
+          ...(!allAccounts && position.contractLabel === highlightedContract
             ? {
                 'data-highlighted': 'true',
                 style: { background: token.colorErrorBg },

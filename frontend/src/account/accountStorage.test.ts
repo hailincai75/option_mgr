@@ -1,6 +1,7 @@
 import type { Account } from '../api/types'
 import {
   ACCOUNT_STORAGE_KEY,
+  canSelectAllAccounts,
   readStoredAccountId,
   resolveAccountId,
   writeStoredAccountId,
@@ -45,5 +46,21 @@ describe('accountStorage (FEAT-033, Q55)', () => {
     expect(resolveAccountId(accounts, 99)).toBe(1)
     expect(resolveAccountId(accounts, null)).toBe(1)
     expect(resolveAccountId([], 2)).toBeNull()
+  })
+
+  it('FEAT-035: remembers 全部账户 as ALL (Q219)', () => {
+    writeStoredAccountId('ALL')
+    expect(window.localStorage.getItem(ACCOUNT_STORAGE_KEY)).toBe('ALL')
+    expect(readStoredAccountId()).toBe('ALL')
+    window.localStorage.setItem(ACCOUNT_STORAGE_KEY, 'all')
+    expect(readStoredAccountId()).toBeNull()
+  })
+
+  it('FEAT-035: keeps ALL only with at least 2 accounts (Q220), else the lowest id', () => {
+    expect(resolveAccountId([account(2), account(1)], 'ALL')).toBe('ALL')
+    expect(resolveAccountId([account(2)], 'ALL')).toBe(2)
+    expect(resolveAccountId([], 'ALL')).toBeNull()
+    expect(canSelectAllAccounts([account(1)])).toBe(false)
+    expect(canSelectAllAccounts([account(1), account(2)])).toBe(true)
   })
 })

@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { useIsAllAccounts } from '../account/AccountContext'
 import { useAccountQuery } from '../account/useAccountQuery'
 import { Alert, Button, Card, Col, Row, Space, Spin, Statistic, Tag, Typography } from 'antd'
 import type { ReactNode } from 'react'
@@ -177,10 +178,12 @@ function CountLine({
 export function HomePage() {
   const dashboard = useDashboard()
   const navigate = useNavigate()
+  /** FEAT-035: 全部账户 — every figure is the backend's all-account total; 录入交易 hidden. */
+  const allAccounts = useIsAllAccounts()
 
   return (
     <Space orientation="vertical" size={16} style={{ width: '100%' }} data-testid="dashboard">
-      {/* FEAT-042 rule 4: 去调整 opens the positions page. */}
+      {/* FEAT-042 rule 4: 去调整 opens the positions page (FEAT-035: 切换到 <账户> 去调整). */}
       <AdhocClosureAlerts />
       <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
         <Typography.Title level={4} style={{ margin: 0 }}>
@@ -191,15 +194,17 @@ export function HomePage() {
             </Typography.Text>
           )}
         </Typography.Title>
-        <Button
-          type="primary"
-          onClick={() => {
-            void navigate('/trades/new')
-          }}
-          data-testid="dashboard-new-trade"
-        >
-          录入交易
-        </Button>
+        {!allAccounts && (
+          <Button
+            type="primary"
+            onClick={() => {
+              void navigate('/trades/new')
+            }}
+            data-testid="dashboard-new-trade"
+          >
+            录入交易
+          </Button>
+        )}
       </Space>
 
       <CashSummaryCard

@@ -135,6 +135,35 @@ describe('X-Account-Id (FEAT-033)', () => {
     },
   )
 
+  it('FEAT-035: sends ALL in 全部账户 mode and shows the backend read-only error', async () => {
+    const fetchMock = mockFetch()
+    setApiAccountId('ALL')
+    fetchMock.mockImplementationOnce(() => Promise.resolve(jsonResponse({})))
+    await apiRequest('/api/dashboard')
+    expect(headersOf(fetchMock)['X-Account-Id']).toBe('ALL')
+
+    fetchMock.mockImplementationOnce(() =>
+      Promise.resolve(
+        jsonResponse(
+          {
+            code: 'ALL_ACCOUNTS_READ_ONLY',
+            message: '全部账户模式只读：录入、修改、删除请先选择一个账户',
+            status: 400,
+            path: '/api/cash/transfers',
+            timestamp: '2026-11-23T15:00:00Z',
+            details: [{ field: 'X-Account-Id', message: '请选择一个账户' }],
+          },
+          400,
+        ),
+      ),
+    )
+    const error = await catchError(apiRequest('/api/cash/transfers', { method: 'POST', body: {} }))
+    expect(error).toMatchObject({
+      code: 'ALL_ACCOUNTS_READ_ONLY',
+      message: '全部账户模式只读：录入、修改、删除请先选择一个账户',
+    })
+  })
+
   it('sends nothing without an account and fails with a Chinese message', async () => {
     const fetchMock = mockFetch()
     fetchMock.mockImplementation(() => Promise.resolve(jsonResponse({})))

@@ -1,6 +1,10 @@
 package com.optionmgr.cash.web;
 
 import com.optionmgr.account.web.AccountRef;
+import com.optionmgr.account.web.AccountScope;
+import com.optionmgr.cash.web.CashDtos.AccountCashResponse;
+import java.util.ArrayList;
+import java.util.List;
 import com.optionmgr.cash.domain.CashBalance;
 import com.optionmgr.cash.service.CashLedgerService;
 import com.optionmgr.cash.service.CashTransferEditService;
@@ -41,9 +45,16 @@ public class CashController {
     }
 
     @GetMapping("/summary")
-    public CashSummaryResponse summary(AccountRef account) {
-        CashBalance b = ledger.currentBalance(account.id());
-        return new CashSummaryResponse(b.total(), b.frozen(), b.available());
+    public CashSummaryResponse summary(AccountScope scope) {
+        // FEAT-035: every account of the scope (accounts without records included, 0.00); top level = exact sums
+        CashBalance sum = CashBalance.EMPTY;
+        List<AccountCashResponse> rows = new ArrayList<>();
+        for (AccountScope.Member m : scope.accounts()) {
+            CashBalance b = ledger.currentBalance(m.id());
+            sum = sum.plus(b);
+            rows.add(new AccountCashResponse(m.id(), m.name(), b.total(), b.frozen(), b.available()));
+        }
+        return new CashSummaryResponse(sum.total(), sum.frozen(), sum.available(), rows);
     }
 
     @PostMapping("/transfers")

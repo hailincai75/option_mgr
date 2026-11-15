@@ -373,13 +373,18 @@ class Feat042AdhocClosureSystemTest {
         List<String> out = new ArrayList<>();
         String prev = "";
         for (JsonNode a : r.body().get("alerts")) {
-            assertThat(fieldNames(a)).containsExactlyInAnyOrder("date", "eventName", "affectedPositionCount", "message");
+            // FEAT-035 added byAccount[] (single account: exactly this account with the same count)
+            assertThat(fieldNames(a)).containsExactlyInAnyOrder("date", "eventName", "affectedPositionCount",
+                    "byAccount", "message");
             String date = a.get("date").asText();
             assertThat(date).as("alerts sorted by date ascending").isGreaterThan(prev);
             prev = date;
             assertThat(a.get("affectedPositionCount").isInt()).isTrue();
             int n = a.get("affectedPositionCount").asInt();
             assertThat(n).as("only dates with affected positions").isGreaterThanOrEqualTo(1);
+            assertThat(a.get("byAccount").size()).as("FEAT-035 byAccount of a single account").isEqualTo(1);
+            assertThat(a.get("byAccount").get(0).get("accountId").asText()).isEqualTo(accountId);
+            assertThat(a.get("byAccount").get(0).get("affectedPositionCount").asInt()).isEqualTo(n);
             String name = a.get("eventName").asText();
             assertThat(a.get("message").asText()).isEqualTo(message(date, name, n));
             out.add(date + "|" + name + "|" + n);

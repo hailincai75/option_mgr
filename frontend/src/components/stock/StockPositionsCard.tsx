@@ -1,6 +1,7 @@
 import { Card, Space, Spin, Typography } from 'antd'
 import { useEffect, useRef } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { useIsAllAccounts } from '../../account/AccountContext'
 import { useAccountQuery } from '../../account/useAccountQuery'
 import { getStockPositions, stockPositionQueryKeys } from '../../api/stockTrades'
 import { QueryError } from '../QueryError'
@@ -18,6 +19,8 @@ export function StockPositionsCard({ layoutReady = true }: { layoutReady?: boole
   const navigate = useNavigate()
   const { hash } = useLocation()
   const scrolled = useRef(false)
+  /** FEAT-035: 全部账户 (read-only) — 账户 column, no 卖出 / 录入 links. */
+  const allAccounts = useIsAllAccounts()
   const { data, error, isPending, isFetching, refetch } = useAccountQuery({
     // FEAT-033: per-account key; runs only once the current account is known.
     queryKey: stockPositionQueryKeys.all,
@@ -60,15 +63,18 @@ export function StockPositionsCard({ layoutReady = true }: { layoutReady?: boole
         <StockPositionTable
           positions={data.positions}
           loading={isFetching}
+          allAccounts={allAccounts}
           onSell={(position) => {
             void navigate(stockSellUrl(position.symbol))
           }}
           empty={
             <Space orientation="vertical" data-testid="stock-positions-empty">
               <span>暂无股票持仓</span>
-              <Link to="/stocks/new" data-testid="stock-positions-empty-new">
-                录入股票交易
-              </Link>
+              {!allAccounts && (
+                <Link to="/stocks/new" data-testid="stock-positions-empty-new">
+                  录入股票交易
+                </Link>
+              )}
             </Space>
           }
         />
@@ -89,9 +95,11 @@ export function StockPositionsCard({ layoutReady = true }: { layoutReady?: boole
         </Space>
       }
       extra={
-        <Link to="/stocks/new" data-testid="stock-positions-new">
-          录入股票交易
-        </Link>
+        allAccounts ? undefined : (
+          <Link to="/stocks/new" data-testid="stock-positions-new">
+            录入股票交易
+          </Link>
+        )
       }
       id={STOCK_POSITIONS_ANCHOR}
       data-testid="stock-positions"

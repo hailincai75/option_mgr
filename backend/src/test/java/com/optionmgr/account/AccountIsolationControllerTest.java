@@ -205,9 +205,12 @@ class AccountIsolationControllerTest {
         Map<String, JsonNode> after = main.snapshot();
         for (String key : before.keySet()) {
             if (!key.startsWith("/api/audit-log")) {
-                assertThat(after.get(key)).as(key).isEqualTo(before.get(key));
+                // FEAT-035: rows carry the account's current name; everything else is unchanged
+                assertThat(after.get(key).toString().replace("\"accountName\":\"主账户\"", "\"accountName\":\"默认账户\""))
+                        .as(key).isEqualTo(before.get(key).toString());
             }
         }
+        assertThat(after.get("/api/cash/summary").at("/accounts/0/accountName").asText()).isEqualTo("主账户");
         assertThat(after.get("/api/audit-log?size=100").get("totalItems").asInt()).isEqualTo(3);
     }
 

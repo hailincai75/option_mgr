@@ -23,6 +23,10 @@ export type ApiErrorCode =
   | 'UNSUPPORTED_MEDIA_TYPE'
   | 'BUSINESS_RULE_VIOLATION'
   | 'INTERNAL_ERROR'
+  /** FEAT-035: a write sent with `X-Account-Id: ALL`. */
+  | 'ALL_ACCOUNTS_READ_ONLY'
+  /** FEAT-035: a GET that does not support `X-Account-Id: ALL` yet (or ever, e.g. audit). */
+  | 'ALL_ACCOUNTS_NOT_SUPPORTED'
 
 /**
  * Contract «统一错误格式». `code` also allows feature-specific codes that the contract
@@ -59,10 +63,31 @@ export type LocalDateTimeString = string
 
 /** Contract: `GET /api/cash/summary` → 200. */
 export interface CashSummary {
+  /** FEAT-035: with `X-Account-Id: ALL`, the sum over every account. */
   totalCash: MoneyString
-  /** Always "0.00" within FEAT-007. */
   frozenCash: MoneyString
   availableCash: MoneyString
+  /**
+   * FEAT-035: one row per account (ascending id; `ALL` → every account, single → just that one).
+   * Always sent by the contract; optional for older fixtures.
+   */
+  accounts?: CashSummaryAccount[]
+}
+
+/** FEAT-035: `GET /api/cash/summary` → `accounts[]`. */
+export interface CashSummaryAccount {
+  accountId: number
+  accountName: string
+  totalCash: MoneyString
+  frozenCash: MoneyString
+  availableCash: MoneyString
+}
+
+/** FEAT-035: account of a position row (always sent by the contract; optional for older fixtures). */
+export interface RowAccountFields {
+  accountId?: number
+  /** Current account name at request time. */
+  accountName?: string
 }
 
 /** `POST /api/cash/transfers` → `type`. */
@@ -358,7 +383,7 @@ export interface OptionPositionLot {
 export type CoverageStatus = 'CHECKED' | 'LEGACY' | (string & {})
 
 /** Contract: `GET /api/option-positions` → `positions[]`. Every value is display-ready. */
-export interface OptionPosition extends UnrealizedFields {
+export interface OptionPosition extends UnrealizedFields, RowAccountFields {
   /** FEAT-004: action that closes this position (short → BTC, long → STC). */
   closeAction: ClosingAction
   /** FEAT-004: contract counts that can be closed now (cumulative whole earliest lots), ascending. */
@@ -1177,7 +1202,7 @@ export interface StockPositionLot {
 }
 
 /** Contract: `GET /api/stock-positions` → `positions[]`. */
-export interface StockPosition extends UnrealizedFields {
+export interface StockPosition extends UnrealizedFields, RowAccountFields {
   symbol: string
   shares: number
   /** FEAT-039: shares currently covering CHECKED short calls (optional: older fixtures). */
@@ -1263,6 +1288,18 @@ export interface AdhocClosureAlert {
   affectedPositionCount: number
   /** Complete line to show verbatim (without the trailing 去调整 link). */
   message: string
+  /**
+   * FEAT-035 (Q221): affected positions per account (count ≥ 1, ascending id). `ALL` → every
+   * affected account; single account → just that one. Optional for older fixtures.
+   */
+  byAccount?: AdhocClosureAccountCount[]
+}
+
+/** FEAT-035: `GET /api/adhoc-closure-alerts` → `alerts[].byAccount[]`. */
+export interface AdhocClosureAccountCount {
+  accountId: number
+  accountName: string
+  affectedPositionCount: number
 }
 
 /** Contract: `GET /api/adhoc-closure-alerts` → 200 (current account; `[]` when none, Q129). */

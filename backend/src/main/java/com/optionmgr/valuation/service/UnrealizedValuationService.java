@@ -16,6 +16,7 @@ import com.optionmgr.valuation.domain.RowValuation;
 import com.optionmgr.valuation.domain.UnrealizedSummary;
 import com.optionmgr.valuation.domain.UnrealizedValuation;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -75,13 +76,27 @@ public class UnrealizedValuationService {
     /** All current positions of the account (no filter, Q158). */
     @Transactional(readOnly = true)
     public Summary summary(long accountId) {
-        OptionPositionService.PositionSummary s = options.currentPositions(accountId);
+        return summary(List.of(accountId));
+    }
+
+    /**
+     * FEAT-035 (Q216): totals over several accounts = the totals of all their rows, each row valued exactly as in its
+     * own account; one clock reading and one {@code QuoteBook} for all accounts.
+     */
+    @Transactional(readOnly = true)
+    public Summary summary(List<Long> accountIds) {
+        List<OptionPositionService.PositionSummary> summaries = options.currentPositions(accountIds);
         QuoteViews.QuoteBook book = quotes.book();
-        List<RowValuation> optionRows = s.positions().stream()
-                .map(p -> option(p, s.asOfDate(), book.option(p.contract()))).toList();
-        List<RowValuation> stockRows = stocks.currentPositions(accountId).stream()
-                .map(p -> stock(p, book.underlying(p.symbol()))).toList();
-        return new Summary(s.asOfDate(), UnrealizedSummary.of(optionRows, stockRows));
+        List<RowValuation> optionRows = new ArrayList<>();
+        List<RowValuation> stockRows = new ArrayList<>();
+        for (int i = 0; i < accountIds.size(); i++) {
+            OptionPositionService.PositionSummary s = summaries.get(i);
+            s.positions().forEach(p -> optionRows.add(option(p, s.asOfDate(), book.option(p.contract()))));
+            stocks.currentPositions(accountIds.get(i))
+                    .forEach(p -> stockRows.add(stock(p, book.underlying(p.symbol()))));
+        }
+        LocalDate asOfDate = summaries.isEmpty() ? null : summaries.get(0).asOfDate();
+        return new Summary(asOfDate, UnrealizedSummary.of(optionRows, stockRows));
     }
 
     public record GreeksSummaryResult(LocalDate asOfDate, GreeksSummary summary) {

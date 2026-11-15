@@ -42,7 +42,14 @@ public final class CashDtos {
                                    long ledgerEntryId, Instant createdAt) {
     }
 
-    public record CashSummaryResponse(BigDecimal totalCash, BigDecimal frozenCash, BigDecimal availableCash) {
+    /** FEAT-035: {@code accounts} = one row per account of the scope (only the account itself for a single account). */
+    public record CashSummaryResponse(BigDecimal totalCash, BigDecimal frozenCash, BigDecimal availableCash,
+                                      List<AccountCashResponse> accounts) {
+    }
+
+    /** FEAT-035: one account's cash (the same three values as that account's own summary). */
+    public record AccountCashResponse(long accountId, String accountName, BigDecimal totalCash, BigDecimal frozenCash,
+                                      BigDecimal availableCash) {
     }
 
     public record LedgerEntryResponse(long id, Instant occurredAt, CashSourceType sourceType, long sourceId,

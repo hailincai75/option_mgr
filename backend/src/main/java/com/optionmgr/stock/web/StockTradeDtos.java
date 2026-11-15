@@ -137,7 +137,9 @@ public final class StockTradeDtos {
     }
 
     /** FEAT-039: {@code coveredShares} = shares covered by CHECKED short calls now; available = shares - covered. */
-    public record StockPositionResponse(String symbol, long shares, long coveredShares, long availableShares,
+    public record StockPositionResponse(/* FEAT-035: the account of the row (current name) */
+                                        long accountId, String accountName,
+                                        String symbol, long shares, long coveredShares, long availableShares,
                                         BigDecimal totalCost, BigDecimal averageCost,
                                         int lotCount, List<StockLotResponse> lots,
                                         /* FEAT-016: current price (one set for all accounts) */
@@ -149,6 +151,7 @@ public final class StockTradeDtos {
                                         String unrealizedLabel) {
     }
 
+    /** {@code positionCount} = distinct symbols (FEAT-035: the same symbol in two accounts counts 1; rows stay split). */
     public record StockPositionsResponse(int positionCount, List<StockPositionResponse> positions) {
     }
 }

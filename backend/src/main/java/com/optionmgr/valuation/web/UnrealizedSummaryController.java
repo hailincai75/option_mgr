@@ -1,6 +1,6 @@
 package com.optionmgr.valuation.web;
 
-import com.optionmgr.account.web.AccountRef;
+import com.optionmgr.account.web.AccountScope;
 import com.optionmgr.valuation.domain.UnrealizedSummary;
 import com.optionmgr.valuation.service.UnrealizedValuationService;
 import java.math.BigDecimal;
@@ -34,8 +34,8 @@ public class UnrealizedSummaryController {
     }
 
     @GetMapping
-    public SummaryResponse summary(AccountRef account) {
-        UnrealizedValuationService.Summary s = service.summary(account.id());
+    public SummaryResponse summary(AccountScope account) {
+        UnrealizedValuationService.Summary s = service.summary(account.ids());
         UnrealizedSummary t = s.totals();
         return new SummaryResponse(s.asOfDate(), GroupResponse.of(t.option()), GroupResponse.of(t.stock()),
                 GroupResponse.of(t.total()), t.excludedLabel());

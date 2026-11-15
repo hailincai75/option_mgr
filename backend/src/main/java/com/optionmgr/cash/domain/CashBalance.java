@@ -17,6 +17,11 @@ public record CashBalance(BigDecimal total, BigDecimal frozen) {
         return total.subtract(frozen);
     }
 
+    /** FEAT-035 Q216: the exact sum of two accounts' balances (no rounding). */
+    public CashBalance plus(CashBalance other) {
+        return new CashBalance(total.add(other.total), frozen.add(other.frozen));
+    }
+
     public CashBalance apply(CashMovement movement) {
         return new CashBalance(total.add(movement.cashChange()), frozen.add(movement.frozenChange()));
     }

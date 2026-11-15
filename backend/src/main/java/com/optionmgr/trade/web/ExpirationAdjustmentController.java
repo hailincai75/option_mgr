@@ -1,5 +1,6 @@
 package com.optionmgr.trade.web;
 
+import com.optionmgr.account.service.AccountService;
 import com.optionmgr.account.web.AccountRef;
 import com.optionmgr.quote.service.QuoteQueryService;
 import com.optionmgr.trade.domain.ContractKey;
@@ -21,8 +22,11 @@ public class ExpirationAdjustmentController {
 
     private final ExpirationAdjustmentService service;
     private final QuoteQueryService quotes;
+    private final AccountService accounts;
 
-    public ExpirationAdjustmentController(ExpirationAdjustmentService service, QuoteQueryService quotes) {
+    public ExpirationAdjustmentController(ExpirationAdjustmentService service, QuoteQueryService quotes,
+                                          AccountService accounts) {
+        this.accounts = accounts;
         this.service = service;
         this.quotes = quotes;
     }
@@ -39,8 +43,10 @@ public class ExpirationAdjustmentController {
         ExpirationAdjustmentService.Result r = service.adjust(account.id(),
                 new ExpirationAdjustmentService.Command(contract, req.newExpirationDate(), req.note()));
         ContractKey c = r.newContract();
+        String name = accounts.get(account.id()).getName(); // FEAT-035: the row carries its account
         return new AdjustExpirationResponse(r.auditId(), c.symbol(), ContractKey.strikeText(c.strike()),
                 c.optionType(), r.oldContract().expirationDate(), c.expirationDate(), c.label(), r.tradeIds(),
-                r.position().map(p -> OptionPositionController.toResponse(p, r.summary(), quotes.book())).orElse(null));
+                r.position().map(p -> OptionPositionController.toResponse(account.id(), name, p, r.summary(),
+                        quotes.book())).orElse(null));
     }
 }

@@ -83,18 +83,25 @@ const ACCOUNT_FREE_PREFIXES = [
   '/api/market-data',
 ] as const
 
-let currentAccountId: number | null = null
+/** FEAT-035: `X-Account-Id` value for 全部账户 (read-only; accepted by 7 GETs only). */
+export const ALL_ACCOUNTS = 'ALL'
+
+/** FEAT-035: the current account scope — one account id, or every account (`ALL`, read-only). */
+export type AccountScope = number | typeof ALL_ACCOUNTS
+
+let currentAccountId: AccountScope | null = null
 
 /**
  * Sets the account sent as `X-Account-Id` on every account-scoped request. Called by the account
  * context when the current account is resolved or switched; `null` sends no header (the backend
  * then rejects the request with ACCOUNT_REQUIRED, so nothing is ever written to a guessed account).
+ * FEAT-035: `ALL` sends `X-Account-Id: ALL`; the backend rejects writes with ALL_ACCOUNTS_READ_ONLY.
  */
-export function setApiAccountId(accountId: number | null): void {
+export function setApiAccountId(accountId: AccountScope | null): void {
   currentAccountId = accountId
 }
 
-export function getApiAccountId(): number | null {
+export function getApiAccountId(): AccountScope | null {
   return currentAccountId
 }
 

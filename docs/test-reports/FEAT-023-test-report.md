@@ -59,3 +59,19 @@
 ## 疑问 / 需求不清楚的地方
 - call 被指派的股票卖出实收按 Q8"暂定"口径（行权价 × 股数 + 权利金 − 费用）断言 +785.35。该口径以后如果改了，这条边界测试要同步改。
 - 场景中 ZWLK"无现价"是靠假数据源不配置 ZWLK（= unreachable）实现的，ZWLK 的拉取结果会记为失败。这不影响本需求的数字。
+
+## M4 里程碑全量 E2E
+
+- **日期:** 2026-11-15
+- **命令:** `cd e2e && npx playwright test`（默认 3 个 worker，每个 worker 用自己的 e2e 后端 18080+i 和 Vite 15173+i，不使用 8080 / 5173；后端 boot jar 由本次 `gradlew.bat build` 重新生成）
+- **范围:** `e2e/tests/` 下全部 28 个 spec（FEAT-001 至 FEAT-019、021、023、033、038–043）
+
+| 检查 | 结果 | 耗时 |
+|------|------|------|
+| 后端 `gradlew.bat build`（全部后端测试） | BUILD SUCCESSFUL，116 个测试类 / 1382 个测试，0 失败、0 跳过 | 3 分 12 秒 |
+| 前端 `npm run lint && npm run typecheck && npm test` | lint 0 警告（`--max-warnings 0`），typecheck 通过，Vitest 49 个文件 / 746 个测试全部通过 | 3 分 26 秒 |
+| 全量 E2E `npx playwright test` | 396 个测试，396 通过，0 失败，0 flaky（retries = 0） | 12.9 分钟 |
+
+- **失败:** 无。没有修改任何测试代码，也没有重跑。
+- M4 的 feat-021 / feat-023 及此前各里程碑的 spec 全部通过。
+- **发现的 Bug:** 无。

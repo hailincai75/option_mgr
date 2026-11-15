@@ -1,9 +1,11 @@
 import { Alert, Button, Layout, Menu, Spin, Typography } from 'antd'
 import { Link, Outlet, Route, Routes, useLocation } from 'react-router-dom'
-import { useAccountId } from './account/AccountContext'
+import { useAccount } from './account/AccountContext'
+import { ALL_ACCOUNTS_READ_ONLY_HINT } from './account/allAccountsLabels'
 import { AccountProvider, type AccountsStatus } from './account/AccountProvider'
 import { ApiError } from './api/client'
 import { AccountSwitcher } from './components/account/AccountSwitcher'
+import { SingleAccountOnly } from './components/account/AllAccountsPlaceholder'
 import { AccountsPage } from './pages/AccountsPage'
 import { AuditLogPage } from './pages/AuditLogPage'
 import { CashPage } from './pages/CashPage'
@@ -100,9 +102,12 @@ function describeError(error: Error): string {
 
 function AppLayout({ status }: { status: AccountsStatus }) {
   const { pathname } = useLocation()
-  const accountId = useAccountId()
+  const { accountId, isAllAccounts } = useAccount()
+  // FEAT-035 rule 5: the 录入交易 entry is hidden (not disabled) in 全部账户 mode.
+  const navItems = isAllAccounts ? NAV_ITEMS.filter((item) => item.key !== '/trades/new') : NAV_ITEMS
   // Longest matching key wins, so /trades/new selects 录入交易 only, not 交易 as well.
-  const selected = NAV_ITEMS.map((item) => item.key)
+  const selected = navItems
+    .map((item) => item.key)
     .filter((key) => pathname === key || pathname.startsWith(`${key}/`))
     .sort((a, b) => b.length - a.length)
     .slice(0, 1)
@@ -118,7 +123,7 @@ function AppLayout({ status }: { status: AccountsStatus }) {
         <Menu
           theme="dark"
           mode="horizontal"
-          items={NAV_ITEMS}
+          items={navItems}
           selectedKeys={selected}
           style={{ flex: 1, minWidth: 0 }}
         />
@@ -144,6 +149,16 @@ function AppLayout({ status }: { status: AccountsStatus }) {
             }
           />
         )}
+        {/* FEAT-035 rule 5: read-only hint at the top of every page in 全部账户 mode. */}
+        {isAllAccounts && (
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: 16 }}
+            title={<span data-testid="all-accounts-read-only-hint">{ALL_ACCOUNTS_READ_ONLY_HINT}</span>}
+            data-testid="all-accounts-banner"
+          />
+        )}
         {status.isPending ? (
           <div data-testid="account-loading" style={{ textAlign: 'center', padding: 48 }}>
             <Spin />
@@ -167,16 +182,66 @@ export function App() {
         <Routes>
           <Route element={<AppLayout status={status} />}>
             <Route index element={<HomePage />} />
-            <Route path="trades" element={<TradeListPage />} />
+            {/* FEAT-035 rule 7 (Q223 / Q225): placeholder in 全部账户 mode; rule 5 for entry pages. */}
+            <Route
+              path="trades"
+              element={
+                <SingleAccountOnly>
+                  <TradeListPage />
+                </SingleAccountOnly>
+              }
+            />
             <Route path="positions" element={<PositionsPage />} />
-            <Route path="stocks" element={<StockTradesPage />} />
-            <Route path="stocks/new" element={<StockTradeEntryPage />} />
-            <Route path="strategies" element={<UnderlyingGroupsPage />} />
-            <Route path="closed" element={<ClosedTradesPage />} />
+            <Route
+              path="stocks"
+              element={
+                <SingleAccountOnly>
+                  <StockTradesPage />
+                </SingleAccountOnly>
+              }
+            />
+            <Route
+              path="stocks/new"
+              element={
+                <SingleAccountOnly kind="entry">
+                  <StockTradeEntryPage />
+                </SingleAccountOnly>
+              }
+            />
+            <Route
+              path="strategies"
+              element={
+                <SingleAccountOnly>
+                  <UnderlyingGroupsPage />
+                </SingleAccountOnly>
+              }
+            />
+            <Route
+              path="closed"
+              element={
+                <SingleAccountOnly>
+                  <ClosedTradesPage />
+                </SingleAccountOnly>
+              }
+            />
             <Route path="pnl-summary" element={<PnlSummaryPage />} />
-            <Route path="trades/new" element={<TradeEntryPage />} />
+            <Route
+              path="trades/new"
+              element={
+                <SingleAccountOnly kind="entry">
+                  <TradeEntryPage />
+                </SingleAccountOnly>
+              }
+            />
             <Route path="cash" element={<CashPage />} />
-            <Route path="audit" element={<AuditLogPage />} />
+            <Route
+              path="audit"
+              element={
+                <SingleAccountOnly>
+                  <AuditLogPage />
+                </SingleAccountOnly>
+              }
+            />
             <Route path="accounts" element={<AccountsPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Route>

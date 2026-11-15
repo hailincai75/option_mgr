@@ -1,5 +1,7 @@
 # FEAT-011 股票交易与股票持仓
 
+> **FEAT-035 修订**：`GET /api/stock-positions` 接受 `X-Account-Id: ALL`，行新增 `accountId`、`accountName`（单账户也有值），`positionCount` 为跨账户的**不同标的数**（同一标的在两个账户分两行，但只算 1 个；单账户不变）；`/api/stock-trades/**` 不接受 `ALL`。见 [FEAT-035.md](FEAT-035.md)。
+
 **兼容性**：新增接口、新增枚举值（流水 `sourceType` 的 `STOCK_BUY` / `STOCK_SELL`、审计 `objectType` 的 `STOCK_TRADE`）属于兼容变更，已有接口的路径、字段、数字都不变（期权交易列表、期权持仓、已平仓、盈亏汇总、首页**不含**股票，股票盈亏并入在 FEAT-040）。**FEAT-040 起**已平仓、盈亏汇总、首页包含股票卖出的已实现盈亏，见「FEAT-040」。数据库迁移 `V8__stock_trade.sql` 新建表 `stock_trade`、放宽审计对象类型的检查约束，不改任何已有数据。所有接口都要求 `X-Account-Id`（FEAT-033），只读写该账户。
 
 #### 概念
@@ -241,7 +243,7 @@
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `positionCount` | number | 股票持仓个数（标的数）= `positions` 长度。没有总成本合计 |
+| `positionCount` | number | 股票持仓个数（标的数）。单账户 = `positions` 长度；FEAT-035 `ALL` 时为不同 `symbol` 的个数（可能小于 `positions` 长度）。没有总成本合计 |
 | `positions[]` | array | 按 `symbol` 升序（字符编码序，与 FEAT-003 相同）。没有持仓时 `[]` |
 | `positions[].symbol` | string | 标的；可原样作为 `GET /api/stock-trades?symbol=` 的参数 |
 | `positions[].shares` | number | 持股 = 各批次 `remainingShares` 之和 |

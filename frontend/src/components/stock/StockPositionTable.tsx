@@ -8,6 +8,8 @@ import { QuoteTimeCell, UnderlyingPriceCell } from '../quote/QuoteCells'
 import { MarketValueCell, UnrealizedPnlCell } from '../unrealized/UnrealizedCells'
 import { stockTimeText, stockTypeLabel } from './stockLabels'
 import { stocksUrlForSymbol } from './stockListFilters'
+import { AccountNameCell } from '../account/AccountNameCell'
+import { rowAccountKey } from '../account/rowAccountKey'
 
 const NUMERIC = { fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } as const
 
@@ -104,11 +106,31 @@ interface StockPositionTableProps {
   empty: ReactNode
   /** "卖出": opens the stock entry form with type SELL and the symbol prefilled. */
   onSell: (position: StockPosition) => void
+  /** FEAT-035: 全部账户 mode — adds the 账户 first column and drops the 操作 (卖出) column. */
+  allAccounts?: boolean
 }
 
 /** Stock positions in backend order (symbol ascending); rows expand to their FIFO lots. */
-export function StockPositionTable({ positions, loading, empty, onSell }: StockPositionTableProps) {
-  const columns: ColumnsType<StockPosition> = [
+export function StockPositionTable({
+  positions,
+  loading,
+  empty,
+  onSell,
+  allAccounts = false,
+}: StockPositionTableProps) {
+  const allColumns: ColumnsType<StockPosition> = [
+    // FEAT-035 (Q214): 账户 first column, only in 全部账户 mode.
+    ...(allAccounts
+      ? [
+          {
+            title: '账户',
+            key: 'account',
+            render: (_value: unknown, position: StockPosition) => (
+              <AccountNameCell row={position} testId="stock-position-account" />
+            ),
+          },
+        ]
+      : []),
     {
       title: '标的',
       key: 'symbol',
@@ -234,10 +256,15 @@ export function StockPositionTable({ positions, loading, empty, onSell }: StockP
       ),
     },
   ]
+  // FEAT-035 rule 5 (Q217): no 卖出 in 全部账户 mode (hidden, not disabled).
+  const columns = allAccounts
+    ? allColumns.filter((column) => column.key !== 'actions')
+    : allColumns
 
   return (
     <Table<StockPosition>
-      rowKey="symbol"
+      // FEAT-035 (Q215): the same symbol may appear once per account.
+      rowKey={(position) => rowAccountKey(position, position.symbol)}
       size="small"
       columns={columns}
       dataSource={positions}
@@ -247,6 +274,7 @@ export function StockPositionTable({ positions, loading, empty, onSell }: StockP
         ({
           'data-testid': 'stock-position-row',
           'data-symbol': position.symbol,
+          'data-account-id': position.accountId,
         }) as HTMLAttributes<HTMLElement>
       }
       expandable={{

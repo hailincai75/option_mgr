@@ -97,6 +97,10 @@ public enum ErrorCode {
     ACCOUNT_REQUIRED(HttpStatus.BAD_REQUEST),
     /** FEAT-033: the X-Account-Id / path account does not exist. */
     ACCOUNT_NOT_FOUND(HttpStatus.NOT_FOUND),
+    /** FEAT-035 Q217: a write request with {@code X-Account-Id: ALL} (the all-accounts view is read-only). */
+    ALL_ACCOUNTS_READ_ONLY(HttpStatus.BAD_REQUEST),
+    /** FEAT-035 Q223-Q225: a read endpoint that does not (yet) support {@code X-Account-Id: ALL}. */
+    ALL_ACCOUNTS_NOT_SUPPORTED(HttpStatus.BAD_REQUEST),
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR);
 
     private final HttpStatus status;

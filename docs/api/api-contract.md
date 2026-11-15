@@ -9,7 +9,7 @@
 - **时间点**（交易时间等 `Instant`）：ISO-8601 UTC，带 `Z` 后缀，如 `"2026-11-10T14:30:00Z"`；小数秒位数不固定（0~9 位），解析时不要假设位数
 - 字段名 camelCase；值为空时字段输出 `null`（不省略）
 - 在线文档：运行后端后访问 `/swagger-ui.html`（OpenAPI JSON：`/v3/api-docs`）。以本文件为准，两者冲突时报告给 backend-dev
-- **账户（FEAT-033 起）**：除 `/api/health`、`/api/accounts/**`、`/api/test-support/**`、`/api/trading-calendar/**`（FEAT-009，全系统一份）、`/api/market-data/**`（FEAT-016，全系统一份）外，所有接口都必须带请求头 `X-Account-Id: <账户 id>`，只读写该账户的数据；规则与错误见下方「FEAT-033 多账户」。本文件中 FEAT-007 ~ FEAT-008 的示例省略了这个请求头
+- **账户（FEAT-033 起）**：除 `/api/health`、`/api/accounts/**`、`/api/test-support/**`、`/api/trading-calendar/**`（FEAT-009，全系统一份）、`/api/market-data/**`（FEAT-016，全系统一份）外，所有接口都必须带请求头 `X-Account-Id: <账户 id>`，只读写该账户的数据；规则与错误见下方「FEAT-033 多账户」。本文件中 FEAT-007 ~ FEAT-008 的示例省略了这个请求头。**FEAT-035 起**还可取 `ALL`（全部账户，只读），只被 7 个 GET 接受，其它接口 → 400 `ALL_ACCOUNTS_READ_ONLY` / `ALL_ACCOUNTS_NOT_SUPPORTED`，见 [FEAT-035.md](FEAT-035.md)
 
 ## 统一错误格式
 所有 `/api/**` 接口出错时（HTTP 4xx/5xx）返回同一结构：
@@ -151,3 +151,4 @@
 | [FEAT-019.md](FEAT-019.md) | FEAT-019 组合 Greeks 汇总（新接口 `GET /api/positions/greeks-summary`，按账户、不受到期过滤：按标的的期权 Delta / 股票 Delta / 净 Delta / Gamma / Theta / Vega、标的价与是否手动、Delta 美元敞口（`exposureStatus` `OK` / `NO_UNDERLYING_PRICE` / `NO_DELTA`）、未计入 / 缺值提示；全组合美元敞口 / Theta / Vega 与提示；用 FEAT-018 已取整行值相加（Q181）；纯新增，无迁移） |
 | [FEAT-021.md](FEAT-021.md) | FEAT-021 按标的分组查看（**后端 N/A**：前端复用 `GET /api/option-positions` + `GET /api/stock-positions` 按 `symbol` 分组，组内保持期权接口的返回顺序；列出每列的来源字段；无新接口、字段、迁移） |
 | [FEAT-023.md](FEAT-023.md) | FEAT-023 按标的盈亏（新接口 `GET /api/positions/underlying-summary`，按账户、不受到期过滤：每个有持仓的标的一组，已实现（全部时间，与盈亏汇总 `bySymbol` 同源，含期权 / 股票拆分）、市值 / 未实现（FEAT-017 `OK` 行之和，全不能算为 `null`）、合计盈亏、净权利金（期权持仓开仓净额之和，无期权为 `null`）、未计入计数与 `excludedLabel`；行上市值 / 未实现仍用持仓接口的 FEAT-017 字段；纯新增，无迁移） |
+| [FEAT-035.md](FEAT-035.md) | FEAT-035 全部账户合并查看（一）（请求头 `X-Account-Id: ALL`，只读；接受的 7 个 GET：`dashboard`、`cash/summary`（新增 `accounts[]`）、`option-positions` / `stock-positions`（行新增 `accountId`、`accountName`，同序按账户 id；股票 `positionCount` 与首页 `stockPositions.positionCount` 为跨账户不同标的数）、`positions/unrealized-summary`、`pnl-summary`（跨账户合并）、`adhoc-closure-alerts`（新增 `byAccount[]`）；其它接口收到 `ALL`：写 → 400 `ALL_ACCOUNTS_READ_ONLY`，读 → 400 `ALL_ACCOUNTS_NOT_SUPPORTED`；行情 / 账户接口不受影响；无新端点、无迁移） |

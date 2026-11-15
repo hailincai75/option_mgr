@@ -1,6 +1,6 @@
 package com.optionmgr.trade.web;
 
-import com.optionmgr.account.web.AccountRef;
+import com.optionmgr.account.web.AccountScope;
 import com.optionmgr.trade.domain.PnlSummary;
 import com.optionmgr.trade.domain.TradeFilter;
 import com.optionmgr.trade.service.PnlSummaryService;
@@ -30,7 +30,7 @@ public class PnlSummaryController {
                                 int expiredUnprocessedCount) {
     }
 
-    /** FEAT-040 (Q89): stock positions = symbols with shares &gt; 0. */
+    /** FEAT-040 (Q89): stock positions = symbols with shares &gt; 0; FEAT-035 ALL: distinct symbols across accounts. */
     public record StockPositionsPart(int positionCount) {
     }
 
@@ -58,8 +58,8 @@ public class PnlSummaryController {
     }
 
     @GetMapping("/api/dashboard")
-    public DashboardResponse dashboard(AccountRef account) {
-        PnlSummaryService.Dashboard d = service.dashboard(account.id());
+    public DashboardResponse dashboard(AccountScope account) {
+        PnlSummaryService.Dashboard d = service.dashboard(account.ids());
         return new DashboardResponse(d.asOfDate().toString(), d.currentMonth().toString(),
                 new CashPart(d.cash().total(), d.cash().frozen(), d.cash().available()),
                 new PnlPart(d.realized().closedCount(), d.realized().realizedPnl()),
@@ -70,11 +70,11 @@ public class PnlSummaryController {
     }
 
     @GetMapping("/api/pnl-summary")
-    public PnlSummaryResponse summary(AccountRef account, @RequestParam(required = false) String startDate,
+    public PnlSummaryResponse summary(AccountScope account, @RequestParam(required = false) String startDate,
                                       @RequestParam(required = false) String endDate) {
         // Same parsing / validation / error shapes as FEAT-002 and FEAT-006 (only the date range is used).
         TradeFilter f = TradeListQuery.parse(null, null, null, null, null, startDate, endDate, 1, 20);
-        PnlSummary s = service.summary(account.id(), f.startDate(), f.endDate());
+        PnlSummary s = service.summary(account.ids(), f.startDate(), f.endDate());
         PnlSummary.Breakdown t = s.total();
         return new PnlSummaryResponse(f.startDate() == null ? null : f.startDate().toString(),
                 f.endDate() == null ? null : f.endDate().toString(), t.all().closedCount(), t.all().realizedPnl(),

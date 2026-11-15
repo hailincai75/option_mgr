@@ -175,7 +175,20 @@ public class OptionPositionService {
 
     @Transactional(readOnly = true)
     public PositionSummary currentPositions(long accountId) {
+        return currentPositions(accountId, clock.instant());
+    }
+
+    /**
+     * FEAT-035: the summaries of several accounts (same order as {@code accountIds}), each computed exactly as
+     * {@link #currentPositions(long)} but all with one clock reading.
+     */
+    @Transactional(readOnly = true)
+    public List<PositionSummary> currentPositions(List<Long> accountIds) {
         Instant now = clock.instant();
+        return accountIds.stream().map(id -> currentPositions(id, now)).toList();
+    }
+
+    private PositionSummary currentPositions(long accountId, Instant now) {
         LocalDate today = MarketTime.toLocal(now).toLocalDate();
         Map<ContractKey, List<LotTrade>> byContract = replayInput(accountId);
 

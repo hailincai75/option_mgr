@@ -1,5 +1,7 @@
 # FEAT-040 股票已实现盈亏并入已平仓、盈亏汇总、首页
 
+> **FEAT-035 修订**：首页、盈亏汇总的 `X-Account-Id: ALL`（全部账户）见 [FEAT-035.md](FEAT-035.md)；`GET /api/closed-trades` 暂不接受 `ALL`（400 `ALL_ACCOUNTS_NOT_SUPPORTED`，FEAT-046）。
+
 只读，不新增接口、不改任何数据，**没有数据库迁移**。股票卖出的被卖出批次、被卖出成本、已实现盈亏与 FEAT-011 完全相同（读取时按 FIFO 重放，Q69、Q87），这里只是把它们并入三个已有接口。所有规则按账户（`X-Account-Id`）独立。
 
 #### 兼容性一览
@@ -265,7 +267,7 @@ GET /api/closed-trades?page=1&size=3
 
 - `realizedPnl`、`currentMonthRealizedPnl`：**包含股票卖出**（笔数和金额；本月按卖出的美东日期）。只给合计，不给拆分（首页不显示拆分，Q91）。结构不变。
 - `positions`：期权持仓，字段、口径、数字都**不变**（只数期权；页面文字"期权持仓 N 个"是前端的事，Q93）。
-- `stockPositions`（新，Q89）：`{ "positionCount": number }` = 当前持股 > 0 的标的数，等于 `GET /api/stock-positions` 的 `positionCount`。
+- `stockPositions`（新，Q89）：`{ "positionCount": number }` = 当前持股 > 0 的标的数，等于 `GET /api/stock-positions` 的 `positionCount`（FEAT-035 `ALL`：跨账户不同标的数，同一标的在两个账户算 1）。
 
 示例（场景 M + O5，今天 2026-11-13）：
 ```json

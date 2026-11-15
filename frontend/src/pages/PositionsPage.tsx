@@ -1,7 +1,9 @@
+import { useAccount } from '../account/AccountContext'
+import { GREEKS_SUMMARY_SINGLE_ONLY_TEXT } from '../account/allAccountsLabels'
 import { useAccountQuery } from '../account/useAccountQuery'
 import { Button, Card, Radio, Space, Spin, Switch, Typography } from 'antd'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { getOptionPositions, optionPositionQueryKeys } from '../api/optionPositions'
 import { AdjustExpirationModal } from '../components/position/AdjustExpirationModal'
 import { AssignPositionModal } from '../components/position/AssignPositionModal'
@@ -26,6 +28,7 @@ import {
 import { AdhocClosureAlerts } from '../components/calendar/AdhocClosureAlerts'
 import { TradingCalendarStaleAlert } from '../components/calendar/TradingCalendarStaleAlert'
 import { firstAdhocClosureRow } from '../components/position/adhocClosure'
+import { readAdhocClosureLocateState } from '../components/position/adhocClosureLocate'
 import { PositionTable } from '../components/position/PositionTable'
 import { QueryError } from '../components/QueryError'
 import { MarketDataBar } from '../components/quote/MarketDataBar'
@@ -38,7 +41,7 @@ import {
   readShowGreeks,
   writeShowGreeks,
 } from '../components/greeks/greeksLabels'
-import type { AdhocClosureAlert, OptionPosition } from '../api/types'
+import type { OptionPosition } from '../api/types'
 import { formatMoney } from '../utils/format'
 
 /**
@@ -48,6 +51,8 @@ import { formatMoney } from '../utils/format'
  * 行权 button (FEAT-014) on long calls / puts; below it the 股票持仓 section (FEAT-011). Every
  * number comes from the backend. FEAT-010: the 到期 filter (`?expiry=`) shows only the matching
  * option rows (by the backend's DTE, backend order kept) and hides the stock section while active.
+ * FEAT-035 全部账户 (read-only): 账户 first column, no write buttons / 批量作废 / 录入 links, and the
+ * FEAT-019 summary replaced by a grey note (Q224); totals are the backend's (all accounts).
  */
 export function PositionsPage() {
   const [closing, setClosing] = useState<OptionPosition | null>(null)
@@ -60,6 +65,8 @@ export function PositionsPage() {
   const [batchExpiring, setBatchExpiring] = useState<OptionPosition[] | null>(null)
   /** FEAT-018 (Q173): 显示 Greeks switch, default off; remembered in this browser. */
   const [showGreeks, setShowGreeks] = useState(readShowGreeks)
+  const { accountId, isAllAccounts } = useAccount()
+  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const expiryFilter = parseExpirySearch(searchParams)
   const filtering = expiryFilter !== 'all'
@@ -89,8 +96,8 @@ export function PositionsPage() {
     row.scrollIntoView({ block: 'center' })
   }, [scrollRequest, shownPositions])
 
-  const adjustTo = (alert: AdhocClosureAlert) => {
-    const target = data ? firstAdhocClosureRow(data.positions, alert.date) : undefined
+  const adjustTo = (date: string) => {
+    const target = data ? firstAdhocClosureRow(data.positions, date) : undefined
     if (target === undefined) return
     // The 到期 filter may hide the row: show every position so it can be scrolled to.
     if (filterPositionsByExpiry([target], expiryFilter).length === 0) {
@@ -100,6 +107,18 @@ export function PositionsPage() {
     pendingScroll.current = target.contractLabel
     setScrollRequest((count) => count + 1)
   }
+
+  // FEAT-035 (Q221): arrived via 切换到 <账户> 去调整 — locate that account's first affected row
+  // once its positions have loaded (ignored under any other account, e.g. after switching back).
+  const locate = readAdhocClosureLocateState(location.state)
+  const locateDate =
+    locate !== null && locate.adhocClosureAccountId === accountId ? locate.adhocClosureDate : null
+  const located = useRef(false)
+  useEffect(() => {
+    if (locateDate === null || located.current || data === undefined) return
+    located.current = true
+    adjustTo(locateDate)
+  })
 
   let content
   if (isPending) {
@@ -146,7 +165,7 @@ export function PositionsPage() {
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           开仓净额：空头为实收、多头为实付，均已含手续费；每张平均净额四舍五入到分，仅供参考。点击合约查看该合约的交易。
         </Typography.Text>
-        {batchRows.length > 0 && (
+        {!isAllAccounts && batchRows.length > 0 && (
           <div>
             <Button
               danger
@@ -181,10 +200,19 @@ export function PositionsPage() {
           )}
         </Space>
         {/* FEAT-019 (Q175): per-symbol Greeks summary, only while 显示 Greeks is on (no request when off). */}
-        {showGreeks && <GreeksSummaryCard />}
+        {/* FEAT-035 (Q224): not for 全部账户 yet; per-row Greeks stay. */}
+        {showGreeks &&
+          (isAllAccounts ? (
+            <Typography.Text type="secondary" data-testid="greeks-summary-all-accounts">
+              {GREEKS_SUMMARY_SINGLE_ONLY_TEXT}
+            </Typography.Text>
+          ) : (
+            <GreeksSummaryCard />
+          ))}
         <PositionTable
           positions={shown}
           showGreeks={showGreeks}
+          allAccounts={isAllAccounts}
           loading={isFetching}
           onClosePosition={setClosing}
           onExpirePosition={setExpiring}
@@ -198,9 +226,11 @@ export function PositionsPage() {
             ) : (
               <Space orientation="vertical" data-testid="positions-empty">
                 <span>暂无持仓</span>
-                <Link to="/trades/new" data-testid="positions-empty-new">
-                  录入开仓
-                </Link>
+                {!isAllAccounts && (
+                  <Link to="/trades/new" data-testid="positions-empty-new">
+                    录入开仓
+                  </Link>
+                )}
               </Space>
             )
           }
@@ -212,7 +242,11 @@ export function PositionsPage() {
   return (
     <Space orientation="vertical" size={16} style={{ width: '100%' }}>
       {/* FEAT-042 rule 4: 去调整 scrolls to (and highlights) the first affected row. */}
-      <AdhocClosureAlerts onAdjust={adjustTo} />
+      <AdhocClosureAlerts
+        onAdjust={(alert) => {
+          adjustTo(alert.date)
+        }}
+      />
       {/* FEAT-009 rule 6: shown only while the holiday data is stale. */}
       <TradingCalendarStaleAlert />
       {/* FEAT-016: quote warning (backend text) and 立即刷新. */}

@@ -1,5 +1,7 @@
 # FEAT-042 临时休市检测与提醒
 
+> **FEAT-035 修订**：`GET /api/adhoc-closure-alerts` 接受 `X-Account-Id: ALL`：`affectedPositionCount` 为合计，新增 `alerts[].byAccount[]`（单账户时只有该账户），`ALL` 时 `message` 在"在该日到期"后加按账户分列。见 [FEAT-035.md](FEAT-035.md)。
+
 建立在 FEAT-009 之上（Finnhub 拉取、`market_holiday`、Q127 整年替换、Jollyday 规则年份、测试支持假拉取与假时钟）。Q53、Q124、Q127–Q129 已定。本节只写**新增或不同**的部分；示例标的均为虚构。
 
 **兼容性一览**

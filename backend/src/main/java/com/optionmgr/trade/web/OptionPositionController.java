@@ -1,6 +1,8 @@
 package com.optionmgr.trade.web;
 
-import com.optionmgr.account.web.AccountRef;
+import com.optionmgr.account.domain.AccountRows;
+import com.optionmgr.account.web.AccountScope;
+import com.optionmgr.common.money.Money;
 import com.optionmgr.common.time.MarketTime;
 import com.optionmgr.quote.service.QuoteQueryService;
 import com.optionmgr.quote.service.QuoteViews;
@@ -25,6 +27,8 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -49,7 +53,9 @@ public class OptionPositionController {
                                     List<PositionResponse> positions) {
     }
 
-    public record PositionResponse(String symbol, LocalDate expirationDate, String strike, OptionType optionType,
+    public record PositionResponse(/* FEAT-035: the account of the row (current name) */
+                                   long accountId, String accountName,
+                                   String symbol, LocalDate expirationDate, String strike, OptionType optionType,
                                    String contractLabel, PositionDirection direction, int contracts,
                                    int multiplier, BigDecimal openingNetTotal, BigDecimal averageNetPerContract,
                                    BigDecimal frozenCash, long dte,
@@ -131,15 +137,32 @@ public class OptionPositionController {
     }
 
     @GetMapping
-    public PositionsResponse positions(AccountRef account) {
-        OptionPositionService.PositionSummary s = service.currentPositions(account.id());
+    public PositionsResponse positions(AccountScope scope) {
+        // FEAT-035: each account computed on its own (one clock reading, one QuoteBook), rows never merged (Q215)
+        List<OptionPositionService.PositionSummary> summaries = service.currentPositions(scope.ids());
         QuoteViews.QuoteBook book = quotes.book();
-        List<PositionResponse> positions = s.positions().stream().map(p -> toResponse(p, s, book)).toList();
-        return new PositionsResponse(s.asOfDate(), positions.size(), s.frozenTotal(), positions);
+        List<AccountRows.Row<AccountPosition>> rows = new ArrayList<>();
+        BigDecimal frozenTotal = Money.ZERO;
+        for (int i = 0; i < summaries.size(); i++) {
+            AccountScope.Member m = scope.accounts().get(i);
+            OptionPositionService.PositionSummary s = summaries.get(i);
+            frozenTotal = frozenTotal.add(s.frozenTotal());
+            s.positions().forEach(p -> rows.add(new AccountRows.Row<>(m.id(), m.name(), new AccountPosition(p, s))));
+        }
+        List<PositionResponse> positions = AccountRows.sorted(rows,
+                        Comparator.comparing(AccountPosition::position, OptionPosition.DISPLAY_ORDER)).stream()
+                .map(r -> toResponse(r.accountId(), r.accountName(), r.value().position(), r.value().summary(), book))
+                .toList();
+        return new PositionsResponse(summaries.get(0).asOfDate(), positions.size(), frozenTotal, positions);
+    }
+
+    /** A position and the summary of its own account. */
+    private record AccountPosition(OptionPosition position, OptionPositionService.PositionSummary summary) {
     }
 
     /** One row; also the "position" of the FEAT-043 adjustment response. */
-    static PositionResponse toResponse(OptionPosition p, OptionPositionService.PositionSummary s,
+    static PositionResponse toResponse(long accountId, String accountName, OptionPosition p,
+                                       OptionPositionService.PositionSummary s,
                                        QuoteViews.QuoteBook book) {
         ContractKey c = p.contract();
         LocalDate today = s.asOfDate();
@@ -165,7 +188,8 @@ public class OptionPositionController {
         OptionPositionService.Adjustability adj = s.adjustability(p);
         QuoteViews.OptionQuote optionQuote = book.option(c);
         RowValuation v = UnrealizedValuationService.option(p, today, optionQuote);
-        return new PositionResponse(c.symbol(), c.expirationDate(), ContractKey.strikeText(c.strike()),
+        return new PositionResponse(accountId, accountName, c.symbol(), c.expirationDate(),
+                ContractKey.strikeText(c.strike()),
                 c.optionType(), c.label(), p.direction(), p.contracts(), p.multiplier(), p.openingNetTotal(),
                 p.averageNetPerContract(), p.frozenCash(), dte, s.remainingTradingDays(p), p.expirationStatus(today), Math.max(0, -dte),
                 p.lots().size(), p.lots().stream().map(l -> toResponse(l, rc)).toList(),
