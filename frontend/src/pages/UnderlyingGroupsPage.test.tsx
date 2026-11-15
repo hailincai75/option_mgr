@@ -189,6 +189,10 @@ function startFakeServer(byAccount: Record<number, AccountData>) {
     if (url === '/api/stock-positions') {
       return Promise.resolve(jsonResponse(stocksResponse(data.stocks)))
     }
+    // FEAT-023: card summaries are covered by UnderlyingPnl.test.tsx; none here (cards show loading).
+    if (url === '/api/positions/underlying-summary') {
+      return Promise.resolve(jsonResponse({ asOfDate: '2026-11-23', groups: [] }))
+    }
     return Promise.reject(new Error(`Unexpected request ${url}`))
   })
   return fetchMock
@@ -288,7 +292,7 @@ describe('UnderlyingGroupsPage (FEAT-021)', () => {
 
     expect(screen.getByTestId('underlying-title')).toHaveTextContent('按标的')
     expect(screen.getByTestId('underlying-hint')).toHaveTextContent(
-      '按标的列出当前账户正在持有的期权和股票，只读；操作请到持仓页',
+      '按标的列出当前账户正在持有的期权和股票，只读；操作请到持仓页。已实现盈亏为该标的全部历史（含手续费）；市值和未实现盈亏按 mark / 现价计算，未扣平仓手续费，仅供参考',
     )
     expect(screen.getByTestId('underlying-loading')).toBeInTheDocument()
 
@@ -433,7 +437,8 @@ describe('UnderlyingGroupsPage (FEAT-021)', () => {
     expect(screen.queryByTestId('underlying-card')).toBeNull()
   })
 
-  it('is read-only with no market value, P&L or Greeks even when 显示 Greeks is on (AC 9)', async () => {
+  // FEAT-023 (Q198) added 市值 / 未实现盈亏; Greeks stay hidden (Q202).
+  it('is read-only with no Greeks even when 显示 Greeks is on (AC 9)', async () => {
     window.localStorage.setItem(SHOW_GREEKS_STORAGE_KEY, 'true')
     startFakeServer(sceneA())
     renderWithProviders(<UnderlyingGroupsPage />, { route: '/strategies' })
@@ -442,7 +447,7 @@ describe('UnderlyingGroupsPage (FEAT-021)', () => {
     })
     const page = screen.getByTestId('underlying-page')
     expect(within(page).queryAllByRole('button')).toEqual([])
-    for (const text of ['市值', '未实现盈亏', 'Delta', 'Gamma', 'Theta', 'Vega', 'IV']) {
+    for (const text of ['Delta', 'Gamma', 'Theta', 'Vega', 'IV']) {
       expect(within(page).queryByText(text)).toBeNull()
     }
     for (const text of ['平仓', '作废', '被指派', '行权', '卖出']) {

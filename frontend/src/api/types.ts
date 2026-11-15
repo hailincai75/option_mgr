@@ -1549,3 +1549,36 @@ export interface GreeksSummaryResponse {
   groups: GreeksSummaryGroup[]
   portfolio: GreeksSummaryPortfolio
 }
+
+/**
+ * FEAT-023: one symbol's realized P&L for all time — the same row as `GET /api/pnl-summary`
+ * (no dates) `bySymbol[]` without `symbol`. Never null; no records → 0 / "0.00".
+ */
+export type UnderlyingRealized = Omit<PnlSymbolRow, 'symbol'>
+
+/** One card of `GET /api/positions/underlying-summary` (scale-2 strings, no "+" on positives). */
+export interface UnderlyingSummaryGroup {
+  symbol: string
+  realized: UnderlyingRealized
+  /** Sum of this symbol's OK rows' market values, signed; null when no row is included. */
+  marketValue: MoneyString | null
+  /** Sum of this symbol's OK rows' unrealized P&L; null when no row is included. */
+  unrealizedPnl: MoneyString | null
+  /** realized + (unrealized ?? 0); never null. */
+  totalPnl: MoneyString
+  /** Sum of the option rows' `openingNetTotal` (short +, long −); null without option positions. */
+  netPremium: MoneyString | null
+  optionPositionCount: number
+  hasStockPosition: boolean
+  includedCount: number
+  noQuoteCount: number
+  expiredPendingCount: number
+  /** Whole sentence from the backend (e.g. `1 个持仓无报价，未计入`); null when none excluded. */
+  excludedLabel: string | null
+}
+
+/** Contract: `GET /api/positions/underlying-summary` → 200 (current account, ascending by symbol). */
+export interface UnderlyingSummaryResponse {
+  asOfDate: LocalDateString
+  groups: UnderlyingSummaryGroup[]
+}

@@ -1,11 +1,13 @@
-import { Card, Empty, Space, Spin, Table, Typography } from 'antd'
+import { Button, Card, Empty, Space, Spin, Table, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { HTMLAttributes } from 'react'
 import { Link } from 'react-router-dom'
 import { useAccountQuery } from '../account/useAccountQuery'
 import { getOptionPositions, optionPositionQueryKeys } from '../api/optionPositions'
+import { ApiError } from '../api/client'
 import { getStockPositions, stockPositionQueryKeys } from '../api/stockTrades'
-import type { OptionPosition, StockPosition } from '../api/types'
+import type { OptionPosition, StockPosition, UnderlyingSummaryResponse } from '../api/types'
+import { getUnderlyingSummary, underlyingSummaryQueryKeys } from '../api/underlyingSummary'
 import { DirectionTag, DteCell, SignedMoney } from '../components/position/PositionCells'
 import { tradesUrlForContract } from '../components/position/positionLinks'
 import { QueryError } from '../components/QueryError'
@@ -15,11 +17,23 @@ import {
   underlyingSummary,
   type UnderlyingGroup,
 } from '../components/underlying/groupByUnderlying'
+import {
+  UnderlyingPnlSummary,
+  type UnderlyingPnlState,
+} from '../components/underlying/UnderlyingPnlSummary'
+import { MarketValueCell, UnrealizedPnlCell } from '../components/unrealized/UnrealizedCells'
 import { formatInteger, formatMoney } from '../utils/format'
 
 const NUMERIC = { fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } as const
 
-/** FEAT-021 rule 2: 合约 / 方向 / 张数 / 开仓净额 / 到期日 / DTE — same values as the positions page. */
+/** Page hint (FEAT-023 requirement wording). */
+export const UNDERLYING_HINT =
+  '按标的列出当前账户正在持有的期权和股票，只读；操作请到持仓页。已实现盈亏为该标的全部历史（含手续费）；市值和未实现盈亏按 mark / 现价计算，未扣平仓手续费，仅供参考'
+
+/**
+ * FEAT-021 rule 2: 合约 / 方向 / 张数 / 开仓净额 / 到期日 / DTE — same values as the positions page;
+ * FEAT-023 (Q198) adds 市值 / 未实现盈亏 after 开仓净额 with the positions page's cells.
+ */
 const optionColumns: ColumnsType<OptionPosition> = [
   {
     title: '合约',
@@ -61,6 +75,22 @@ const optionColumns: ColumnsType<OptionPosition> = [
     ),
   },
   {
+    title: '市值',
+    key: 'marketValue',
+    align: 'right',
+    render: (_value: unknown, position) => (
+      <MarketValueCell row={position} testIdPrefix="underlying-option-cell" />
+    ),
+  },
+  {
+    title: '未实现盈亏',
+    key: 'unrealizedPnl',
+    align: 'right',
+    render: (_value: unknown, position) => (
+      <UnrealizedPnlCell row={position} testIdPrefix="underlying-option-cell" />
+    ),
+  },
+  {
     title: '到期日',
     key: 'expirationDate',
     render: (_value: unknown, position) => (
@@ -79,7 +109,10 @@ const optionColumns: ColumnsType<OptionPosition> = [
   },
 ]
 
-/** FEAT-021 rule 2: 持股 / 被覆盖 / 可用 / 总成本 / 每股平均成本 (4 decimals, Q88) from the backend. */
+/**
+ * FEAT-021 rule 2: 持股 / 被覆盖 / 可用 / 总成本 / 每股平均成本 (4 decimals, Q88) from the backend;
+ * FEAT-023 (Q198) adds 市值 / 未实现盈亏 after 每股平均成本.
+ */
 const stockColumns: ColumnsType<StockPosition> = [
   {
     title: '持股',
@@ -131,9 +164,25 @@ const stockColumns: ColumnsType<StockPosition> = [
       </span>
     ),
   },
+  {
+    title: '市值',
+    key: 'marketValue',
+    align: 'right',
+    render: (_value: unknown, position) => (
+      <MarketValueCell row={position} testIdPrefix="underlying-stock-cell" />
+    ),
+  },
+  {
+    title: '未实现盈亏',
+    key: 'unrealizedPnl',
+    align: 'right',
+    render: (_value: unknown, position) => (
+      <UnrealizedPnlCell row={position} testIdPrefix="underlying-stock-cell" />
+    ),
+  },
 ]
 
-function UnderlyingCard({ group }: { group: UnderlyingGroup }) {
+function UnderlyingCard({ group, pnl }: { group: UnderlyingGroup; pnl: UnderlyingPnlState }) {
   return (
     <Card
       size="small"
@@ -155,6 +204,7 @@ function UnderlyingCard({ group }: { group: UnderlyingGroup }) {
       }
     >
       <Space orientation="vertical" size={12} style={{ width: '100%' }}>
+        <UnderlyingPnlSummary symbol={group.symbol} state={pnl} />
         {group.options.length > 0 && (
           <div data-testid="underlying-options">
             <Typography.Text strong>期权</Typography.Text>
@@ -199,9 +249,25 @@ function UnderlyingCard({ group }: { group: UnderlyingGroup }) {
 }
 
 /**
+ * FEAT-023: a card's summary from `GET /api/positions/underlying-summary`, matched by symbol. While
+ * the summary has not arrived — or briefly has no group for a card the positions already show
+ * (the three requests return separately) — the card's summary is loading (contract).
+ */
+function pnlStateFor(
+  symbol: string,
+  data: UnderlyingSummaryResponse | undefined,
+  failed: boolean,
+): UnderlyingPnlState {
+  const group = data?.groups.find((candidate) => candidate.symbol === symbol)
+  if (group !== undefined) return { kind: 'ready', group }
+  return failed ? { kind: 'error' } : { kind: 'loading' }
+}
+
+/**
  * FEAT-021 策略 → 按标的: one read-only card per symbol with current option and stock positions.
  * Reuses the positions page's queries (same keys), so every write that refreshes the positions
- * page refreshes this page too. Never shows market value, unrealized P&L or Greeks (Q187).
+ * page refreshes this page too. FEAT-023 adds each card's P&L summary (its own query, invalidated
+ * with the positions and the P&L summary) and the rows' 市值 / 未实现盈亏; still no Greeks (Q202).
  */
 export function UnderlyingGroupsPage() {
   const options = useAccountQuery({
@@ -211,6 +277,10 @@ export function UnderlyingGroupsPage() {
   const stocks = useAccountQuery({
     queryKey: stockPositionQueryKeys.all,
     queryFn: ({ signal }) => getStockPositions(signal),
+  })
+  const summary = useAccountQuery({
+    queryKey: underlyingSummaryQueryKeys.all,
+    queryFn: ({ signal }) => getUnderlyingSummary(signal),
   })
 
   let content
@@ -242,7 +312,11 @@ export function UnderlyingGroupsPage() {
       ) : (
         <Space orientation="vertical" size={16} style={{ width: '100%' }}>
           {groups.map((group) => (
-            <UnderlyingCard key={group.symbol} group={group} />
+            <UnderlyingCard
+              key={group.symbol}
+              group={group}
+              pnl={pnlStateFor(group.symbol, summary.data, summary.error !== null)}
+            />
           ))}
         </Space>
       )
@@ -255,9 +329,27 @@ export function UnderlyingGroupsPage() {
           按标的
         </Typography.Title>
         <Typography.Text type="secondary" data-testid="underlying-hint">
-          按标的列出当前账户正在持有的期权和股票，只读；操作请到持仓页
+          {UNDERLYING_HINT}
         </Typography.Text>
       </div>
+      {summary.error !== null && options.data !== undefined && stocks.data !== undefined && (
+        <Space size={8} wrap>
+          <Typography.Text type="danger" data-testid="underlying-pnl-error">
+            无法加载按标的盈亏：
+            {summary.error instanceof ApiError
+              ? `${summary.error.message} (${summary.error.code})`
+              : summary.error.message}
+          </Typography.Text>
+          <Button
+            size="small"
+            loading={summary.isFetching}
+            onClick={() => void summary.refetch()}
+            data-testid="underlying-pnl-retry"
+          >
+            重新加载盈亏
+          </Button>
+        </Space>
+      )}
       {content}
     </Space>
   )

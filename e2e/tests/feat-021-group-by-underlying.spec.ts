@@ -63,11 +63,13 @@ const STRATEGY_ROUTE = /\/strategies$/
 const TEXT = {
   nav: '策略',
   title: '按标的',
-  note: '按标的列出当前账户正在持有的期权和股票，只读；操作请到持仓页',
+  // FEAT-023 replaced the FEAT-021 hint (page wording of docs/requirements/FEAT-023-underlying-pnl.md)
+  note: '按标的列出当前账户正在持有的期权和股票，只读；操作请到持仓页。已实现盈亏为该标的全部历史（含手续费）；市值和未实现盈亏按 mark / 现价计算，未扣平仓手续费，仅供参考',
   empty: '暂无持仓',
-  optionHeaders: ['合约', '方向', '张数', '开仓净额', '到期日', 'DTE'],
-  stockHeaders: ['持股', '被覆盖', '可用', '总成本', '每股平均成本'],
-  forbiddenColumns: ['市值', '未实现盈亏', 'Delta', 'Gamma', 'Theta', 'Vega', 'IV'],
+  // FEAT-023 (Q198) added 市值 / 未实现盈亏 after 开仓净额 / 每股平均成本
+  optionHeaders: ['合约', '方向', '张数', '开仓净额', '市值', '未实现盈亏', '到期日', 'DTE'],
+  stockHeaders: ['持股', '被覆盖', '可用', '总成本', '每股平均成本', '市值', '未实现盈亏'],
+  forbiddenColumns: ['Delta', 'Gamma', 'Theta', 'Vega', 'IV'],
   forbiddenButtons: ['平仓', '作废', '被指派', '行权', '卖出', '买入', '删除', '修改'],
 }
 
@@ -572,7 +574,7 @@ test.describe('FEAT-021 按标的分组查看', () => {
     await ui.expectScenarioA()
   })
 
-  test('AC9 显示 Greeks 已打开时策略页仍无市值 / 未实现盈亏 / Greeks 列、无任何操作按钮；点合约进入交易列表按合约筛选；点标题 ZWLK 进入股票页按 ZWLK 筛选', async ({ page }) => {
+  test('AC9 显示 Greeks 已打开时策略页仍无 Greeks 列（市值 / 未实现盈亏 自 FEAT-023 起存在）、无任何操作按钮；点合约进入交易列表按合约筛选；点标题 ZWLK 进入股票页按 ZWLK 筛选', async ({ page }) => {
     await scenario()
     await fixNow(page, ny('2026-11-23T10:00'))
     const ui = new Ui(page)
