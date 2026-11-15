@@ -5,34 +5,15 @@ import { Link } from 'react-router-dom'
 import type { OptionPosition, OptionPositionLot } from '../../api/types'
 import { decimalSign, EMPTY_VALUE, formatDateTimeNY, formatMoney } from '../../utils/format'
 import { BidAskCell, OptionMarkCell, QuoteTimeCell, UnderlyingPriceCell } from '../quote/QuoteCells'
-import { SIGNED_MONEY_COLORS, tradeActionLabel } from '../trade/tradeLabels'
+import { tradeActionLabel } from '../trade/tradeLabels'
 import { MarketValueCell, UnrealizedPnlCell } from '../unrealized/UnrealizedCells'
 import { GreeksHeader, GreeksIvCell, GreekValueCell } from '../greeks/GreeksCells'
 import { GREEKS_COLUMNS } from '../greeks/greeksLabels'
 import { ADHOC_CLOSURE_TAG_TEXT } from './adhocClosure'
 import { coverageTags } from './coverageLabels'
+import { DirectionTag, DteCell, SignedMoney } from './PositionCells'
 import { ADJUST_EXPIRATION_BUTTON_TEXT, isExpirationAdjustable } from './expirationAdjustment'
 import { tradesUrlForPosition } from './positionLinks'
-
-const DIRECTION_TAGS: Record<string, { label: string; color: string }> = {
-  SHORT: { label: '空头', color: 'orange' },
-  LONG: { label: '多头', color: 'blue' },
-}
-
-function SignedMoney({ value, testId }: { value: string; testId: string }) {
-  return (
-    <span
-      data-testid={testId}
-      style={{
-        color: SIGNED_MONEY_COLORS[decimalSign(value)],
-        fontVariantNumeric: 'tabular-nums',
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {formatMoney(value, { signed: true })}
-    </span>
-  )
-}
 
 function FrozenMoney({ value, testId }: { value: string; testId: string }) {
   return (
@@ -70,29 +51,6 @@ function CoverageCell({ position }: { position: OptionPosition }) {
   )
 }
 
-/** DTE from the backend: number, "0 今天到期", or red "已过期 N 天" (no client-side date math). */
-function DteCell({ position }: { position: OptionPosition }) {
-  if (position.expirationStatus === 'EXPIRED') {
-    return (
-      <Typography.Text type="danger" strong data-testid="position-cell-dte">
-        已过期 {position.daysPastExpiration} 天
-      </Typography.Text>
-    )
-  }
-  if (position.expirationStatus === 'EXPIRES_TODAY') {
-    return (
-      <span data-testid="position-cell-dte" style={{ whiteSpace: 'nowrap' }}>
-        {position.dte}{' '}
-        <Tag color="warning" data-testid="position-cell-dte-today">
-          今天到期
-        </Tag>
-        {position.expiryPending && <ExpiryPendingTag />}
-      </span>
-    )
-  }
-  return <span data-testid="position-cell-dte">{position.dte}</span>
-}
-
 /** FEAT-009 requirement: hover text of the 剩余交易日 column header. */
 const REMAINING_TRADING_DAYS_HINT =
   '今天之后到到期日（含）的美股交易日数，不含周末和休市日'
@@ -104,23 +62,6 @@ function RemainingTradingDaysCell({ position }: { position: OptionPosition }) {
     <span data-testid="position-cell-remaining-trading-days">
       {value == null ? EMPTY_VALUE : value}
     </span>
-  )
-}
-
-const EXPIRY_PENDING_HINT = '16:00 已停止交易；17:30 前仍可能被指派，17:30（美东）起可作废'
-
-/**
- * FEAT-012 (Q10 / Q83): 到期待确认 between 16:00 and 17:30 NY on the expiration date, shown from
- * the backend's `expiryPending` (never computed here); meanwhile short rows only have 被指派
- * (FEAT-013 / FEAT-041) and long rows only 行权 (FEAT-014).
- */
-function ExpiryPendingTag() {
-  return (
-    <Tooltip title={EXPIRY_PENDING_HINT}>
-      <Tag color="processing" data-testid="position-expiry-pending" style={{ cursor: 'help' }}>
-        到期待确认
-      </Tag>
-    </Tooltip>
   )
 }
 
@@ -241,14 +182,9 @@ function positionColumns(
     {
       title: '方向',
       key: 'direction',
-      render: (_value: unknown, position) => {
-        const tag = DIRECTION_TAGS[position.direction]
-        return (
-          <Tag color={tag?.color} data-testid="position-cell-direction">
-            {tag?.label ?? position.direction}
-          </Tag>
-        )
-      },
+      render: (_value: unknown, position) => (
+        <DirectionTag direction={position.direction} testId="position-cell-direction" />
+      ),
     },
     {
       title: '张数',

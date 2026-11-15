@@ -16,6 +16,7 @@ import { PositionsPage } from './pages/PositionsPage'
 import { StockTradeEntryPage } from './pages/StockTradeEntryPage'
 import { StockTradesPage } from './pages/StockTradesPage'
 import { TradeListPage } from './pages/TradeListPage'
+import { UnderlyingGroupsPage } from './pages/UnderlyingGroupsPage'
 
 const NAV_ITEMS = [
   {
@@ -39,6 +40,15 @@ const NAV_ITEMS = [
     label: (
       <Link to="/stocks" data-testid="nav-stocks">
         股票
+      </Link>
+    ),
+  },
+  // FEAT-021 (Q184): 策略 page, titled 按标的.
+  {
+    key: '/strategies',
+    label: (
+      <Link to="/strategies" data-testid="nav-strategies">
+        策略
       </Link>
     ),
   },
@@ -161,6 +171,7 @@ export function App() {
             <Route path="positions" element={<PositionsPage />} />
             <Route path="stocks" element={<StockTradesPage />} />
             <Route path="stocks/new" element={<StockTradeEntryPage />} />
+            <Route path="strategies" element={<UnderlyingGroupsPage />} />
             <Route path="closed" element={<ClosedTradesPage />} />
             <Route path="pnl-summary" element={<PnlSummaryPage />} />
             <Route path="trades/new" element={<TradeEntryPage />} />
