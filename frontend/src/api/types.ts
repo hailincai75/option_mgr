@@ -1483,3 +1483,69 @@ export interface UnrealizedSummaryResponse {
   /** Whole sentence from the backend (e.g. `1 个持仓无报价，未计入`); null when none excluded. */
   excludedLabel: string | null
 }
+
+/** FEAT-019: how a group's Delta dollar exposure came out (first match wins). */
+export type GreeksExposureStatus = 'OK' | 'NO_UNDERLYING_PRICE' | 'NO_DELTA'
+
+/** One symbol of `GET /api/positions/greeks-summary` (scale-2 strings, no "+" on positives). */
+export interface GreeksSummaryGroup {
+  symbol: string
+  /** Sum of the included option rows' position values; null when no row contributes. */
+  optionDelta: MoneyString | null
+  /** Shares × 1; "0.00" without stock, never null. */
+  stockDelta: MoneyString
+  /** optionDelta + stockDelta; null when no option delta and no stock. */
+  netDelta: MoneyString | null
+  gamma: MoneyString | null
+  theta: MoneyString | null
+  vega: MoneyString | null
+  /** Displayed underlying price (FEAT-016 price format); null = no price. */
+  underlyingPrice: string | null
+  underlyingPriceManual: boolean
+  /** `无标的价` when `underlyingPrice` is null. */
+  underlyingPriceLabel: string | null
+  /** null unless `exposureStatus = OK`. */
+  dollarExposure: MoneyString | null
+  exposureStatus: GreeksExposureStatus
+  /** `无标的价` for NO_UNDERLYING_PRICE; null otherwise. */
+  exposureLabel: string | null
+  /** `按手动标的价` when OK with a manual price. */
+  manualPriceNote: string | null
+  optionRowCount: number
+  includedCount: number
+  noQuoteCount: number
+  expiredPendingCount: number
+  deltaMissingCount: number
+  gammaMissingCount: number
+  thetaMissingCount: number
+  vegaMissingCount: number
+  /** Whole sentence (e.g. `1 个持仓无报价，未计入`); null when none excluded. */
+  excludedLabel: string | null
+  /** Whole sentence (e.g. `Gamma、Vega：1 个持仓缺值，未计入`); null when none missing. */
+  missingLabel: string | null
+}
+
+/** Whole-account totals of `GET /api/positions/greeks-summary` (never null; "0.00" when empty). */
+export interface GreeksSummaryPortfolio {
+  dollarExposure: MoneyString
+  theta: MoneyString
+  vega: MoneyString
+  noQuoteCount: number
+  expiredPendingCount: number
+  noUnderlyingPriceCount: number
+  deltaMissingCount: number
+  thetaMissingCount: number
+  vegaMissingCount: number
+  excludedLabel: string | null
+  /** `N 个标的无标的价，美元敞口未计入`; null when 0. */
+  noUnderlyingPriceLabel: string | null
+  missingLabel: string | null
+}
+
+/** Contract: `GET /api/positions/greeks-summary` → 200 (current account, never filtered). */
+export interface GreeksSummaryResponse {
+  asOfDate: LocalDateString
+  /** One per symbol with option or stock positions, sorted by symbol; [] when none. */
+  groups: GreeksSummaryGroup[]
+  portfolio: GreeksSummaryPortfolio
+}

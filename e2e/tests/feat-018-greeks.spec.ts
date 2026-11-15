@@ -312,7 +312,9 @@ test.describe('FEAT-018 单合约 Greeks', () => {
     // AC4
     await ui.expectAllCells(P4, NO_QUOTE, 'NO_QUOTE')
     await ui.expectSummaryUnchanged()
-    await expect(page.getByTestId(/greeks-(total|summary)/)).toHaveCount(0)
+    // no Greeks totals inside the positions table / FEAT-017 summary (Q165; the per-symbol summary block is FEAT-019)
+    await expect(page.getByTestId(/greeks-total/)).toHaveCount(0)
+    await expect(ui.id('unrealized-summary-totals').getByTestId(/greeks/)).toHaveCount(0)
   })
 
   test('AC5 切换到账户 B：P5 35.12% / +90.63 / −15.36 / +13.68 / −21.33（每张同 P1）', async ({ page }) => {

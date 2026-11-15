@@ -4,6 +4,7 @@ import type {
   Account,
   OptionGreeks,
   OptionPosition,
+  GreeksSummaryResponse,
   OptionPositionsResponse,
   UnrealizedSummaryResponse,
 } from '../api/types'
@@ -187,6 +188,26 @@ const SUMMARY: UnrealizedSummaryResponse = {
   excludedLabel: null,
 }
 
+/** FEAT-019 summary shown once 显示 Greeks is on (contents not asserted here). */
+const GREEKS_SUMMARY: GreeksSummaryResponse = {
+  asOfDate: '2026-11-23',
+  groups: [],
+  portfolio: {
+    dollarExposure: '0.00',
+    theta: '0.00',
+    vega: '0.00',
+    noQuoteCount: 0,
+    expiredPendingCount: 0,
+    noUnderlyingPriceCount: 0,
+    deltaMissingCount: 0,
+    thetaMissingCount: 0,
+    vegaMissingCount: 0,
+    excludedLabel: null,
+    noUnderlyingPriceLabel: null,
+    missingLabel: null,
+  },
+}
+
 function optionsResponse(positions: OptionPosition[]): OptionPositionsResponse {
   return { asOfDate: '2026-11-23', positionCount: positions.length, frozenTotal: '0.00', positions }
 }
@@ -205,6 +226,7 @@ function startFakeServer(byAccount: Record<number, () => OptionPosition[]>) {
       return Promise.resolve(jsonResponse({ positionCount: 0, positions: [] }))
     }
     if (url === '/api/positions/unrealized-summary') return Promise.resolve(jsonResponse(SUMMARY))
+    if (url === '/api/positions/greeks-summary') return Promise.resolve(jsonResponse(GREEKS_SUMMARY))
     if (url === '/api/adhoc-closure-alerts') return Promise.resolve(jsonResponse({ alerts: [] }))
     return Promise.reject(new Error(`Unexpected request ${url}`))
   })

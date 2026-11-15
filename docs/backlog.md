@@ -15,7 +15,7 @@ PM 维护。状态：Draft / Approved / Implemented / Verified / Failed
 | M1 核心记账（MVP） | 能记录期权交易、看到持仓、算出已实现盈亏和现金 | FEAT-001 ~ 008（已全部 Verified） |
 | M1.5 多账户（已完成） | 用户实际有 2 个账户在做期权交易：按账户隔离现金、交易、持仓、盈亏与审计，已有数据迁入默认账户。另插入 FEAT-038（允许 STO call，真实使用阻塞）。合并查看、转账、归档已移到 M5 | FEAT-033、038（已全部 Verified） |
 | M2 到期与事件（MVP，已完成） | 处理到期作废 / 指派 / 行权，生成股票持仓，covered call 股票覆盖检查；交易日历与临时休市 | FEAT-009 ~ 015、039 ~ 043（已全部 Verified；里程碑全量 E2E 329 个通过） |
-| M3 行情、未实现盈亏与 Greeks | 自动行情（CBOE + Finnhub 兜底，手动只作覆盖）→ 未实现盈亏 → Greeks（取自数据源） | FEAT-016 ~ 019（FEAT-020 已并入 016） |
+| M3 行情、未实现盈亏与 Greeks（已完成） | 自动行情（CBOE + Finnhub 兜底，手动只作覆盖）→ 未实现盈亏 → Greeks（取自数据源） | FEAT-016 ~ 019（FEAT-020 已并入 016；已全部 Verified；里程碑全量 E2E 370/371 通过，唯一失败为 feat-043 测试时序问题，修复测试后 feat-043 复跑 7/7 通过，见 FEAT-019 测试报告） |
 | M4 策略 | 多腿录入、策略分组、策略级盈亏与风险、展期 | FEAT-021 ~ 027 |
 | M5 公司行动、数据进出与分析 | 拆股、导入导出、统计、外部接入；多账户增强（合并查看、账户间转账、归档，从 M1.5 移来） | FEAT-028 ~ 032、034、035 ~ 037 |
 
@@ -88,7 +88,7 @@ PM 维护。状态：Draft / Approved / Implemented / Verified / Failed
 | FEAT-014 | 主动行权处理 | 多头期权行权：call 按行权价买股（生成"行权买入"批次）、put 按行权价按 FIFO 卖股（"行权卖出"）及现金流水，记录形式、删除、重放沿用 FEAT-013/041。**在 FEAT-003 持仓页的多头持仓行上加"行权"按钮**。已定：提前行权与按钮时间（Q81）、权利金并入股票（Q111）、整笔批次（Q112）、被覆盖股票不能行权卖出（Q113）、笔数（Q114） | P1 | 013, 041, 039 | BE+FE | Verified | [FEAT-014](requirements/FEAT-014-exercise.md) |
 | FEAT-015 | 到期批量处理 | **批量作废**（Q115，用户决定缩小，不做逐行选 作废 / 被指派 / 行权）：持仓页"已过期未处理"/"今天到期"（17:30 起）过滤上加 `批量作废（N）`（Q118），默认全选、可取消勾选（Q117），全部成功或全部不保存（Q116），每个持仓仍是一条普通"到期作废"（Q119）；被指派 / 行权仍单行处理。Q115–Q119 已定 | P1 | 010, 012, 013, 041, 014 | BE+FE | Verified | [FEAT-015](requirements/FEAT-015-batch-expiration.md) |
 
-## M3 行情、未实现盈亏与 Greeks
+## M3 行情、未实现盈亏与 Greeks（已完成）
 
 **数据源（用户已批准，Q135–Q137）：** 期权与标的用 CBOE 延迟报价 JSON `https://cdn-api.cboe.com/api/global/delayed_quotes/options/{SYMBOL}.json`（无 key，按标的返回全部期权链，含 bid / ask / iv / delta / gamma / theta / vega / rho / theo 等；用户实测可用）；股价兜底用 Finnhub `quote?symbol=`（已有 `FINNHUB_API_KEY`，免费版可用；Finnhub 期权链免费版 403，不用于期权）。**风险：** CBOE 接口无官方文档、约 15 分钟延迟；用户已接受个人使用的风险（Q144）。
 
@@ -99,7 +99,7 @@ PM 维护。状态：Draft / Approved / Implemented / Verified / Failed
 | FEAT-016 | 自动行情（只读） | 自动拉取所有账户当前持有的期权 / 股票涉及的标的行情（CBOE，股价 Finnhub 兜底），只存持有合约的报价（含 IV、Greeks、theo，供 018 使用）；持仓页显示标的价、bid / ask / mark、报价时间、无报价与过期提示；手动录入只作兜底覆盖（Q135）。原 FEAT-020 并入。Q135–Q151 已定（指数期权不拉取，Q149；过期合约冻结不跟踪，Q150；过期合约标"已到期（最后报价：…）"，Q151），无待定问题 | P1 | 003, 011, 033, 009 | BE+FE | Verified | [FEAT-016](requirements/FEAT-016-auto-quotes.md) |
 | FEAT-017 | 未实现盈亏 | 基于最新行情（FEAT-016 的 mark / 现价，含手动覆盖）计算每个期权/股票持仓的市值、未实现盈亏和百分比；无报价、已过期未处理不计算也不计入合计；当前账户的期权 / 股票 / 总市值与总未实现盈亏。Q152–Q161 已定（空头市值为负，Q152；不预估平仓手续费，Q153；已过期未处理显示"已到期，待处理"，Q156；只算当前账户，Q157；首页不改，Q159；场景只用 multiplier 100，Q161），无待定问题 | P1 | 016 | BE+FE | Verified | [FEAT-017](requirements/FEAT-017-unrealized-pnl.md) |
 | FEAT-018 | 单合约 Greeks | IV 与 Delta / Gamma / Theta / Vega 直接取 FEAT-016 存的 CBOE 数据，后端不做 Black-Scholes、无无风险利率配置（Q137）；持仓页显示每张及持仓合计 Greeks；无报价时显示"无报价"。Q163–Q173 已定（按建议：持仓值为主、每张原值小字，Q163；空头持仓值取反，Q164；只做每行、合计在 019，Q165；不显示 Rho，Q167；"显示 Greeks"开关默认关闭，Q173），无待定问题 | P1 | 016 | BE+FE | Verified | [FEAT-018](requirements/FEAT-018-option-greeks.md) |
-| FEAT-019 | 组合 Greeks 汇总 | 按标的和全组合汇总 Greeks（含股票的 Delta），显示 Delta 美元敞口 | P1 | 018 | BE+FE | Draft | — |
+| FEAT-019 | 组合 Greeks 汇总 | 按标的和全组合汇总 Greeks（含股票的 Delta），显示 Delta 美元敞口。Q174–Q182 已定（按建议：只算当前账户，Q174；持仓页跟随"显示 Greeks"开关，Q175；全组合只显示美元敞口 / Theta / Vega，Q177；取整同 Q154，Q181），无待定问题 | P1 | 018 | BE+FE | Verified | [FEAT-019](requirements/FEAT-019-portfolio-greeks.md) |
 | FEAT-020 | ~~行情数据源（只读）~~ | **已并入 FEAT-016**（Q135）。编号不再使用 | — | — | — | 已并入 016 | — |
 
 ## M4 策略
@@ -185,6 +185,10 @@ FEAT-010 改为持仓页到期过滤（用户决定，不做新页面）：Q80�
 #### M3-3 挡住 FEAT-018 单合约 Greeks
 
 全部已定（Q163–Q173 按建议，见 decisions.md），FEAT-018 没有待定问题。
+
+#### M3-4 挡住 FEAT-019 组合 Greeks 汇总
+
+全部已定（Q174–Q182 按建议，见 decisions.md），FEAT-019 没有待定问题。
 
 #### 其他（不阻塞 M2）
 

@@ -300,8 +300,15 @@ test.describe('FEAT-043 调整到期日', () => {
     // range 2026-11-25 (last trade date) .. 2026-12-03; Thanksgiving 11-26 is not a trading day
     await expect(ui.dayCell(dropdown, '2026-12-03')).not.toHaveClass(/ant-picker-cell-disabled/)
     // November is not shown in the December view: go to the previous month (must not jump back while a date is filled)
-    await dropdown.locator('.ant-picker-header-prev-btn').click()
-    await expect(dropdown.locator('.ant-picker-header-view')).toHaveText(/Nov\s*2026|2026.*11/)
+    // (under load the first click can land while the dropdown is still animating open and be dropped: click again only
+    // while the view still shows December, so it can never overshoot to October)
+    const view = dropdown.locator('.ant-picker-header-view')
+    await expect(async () => {
+      if (/Dec\s*2026|2026.*12/.test(await view.innerText())) {
+        await dropdown.locator('.ant-picker-header-prev-btn').click()
+      }
+      await expect(view).toHaveText(/Nov\s*2026|2026.*11/, { timeout: 2_000 })
+    }).toPass({ timeout: 15_000 })
     await expect(ui.dayCell(dropdown, '2026-11-25')).not.toHaveClass(/ant-picker-cell-disabled/)
     await expect(ui.dayCell(dropdown, '2026-11-24')).toHaveClass(/ant-picker-cell-disabled/)
     await expect(ui.dayCell(dropdown, '2026-11-26')).toHaveClass(/ant-picker-cell-disabled/)

@@ -31,6 +31,7 @@ import { QueryError } from '../components/QueryError'
 import { MarketDataBar } from '../components/quote/MarketDataBar'
 import { StockPositionsCard } from '../components/stock/StockPositionsCard'
 import { UnrealizedSummaryBar } from '../components/unrealized/UnrealizedSummaryBar'
+import { GreeksSummaryCard } from '../components/greeks/GreeksSummaryCard'
 import {
   GREEKS_NOTE,
   GREEKS_TOGGLE_LABEL,
@@ -179,6 +180,8 @@ export function PositionsPage() {
             </Typography.Text>
           )}
         </Space>
+        {/* FEAT-019 (Q175): per-symbol Greeks summary, only while 显示 Greeks is on (no request when off). */}
+        {showGreeks && <GreeksSummaryCard />}
         <PositionTable
           positions={shown}
           showGreeks={showGreeks}

@@ -5,6 +5,7 @@ import { useState, type HTMLAttributes } from 'react'
 import { adhocClosureAlertQueryKeys } from '../../api/adhocClosureAlerts'
 import { ApiError } from '../../api/client'
 import { optionPositionQueryKeys } from '../../api/optionPositions'
+import { greeksSummaryQueryKeys } from '../../api/greeksSummary'
 import { unrealizedSummaryQueryKeys } from '../../api/unrealizedSummary'
 import {
   createExpirationBatch,
@@ -104,6 +105,8 @@ export function BatchExpireModal({ positions, onDone }: BatchExpireModalProps) {
         queryClient.invalidateQueries({ queryKey: optionPositionQueryKeys.all }),
         // FEAT-017: the account totals follow the positions.
         queryClient.invalidateQueries({ queryKey: unrealizedSummaryQueryKeys.all }),
+        // FEAT-019: the per-symbol Greeks summary follows the positions too.
+        queryClient.invalidateQueries({ queryKey: greeksSummaryQueryKeys.all }),
         queryClient.invalidateQueries({ queryKey: adhocClosureAlertQueryKeys.all }),
       ])
     },

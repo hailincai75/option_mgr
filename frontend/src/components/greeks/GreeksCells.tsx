@@ -6,6 +6,38 @@ import { greeksDisplay, type GreekKey, type GreeksColumnKey } from './greeksLabe
 const NUMERIC = { fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } as const
 
 /**
+ * Circled `?` whose hover shows a plain-language hint (Q169). Shared by the FEAT-018 Greeks
+ * columns and the FEAT-019 summary headers.
+ */
+export function HelpIcon({ label, hint, testId }: { label: string; hint: string; testId: string }) {
+  return (
+    <Tooltip title={hint}>
+      <span
+        role="img"
+        aria-label={`${label} 说明`}
+        data-testid={testId}
+        style={{
+          display: 'inline-block',
+          marginLeft: 4,
+          width: 14,
+          height: 14,
+          lineHeight: '12px',
+          fontSize: 10,
+          textAlign: 'center',
+          borderRadius: '50%',
+          border: '1px solid currentColor',
+          opacity: 0.55,
+          cursor: 'help',
+          fontWeight: 'normal',
+        }}
+      >
+        ?
+      </span>
+    </Tooltip>
+  )
+}
+
+/**
  * FEAT-018 column header: the title and a `?` whose hover shows the plain-language hint (Q169).
  */
 export function GreeksHeader({
@@ -20,28 +52,7 @@ export function GreeksHeader({
   return (
     <span data-testid={`greeks-header-${columnKey}`} style={{ whiteSpace: 'nowrap' }}>
       {title}
-      <Tooltip title={hint}>
-        <span
-          role="img"
-          aria-label={`${title} 说明`}
-          data-testid={`greeks-header-${columnKey}-help`}
-          style={{
-            display: 'inline-block',
-            marginLeft: 4,
-            width: 14,
-            height: 14,
-            lineHeight: '12px',
-            fontSize: 10,
-            textAlign: 'center',
-            borderRadius: '50%',
-            border: '1px solid currentColor',
-            opacity: 0.55,
-            cursor: 'help',
-          }}
-        >
-          ?
-        </span>
-      </Tooltip>
+      <HelpIcon label={title} hint={hint} testId={`greeks-header-${columnKey}-help`} />
     </span>
   )
 }

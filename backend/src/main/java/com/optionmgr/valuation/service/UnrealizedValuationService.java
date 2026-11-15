@@ -9,13 +9,16 @@ import com.optionmgr.stock.service.StockPositionService;
 import com.optionmgr.trade.domain.OptionPosition;
 import com.optionmgr.trade.domain.PositionDirection;
 import com.optionmgr.trade.service.OptionPositionService;
+import com.optionmgr.valuation.domain.GreeksSummary;
 import com.optionmgr.valuation.domain.GreeksValuation;
 import com.optionmgr.valuation.domain.RowGreeks;
 import com.optionmgr.valuation.domain.RowValuation;
 import com.optionmgr.valuation.domain.UnrealizedSummary;
 import com.optionmgr.valuation.domain.UnrealizedValuation;
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -79,5 +82,31 @@ public class UnrealizedValuationService {
         List<RowValuation> stockRows = stocks.currentPositions(accountId).stream()
                 .map(p -> stock(p, book.underlying(p.symbol()))).toList();
         return new Summary(s.asOfDate(), UnrealizedSummary.of(optionRows, stockRows));
+    }
+
+    public record GreeksSummaryResult(LocalDate asOfDate, GreeksSummary summary) {
+    }
+
+    /**
+     * FEAT-019: Greeks per underlying and for the account. All current positions (no filter, Q174); each option row
+     * goes through {@link #greeks} with one {@code QuoteBook}, exactly as the position rows do.
+     */
+    @Transactional(readOnly = true)
+    public GreeksSummaryResult greeksSummary(long accountId) {
+        OptionPositionService.PositionSummary s = options.currentPositions(accountId);
+        QuoteViews.QuoteBook book = quotes.book();
+        List<GreeksSummary.OptionRow> rows = s.positions().stream()
+                .map(p -> new GreeksSummary.OptionRow(p.contract().symbol(),
+                        greeks(p, s.asOfDate(), book.option(p.contract()), book.stored(p.contract()))))
+                .toList();
+        Map<String, Long> shares = new HashMap<>();
+        for (StockPosition p : stocks.currentPositions(accountId)) {
+            shares.merge(p.symbol(), p.shares(), Long::sum);
+        }
+        GreeksSummary summary = GreeksSummary.of(rows, shares, symbol -> {
+            QuoteViews.UnderlyingQuote q = book.underlying(symbol);
+            return q == null ? GreeksSummary.Underlying.NONE : new GreeksSummary.Underlying(q.price(), q.manual());
+        });
+        return new GreeksSummaryResult(s.asOfDate(), summary);
     }
 }

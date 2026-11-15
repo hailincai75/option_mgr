@@ -2,7 +2,7 @@ import { QueryClient } from '@tanstack/react-query'
 import { refreshAfterChange } from './tradeFormSupport'
 
 describe('refreshAfterChange', () => {
-  it('invalidates cash, trades, positions, audit log and closed trades and stocks and unrealized totals (FEAT-005, FEAT-006, FEAT-011, FEAT-017)', async () => {
+  it('invalidates cash, trades, positions, audit log and closed trades and stocks and unrealized totals and the Greeks summary (FEAT-005, FEAT-006, FEAT-011, FEAT-017, FEAT-019)', async () => {
     const queryClient = new QueryClient()
     const spy = vi.spyOn(queryClient, 'invalidateQueries')
     await refreshAfterChange(queryClient)
@@ -11,6 +11,7 @@ describe('refreshAfterChange', () => {
       ['option-trades'],
       ['option-positions'],
       ['unrealized-summary'],
+      ['greeks-summary'],
       ['audit-log'],
       ['closed-trades'],
       ['dashboard'],
