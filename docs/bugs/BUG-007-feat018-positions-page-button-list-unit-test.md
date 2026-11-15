@@ -1,6 +1,6 @@
 # BUG-007: FEAT-018 开关是 button，PositionsPage 单元测试"页面上只有这些按钮"失败
 
-- **Status:** Fixed
+- **Status:** Closed
 - **Severity:** Minor
 - **Layer:** frontend
 - **Related:** FEAT-018（回归：FEAT-003 / FEAT-004 / FEAT-016 的单元测试）
