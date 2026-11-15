@@ -2,9 +2,11 @@ import { Button, Space, Table, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { HTMLAttributes, ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import { useIsAllAccounts } from '../../account/AccountContext'
 import type { StockTrade } from '../../api/types'
 import { decimalSign, EMPTY_VALUE, formatInteger, formatMoney } from '../../utils/format'
-import { auditUrl } from '../audit/auditLinks'
+import { AccountNameCell } from '../account/AccountNameCell'
+import { HistoryLink } from '../account/HistoryLink'
 import { tradesUrlForAssignment, tradesUrlForExercise } from '../position/positionLinks'
 import { SIGNED_MONEY_COLORS } from '../trade/tradeLabels'
 import { SoldLotTable } from './SoldLotTable'
@@ -38,7 +40,10 @@ export function StockAmountText({ trade, testId }: { trade: StockTrade; testId: 
     isExerciseStockType(trade.type)
   ) {
     return (
-      <span data-testid={testId} style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+      <span
+        data-testid={testId}
+        style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}
+      >
         {AMOUNT_PREFIX[trade.type] ?? '金额'} {formatMoney(trade.amount)}
       </span>
     )
@@ -76,12 +81,16 @@ export function StockPnlText({ value, testId }: { value: string | null; testId: 
 
 function SoldDetail({ trade }: { trade: StockTrade }) {
   return (
-    <Space orientation="vertical" size={8} style={{ width: '100%' }} data-testid="stock-sold-detail">
+    <Space
+      orientation="vertical"
+      size={8}
+      style={{ width: '100%' }}
+      data-testid="stock-sold-detail"
+    >
       <SoldLotTable lots={trade.soldLots ?? []} />
       <Space size={24} wrap>
         <span>
-          被卖出成本合计{' '}
-          <span data-testid="stock-sold-cost">{formatMoney(trade.soldCost)}</span>
+          被卖出成本合计 <span data-testid="stock-sold-cost">{formatMoney(trade.soldCost)}</span>
         </span>
         <span>
           已实现盈亏 <StockPnlText value={trade.realizedPnl} testId="stock-sold-pnl" />
@@ -107,6 +116,8 @@ interface StockTradeTableProps {
  * `deletable` (FEAT-013 / FEAT-041: not on 指派买入 / 指派卖出, which show a hint and a link to
  * their 被指派 record; FEAT-014: same for 行权买入 / 行权卖出 and their 行权 record), and 历史 when the
  * record has audit records.
+ * FEAT-046: in 全部账户 mode a first 账户 column is added and 修改 / 删除 are hidden (Q217); 历史
+ * switches to the row's account first (Q231).
  */
 export function StockTradeTable({
   trades,
@@ -116,7 +127,21 @@ export function StockTradeTable({
   onEdit,
   onDelete,
 }: StockTradeTableProps) {
+  const allAccounts = useIsAllAccounts()
+  // FEAT-046 (Q214): 账户 first column, only in 全部账户 mode.
+  const accountColumns: ColumnsType<StockTrade> = allAccounts
+    ? [
+        {
+          title: '账户',
+          key: 'account',
+          render: (_value: unknown, trade: StockTrade) => (
+            <AccountNameCell row={trade} testId="stock-cell-account" />
+          ),
+        },
+      ]
+    : []
   const columns: ColumnsType<StockTrade> = [
+    ...accountColumns,
     {
       title: '时间（美东）',
       key: 'time',
@@ -241,7 +266,7 @@ export function StockTradeTable({
       key: 'actions',
       render: (_value: unknown, trade) => (
         <Space size={4} style={{ whiteSpace: 'nowrap' }}>
-          {trade.editable && (
+          {!allAccounts && trade.editable && (
             <Button
               size="small"
               type="link"
@@ -253,7 +278,7 @@ export function StockTradeTable({
               修改
             </Button>
           )}
-          {trade.deletable && (
+          {!allAccounts && trade.deletable && (
             <Button
               size="small"
               type="link"
@@ -285,9 +310,12 @@ export function StockTradeTable({
             </Typography.Text>
           )}
           {trade.hasAuditLog && (
-            <Link to={auditUrl('STOCK_TRADE', trade.id)} data-testid="stock-history">
-              历史
-            </Link>
+            <HistoryLink
+              objectType="STOCK_TRADE"
+              objectId={trade.id}
+              row={trade}
+              testId="stock-history"
+            />
           )}
         </Space>
       ),
@@ -307,6 +335,7 @@ export function StockTradeTable({
           'data-testid': 'stock-row',
           'data-stock-trade-id': trade.id,
           'data-stock-type': trade.type,
+          'data-account-id': trade.accountId,
         }) as HTMLAttributes<HTMLElement>
       }
       expandable={{

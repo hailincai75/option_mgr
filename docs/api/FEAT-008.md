@@ -1,6 +1,8 @@
 # FEAT-008 盈亏汇总与首页概览
 
 > **FEAT-035 修订**：`GET /api/dashboard`、`GET /api/pnl-summary` 接受 `X-Account-Id: ALL`（结构不变，数字为全部账户之和；盈亏汇总按标的 / 按月跨账户合并）。见 [FEAT-035.md](FEAT-035.md)。
+>
+> **FEAT-046 修订**：已平仓也接受 `ALL`，盈亏汇总 = 已平仓合计的一致性在 `ALL` 下恢复。见 [FEAT-046.md](FEAT-046.md)。
 
 只读。已实现盈亏全部来自 FEAT-006 的已平仓记录（同一套 FIFO 重放与 Q21 整笔计算），不含入金、出金（Q26）。
 

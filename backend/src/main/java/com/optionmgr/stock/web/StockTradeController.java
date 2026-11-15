@@ -1,6 +1,9 @@
 package com.optionmgr.stock.web;
 
+import com.optionmgr.account.service.AccountService;
 import com.optionmgr.account.web.AccountRef;
+import com.optionmgr.account.web.AccountScope;
+import java.util.Map;
 import com.optionmgr.common.time.MarketTime;
 import com.optionmgr.stock.domain.LotSale;
 import com.optionmgr.stock.domain.SaleMatch;
@@ -42,8 +45,10 @@ public class StockTradeController {
 
     private final StockTradeService service;
     private final StockTradeEditService edits;
+    private final AccountService accounts;
 
-    public StockTradeController(StockTradeService service, StockTradeEditService edits) {
+    public StockTradeController(StockTradeService service, StockTradeEditService edits, AccountService accounts) {
+        this.accounts = accounts;
         this.service = service;
         this.edits = edits;
     }
@@ -51,13 +56,14 @@ public class StockTradeController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public StockTradeResponse create(AccountRef account, @Valid @RequestBody CreateStockTradeRequest req) {
-        return toResponse(service.create(account.id(), new StockTradeService.CreateCommand(req.type(), req.symbol(),
+        return toResponse(name(account), service.create(account.id(),
+                new StockTradeService.CreateCommand(req.type(), req.symbol(),
                 req.shares().intValueExact(), req.amount(), req.tradedAtLocal(), req.tradeDate(), req.note())));
     }
 
     @GetMapping
     public StockTradePageResponse list(
-            AccountRef account,
+            AccountScope scope,
             @RequestParam(required = false) String symbol,
             @RequestParam(name = "type", required = false) List<String> types,
             @RequestParam(required = false) String startDate,
@@ -65,20 +71,28 @@ public class StockTradeController {
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
         StockTradeFilter filter = StockTradeListQuery.parse(symbol, types, startDate, endDate, page, size);
-        StockTradeService.StockTradePage p = service.list(account.id(), filter, page, size);
-        return new StockTradePageResponse(p.items().stream().map(StockTradeController::toResponse).toList(),
+        // FEAT-046: one query over the scope's accounts (database pagination of the merged list)
+        StockTradeService.StockTradePage p = service.list(scope.ids(), filter, page, size);
+        Map<Long, String> names = scope.names();
+        return new StockTradePageResponse(
+                p.items().stream().map(v -> toResponse(names.get(v.trade().getAccountId()), v)).toList(),
                 p.page(), p.size(), p.totalItems(), p.totalPages());
+    }
+
+    /** FEAT-046: the current name of the request's account (every record response carries it). */
+    private String name(AccountRef account) {
+        return accounts.get(account.id()).getName();
     }
 
     @GetMapping("/{id}")
     public StockTradeResponse get(AccountRef account, @PathVariable long id) {
-        return toResponse(service.get(account.id(), id));
+        return toResponse(name(account), service.get(account.id(), id));
     }
 
     @PutMapping("/{id}")
     public StockTradeResponse update(AccountRef account, @PathVariable long id,
                                      @Valid @RequestBody EditStockTradeRequest req) {
-        return toResponse(edits.update(account.id(), id, new StockTradeEditService.EditCommand(
+        return toResponse(name(account), edits.update(account.id(), id, new StockTradeEditService.EditCommand(
                 req.shares().intValueExact(), req.amount(), req.tradedAtLocal(), req.tradeDate(), req.note(),
                 req.symbol(), req.type())));
     }
@@ -97,10 +111,11 @@ public class StockTradeController {
         return type == StockTradeType.TRANSFER_IN ? StockTimes.marketDate(tradedAt) : null;
     }
 
-    private static StockTradeResponse toResponse(StockTradeService.StockTradeView view) {
+    private static StockTradeResponse toResponse(String accountName, StockTradeService.StockTradeView view) {
         StockTradeEntity t = view.trade();
         SaleMatch sale = view.sale().orElse(null);
-        return new StockTradeResponse(t.getId(), t.getType(), t.getSymbol(), t.getShares(), t.getAmount(),
+        return new StockTradeResponse(t.getAccountId(), accountName, t.getId(), t.getType(), t.getSymbol(),
+                t.getShares(), t.getAmount(),
                 view.cashChange(), StockPosition.perShare(t.getAmount(), t.getShares()), t.getTradedAt(),
                 local(t.getTradedAt()), transferDate(t.getType(), t.getTradedAt()), t.getNote(), view.ledgerEntryId(),
                 t.getCreatedAt(), t.hasAuditLog(),

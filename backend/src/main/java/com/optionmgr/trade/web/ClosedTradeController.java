@@ -1,6 +1,11 @@
 package com.optionmgr.trade.web;
 
-import com.optionmgr.account.web.AccountRef;
+import com.optionmgr.account.domain.AccountRows;
+import com.optionmgr.account.web.AccountScope;
+import com.optionmgr.trade.domain.ClosedRecordKey;
+import java.util.ArrayList;
+import java.util.Comparator;
+import com.optionmgr.common.money.Money;
 import com.optionmgr.common.time.MarketTime;
 import com.optionmgr.stock.domain.LotSale;
 import com.optionmgr.stock.domain.StockTimes;
@@ -47,7 +52,9 @@ public class ClosedTradeController {
      * One closed record. Option-only fields are null on stock rows, stock-only fields null on option rows (FEAT-040).
      * A row is identified by {@code type} + {@code id}.
      */
-    public record ClosedTradeResponse(ClosedRecordType type, long id, Instant tradedAt, String tradedAtLocal,
+    public record ClosedTradeResponse(/* FEAT-046: the row's account (current name), also for one account */
+                                      long accountId, String accountName,
+                                      ClosedRecordType type, long id, Instant tradedAt, String tradedAtLocal,
                                       String symbol, LocalDate expirationDate, String strike, OptionType optionType,
                                       String contractLabel,
                                       /* BTC / STC / EXP / ASG; SELL / ASSIGN_SELL on stock rows */
@@ -84,7 +91,7 @@ public class ClosedTradeController {
 
     @GetMapping
     public ClosedTradePageResponse list(
-            AccountRef account,
+            AccountScope scope,
             @RequestParam(required = false) String type,
             @RequestParam(required = false) String symbol,
             @RequestParam(required = false) String expirationDate,
@@ -98,24 +105,36 @@ public class ClosedTradeController {
         ClosedRecordFilter filter = TradeListQuery.parseClosed(type, symbol, expirationDate, strike, optionType,
                 actions, startDate, endDate, page, size, ClosedTradeService.CLOSING_ACTIONS,
                 "方向只能是 BTC、STC、EXP、ASG、EXR");
-        ClosedTradeService.ClosedTradePage p = service.page(account.id(), filter, page, size);
+        // FEAT-046: each account's records computed on their own (FIFO per account, Q53), merged in the list order
+        // (then account id, Q229); count, total and page are of the merged list (Q216, rule 5)
+        List<List<ClosedRecordView>> perAccount = service.allByAccount(scope.ids(), filter);
+        List<AccountRows.Row<ClosedRecordView>> rows = new ArrayList<>();
+        for (int i = 0; i < perAccount.size(); i++) {
+            AccountScope.Member m = scope.accounts().get(i);
+            perAccount.get(i).forEach(v -> rows.add(new AccountRows.Row<>(m.id(), m.name(), v)));
+        }
+        List<AccountRows.Row<ClosedRecordView>> sorted = AccountRows.sorted(rows,
+                Comparator.comparing(ClosedRecordView::key, ClosedRecordKey.NEWEST_FIRST));
+        BigDecimal total = sorted.stream().map(r -> r.value().realizedPnl()).reduce(Money.ZERO, BigDecimal::add);
+        AccountRows.Page<AccountRows.Row<ClosedRecordView>> p = AccountRows.page(sorted, page, size);
         return new ClosedTradePageResponse(p.items().stream().map(ClosedTradeController::toResponse).toList(),
-                p.page(), p.size(), p.totalItems(), p.totalPages(), p.totalItems(), p.filteredRealizedPnlTotal());
+                page, size, p.totalItems(), p.totalPages(), p.totalItems(), total);
     }
 
-    private static ClosedTradeResponse toResponse(ClosedRecordView v) {
+    private static ClosedTradeResponse toResponse(AccountRows.Row<ClosedRecordView> r) {
+        ClosedRecordView v = r.value();
         return switch (v) {
-            case ClosedTradeView o -> toResponse(o);
-            case StockSaleView s -> toResponse(s);
+            case ClosedTradeView o -> toResponse(r.accountId(), r.accountName(), o);
+            case StockSaleView s -> toResponse(r.accountId(), r.accountName(), s);
         };
     }
 
-    private static ClosedTradeResponse toResponse(ClosedTradeView v) {
+    private static ClosedTradeResponse toResponse(long accountId, String accountName, ClosedTradeView v) {
         OptionTradeEntity t = v.trade().trade();
         ClosedTrade f = v.figures();
         ContractKey c = t.contract();
         boolean isExercise = t.getAction() == com.optionmgr.trade.domain.TradeAction.EXR;
-        return new ClosedTradeResponse(ClosedRecordType.OPTION, t.getId(), t.getTradedAt(), local(t.getTradedAt()),
+        return new ClosedTradeResponse(accountId, accountName, ClosedRecordType.OPTION, t.getId(), t.getTradedAt(), local(t.getTradedAt()),
                 t.getSymbol(), t.getExpirationDate(), ContractKey.strikeText(t.getStrike()), t.getOptionType(),
                 c.label(), t.getAction().name(), f.closedDirection(), t.getContracts(), t.getMultiplier(), null,
                 f.openingNetTotal(), f.openingNetPerContract(), null, f.closeNetAmount(), f.closeNetPerContract(),
@@ -134,10 +153,10 @@ public class ClosedTradeController {
                 .orElse(null);
     }
 
-    private static ClosedTradeResponse toResponse(StockSaleView v) {
+    private static ClosedTradeResponse toResponse(long accountId, String accountName, StockSaleView v) {
         StockTradeEntity t = v.sale();
         ClosedStockSale f = v.figures();
-        return new ClosedTradeResponse(ClosedRecordType.STOCK, t.getId(), t.getTradedAt(), local(t.getTradedAt()),
+        return new ClosedTradeResponse(accountId, accountName, ClosedRecordType.STOCK, t.getId(), t.getTradedAt(), local(t.getTradedAt()),
                 t.getSymbol(), null, null, null, null, t.getType().name(), null, null, null, t.getShares(),
                 f.openingNetTotal(), null, f.costPerShare(), f.closeNetAmount(), null, f.pricePerShare(),
                 f.realizedPnl(), t.getNote(), null,

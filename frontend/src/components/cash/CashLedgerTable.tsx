@@ -1,3 +1,4 @@
+import { useIsAllAccounts } from '../../account/AccountContext'
 import { useAccountQuery } from '../../account/useAccountQuery'
 import { Button, Card, Pagination, Space, Table, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
@@ -9,7 +10,8 @@ import {
   deleteCashTransfer,
   getCashLedger,
 } from '../../api/cash'
-import { auditUrl } from '../audit/auditLinks'
+import { AccountNameCell } from '../account/AccountNameCell'
+import { HistoryLink } from '../account/HistoryLink'
 import { DeleteConfirmModal } from '../DeleteConfirmModal'
 import { EditTransferModal } from './EditTransferModal'
 import type { CashLedgerEntry, CashSourceType } from '../../api/types'
@@ -34,6 +36,10 @@ function sourceTypeLabel(sourceType: CashSourceType): string {
 }
 
 const AMOUNT_COLORS = { 1: '#389e0d', [-1]: '#cf1322', 0: undefined } as const
+
+/** FEAT-046 (Q228): in 全部账户 mode each balance is that row's own account balance. */
+export const BALANCE_TITLE = '余额'
+export const ACCOUNT_BALANCE_TITLE = '账户余额'
 
 const columns: ColumnsType<CashLedgerEntry> = [
   {
@@ -67,7 +73,7 @@ const columns: ColumnsType<CashLedgerEntry> = [
     ),
   },
   {
-    title: '余额',
+    title: BALANCE_TITLE,
     dataIndex: 'balanceAfter',
     key: 'balanceAfter',
     align: 'right',
@@ -105,6 +111,26 @@ const columns: ColumnsType<CashLedgerEntry> = [
   },
 ]
 
+/** FEAT-046 (Q214): 账户 first column, only in 全部账户 mode. */
+const accountColumn: ColumnsType<CashLedgerEntry>[number] = {
+  title: '账户',
+  key: 'account',
+  render: (_value: unknown, entry: CashLedgerEntry) => (
+    <AccountNameCell row={entry} testId="cash-ledger-account" />
+  ),
+}
+
+/** FEAT-046: 全部账户 mode adds the 账户 column and titles the balance 账户余额 (Q228). */
+function buildColumns(allAccounts: boolean): ColumnsType<CashLedgerEntry> {
+  if (!allAccounts) return columns
+  return [
+    accountColumn,
+    ...columns.map((column) =>
+      column.key === 'balanceAfter' ? { ...column, title: ACCOUNT_BALANCE_TITLE } : column,
+    ),
+  ]
+}
+
 /**
  * Only deposits / withdrawals are edited here; option rows are edited in the trade list and stock
  * rows (FEAT-011) on the 股票 page.
@@ -123,7 +149,23 @@ function transferSummary(entry: CashLedgerEntry): string {
   return `${sourceTypeLabel(entry.sourceType)} ${amount}，${formatDateTimeNY(entry.occurredAt)}`
 }
 
+function historyLink(entry: CashLedgerEntry) {
+  return entry.hasAuditLog ? (
+    <HistoryLink
+      objectType="CASH_TRANSFER"
+      objectId={entry.sourceId}
+      row={entry}
+      testId="cash-ledger-history"
+    />
+  ) : null
+}
+
+/**
+ * FEAT-046: in 全部账户 mode only 历史 on deposit / withdrawal rows with audit records (Q231); 修改 /
+ * 删除 (Q217) and the 在交易列表中修改 / 在股票交易中修改 links (Q232) are hidden.
+ */
 function actionsColumn(
+  allAccounts: boolean,
   onEdit: (entry: CashLedgerEntry) => void,
   onDelete: (entry: CashLedgerEntry) => void,
 ): ColumnsType<CashLedgerEntry>[number] {
@@ -131,7 +173,11 @@ function actionsColumn(
     title: '操作',
     key: 'actions',
     render: (_value: unknown, entry: CashLedgerEntry) =>
-      isTransfer(entry) ? (
+      allAccounts ? (
+        isTransfer(entry) ? (
+          historyLink(entry)
+        ) : null
+      ) : isTransfer(entry) ? (
         <Space size={4} style={{ whiteSpace: 'nowrap' }}>
           <Button
             size="small"
@@ -154,11 +200,7 @@ function actionsColumn(
           >
             删除
           </Button>
-          {entry.hasAuditLog && (
-            <Link to={auditUrl('CASH_TRANSFER', entry.sourceId)} data-testid="cash-ledger-history">
-              历史
-            </Link>
-          )}
+          {historyLink(entry)}
         </Space>
       ) : isStockEntry(entry) ? (
         <Link to="/stocks" data-testid="cash-ledger-stocks-link">
@@ -181,7 +223,8 @@ interface CashLedgerTableProps {
 
 /**
  * Paginated cash ledger (`GET /api/cash/ledger`), newest first. Deposit / withdrawal rows have
- * 修改 / 删除 / 历史 (FEAT-005).
+ * 修改 / 删除 / 历史 (FEAT-005). FEAT-046: in 全部账户 mode the merged ledger of all accounts with a
+ * 账户 column and 账户余额 (Q228); read-only.
  */
 export function CashLedgerTable({
   page,
@@ -194,6 +237,7 @@ export function CashLedgerTable({
     queryFn: ({ signal }) => getCashLedger(page, pageSize, signal),
     keepPrevious: true,
   })
+  const allAccounts = useIsAllAccounts()
   const [editing, setEditing] = useState<CashLedgerEntry | null>(null)
   const [deleting, setDeleting] = useState<CashLedgerEntry | null>(null)
 
@@ -212,11 +256,19 @@ export function CashLedgerTable({
           <Table<CashLedgerEntry>
             rowKey="id"
             size="small"
-            columns={[...columns, actionsColumn(setEditing, setDeleting)]}
+            columns={[
+              ...buildColumns(allAccounts),
+              actionsColumn(allAccounts, setEditing, setDeleting),
+            ]}
             dataSource={data?.items ?? []}
             loading={isPending || isFetching}
             pagination={false}
-            onRow={() => ({ 'data-testid': 'cash-ledger-row' }) as HTMLAttributes<HTMLElement>}
+            onRow={(entry) =>
+              ({
+                'data-testid': 'cash-ledger-row',
+                'data-account-id': entry.accountId,
+              }) as HTMLAttributes<HTMLElement>
+            }
             locale={{
               emptyText: isPending ? ' ' : <span data-testid="cash-ledger-empty">暂无流水</span>,
             }}

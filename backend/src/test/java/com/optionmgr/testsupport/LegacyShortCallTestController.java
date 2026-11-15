@@ -1,6 +1,7 @@
 package com.optionmgr.testsupport;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.optionmgr.account.service.AccountService;
 import com.optionmgr.account.web.AccountRef;
 import com.optionmgr.trade.domain.ContractKey;
 import com.optionmgr.trade.domain.OpenTradeTerms;
@@ -27,8 +28,10 @@ public class LegacyShortCallTestController {
     public static final String URL = "/api/test-only/legacy-option-trades";
 
     private final OptionTradeService trades;
+    private final AccountService accounts;
 
-    public LegacyShortCallTestController(OptionTradeService trades) {
+    public LegacyShortCallTestController(OptionTradeService trades, AccountService accounts) {
+        this.accounts = accounts;
         this.trades = trades;
     }
 
@@ -45,7 +48,8 @@ public class LegacyShortCallTestController {
         int multiplier = req.multiplier() == null
                 ? OpenTradeTerms.DEFAULT_MULTIPLIER
                 : req.multiplier().intValueExact();
-        return OptionTradeController.toResponse(trades.open(account.id(), new OptionTradeService.OpenCommand(contract,
+        return OptionTradeController.toResponse(accounts.get(account.id()).getName(), trades.open(account.id(),
+                new OptionTradeService.OpenCommand(contract,
                 req.action(), req.contracts().intValueExact(), multiplier, req.netAmount(), req.tradedAtLocal(),
                 req.note()), true));
     }

@@ -174,9 +174,13 @@ public class CashLedgerService {
         return CashReplay.finalBalance(loadMovements(accountId));
     }
 
-    /** Ledger newest first (same instant: later entry first), 1-based page, running total recomputed by replay. */
+    /**
+     * Every ledger line of the account, newest first (same instant: later entry first), each with the account's own
+     * running total after it (recomputed by replay); {@code hasAuditLog} not yet set (see
+     * {@link #withTransferFlags}). FEAT-046: the ledger endpoint merges and pages these lines of every account.
+     */
     @Transactional(readOnly = true)
-    public LedgerPage ledgerPage(long accountId, int page, int size) {
+    public List<LedgerLine> lines(long accountId) {
         List<CashLedgerEntryEntity> ordered = entries.findAllByAccountIdOrderByOccurredAtAscIdAsc(accountId);
         List<CashMovement> movements = ordered.stream().map(CashLedgerEntryEntity::toMovement).toList();
         List<ReplayStep> steps = CashReplay.replay(movements);
@@ -193,21 +197,15 @@ public class CashLedgerService {
                     false));
         }
         Collections.reverse(lines);
-
-        long total = lines.size();
-        int totalPages = (int) ((total + size - 1) / size);
-        long from = (long) (page - 1) * size;
-        List<LedgerLine> items = from >= total
-                ? List.of()
-                : withTransferFlags(accountId, lines.subList((int) from, (int) Math.min(from + size, total)));
-        return new LedgerPage(items, page, size, total, totalPages);
+        return lines;
     }
 
     /**
-     * hasAuditLog of one page: DEPOSIT / WITHDRAWAL lines take the stored flag of their cash transfer (one query
-     * for the page's transfers, none when the page has none); every other line stays false.
+     * hasAuditLog of one page (lines of one account): DEPOSIT / WITHDRAWAL lines take the stored flag of their cash
+     * transfer (one query for the page's transfers, none when the page has none); every other line stays false.
      */
-    private List<LedgerLine> withTransferFlags(long accountId, List<LedgerLine> pageLines) {
+    @Transactional(readOnly = true)
+    public List<LedgerLine> withTransferFlags(long accountId, List<LedgerLine> pageLines) {
         Set<Long> transferIds = pageLines.stream().filter(CashLedgerService::isTransfer).map(LedgerLine::sourceId)
                 .collect(Collectors.toSet());
         if (transferIds.isEmpty()) {

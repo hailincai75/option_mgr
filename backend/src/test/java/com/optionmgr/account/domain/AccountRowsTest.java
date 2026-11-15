@@ -30,6 +30,38 @@ class AccountRowsTest {
     }
 
     @Test
+    void pageOfTheMergedList_feat046() {
+        List<Integer> merged = List.of(8, 7, 6, 5, 4, 3, 2, 1);
+        AccountRows.Page<Integer> p2 = AccountRows.page(merged, 2, 5);
+        assertThat(p2.items()).containsExactly(3, 2, 1);
+        assertThat(p2.totalItems()).isEqualTo(8);
+        assertThat(p2.totalPages()).isEqualTo(2);
+        assertThat(AccountRows.page(merged, 1, 5).items()).containsExactly(8, 7, 6, 5, 4);
+        // beyond the last page: no items, totals unchanged
+        AccountRows.Page<Integer> p3 = AccountRows.page(merged, 3, 5);
+        assertThat(p3.items()).isEmpty();
+        assertThat(p3.totalItems()).isEqualTo(8);
+        assertThat(p3.totalPages()).isEqualTo(2);
+        AccountRows.Page<Integer> empty = AccountRows.page(List.<Integer>of(), 1, 20);
+        assertThat(empty.items()).isEmpty();
+        assertThat(empty.totalItems()).isZero();
+        assertThat(empty.totalPages()).isZero();
+    }
+
+    @Test
+    void pagesConcatenateToTheWholeList_feat046() {
+        List<Integer> merged = List.of(9, 8, 7, 6, 5, 4, 3);
+        for (int size = 1; size <= 3; size++) {
+            List<Integer> stitched = new java.util.ArrayList<>();
+            AccountRows.Page<Integer> first = AccountRows.page(merged, 1, size);
+            for (int page = 1; page <= first.totalPages(); page++) {
+                stitched.addAll(AccountRows.page(merged, page, size).items());
+            }
+            assertThat(stitched).as("size %d", size).isEqualTo(merged);
+        }
+    }
+
+    @Test
     void cashBalancesAddExactly() {
         CashBalance a = new CashBalance(new BigDecimal("50263.05"), new BigDecimal("5000.00"));
         CashBalance b = new CashBalance(new BigDecimal("20210.00"), new BigDecimal("9500.00"));

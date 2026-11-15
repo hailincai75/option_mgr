@@ -130,14 +130,15 @@ class Feat035AllAccountsGuardBoundarySystemTest extends Feat035AllAccountsSystem
     // =========================================================================================== read guard
 
     @Test
-    @DisplayName("不在 7 个接口中的 GET 带 ALL → 400 ALL_ACCOUNTS_NOT_SUPPORTED（带查询参数也一样），不读不写")
+    @DisplayName("仍不支持 ALL 的 GET（/{id}、组合 Greeks、策略、审计）带 ALL → 400 ALL_ACCOUNTS_NOT_SUPPORTED（带查询参数也一样），不读不写；FEAT-046 起 4 个列表不在其中")
     void unsupportedReads() {
         scenarioS();
         Map<String, Object> before = world();
-        for (String path : List.of(TRADES + "?size=100", TRADES + "/" + ids.get("B3"),
-                "/api/closed-trades?symbol=QRTV", STOCK_TRADES, STOCK_TRADES + "/" + ids.get("A_IXQZ"),
-                "/api/cash/ledger?page=1&size=20", "/api/positions/greeks-summary",
-                "/api/positions/underlying-summary", "/api/audit-log?size=100")) {
+        // FEAT-046 (requirement change): /api/option-trades, /api/stock-trades, /api/closed-trades, /api/cash/ledger
+        // accept ALL now and are no longer asserted here (see Feat046AllAccountsLists*SystemTest)
+        for (String path : List.of(TRADES + "/" + ids.get("B3"), STOCK_TRADES + "/" + ids.get("A_IXQZ"),
+                "/api/positions/greeks-summary", "/api/positions/underlying-summary",
+                "/api/audit-log?size=100")) {
             String bare = path.contains("?") ? path.substring(0, path.indexOf('?')) : path;
             for (String h : List.of(ALL, "all")) {
                 assertGuardError(getAs(h, path), NOT_SUPPORTED_CODE, bare);

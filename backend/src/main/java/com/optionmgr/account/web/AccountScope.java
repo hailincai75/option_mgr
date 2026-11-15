@@ -1,6 +1,8 @@
 package com.optionmgr.account.web;
 
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * FEAT-035: the accounts a read request covers, from the {@value AccountRef#HEADER} request header: one account
@@ -26,6 +28,11 @@ public record AccountScope(boolean all, List<Member> accounts) {
 
     public List<Long> ids() {
         return accounts.stream().map(Member::id).toList();
+    }
+
+    /** FEAT-046: account id to its current name (for rows that carry their account). */
+    public Map<Long, String> names() {
+        return accounts.stream().collect(Collectors.toUnmodifiableMap(Member::id, Member::name));
     }
 
     /** True when a (non-blank) header value means all accounts. */

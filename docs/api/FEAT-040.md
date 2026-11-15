@@ -1,6 +1,8 @@
 # FEAT-040 股票已实现盈亏并入已平仓、盈亏汇总、首页
 
 > **FEAT-035 修订**：首页、盈亏汇总的 `X-Account-Id: ALL`（全部账户）见 [FEAT-035.md](FEAT-035.md)；`GET /api/closed-trades` 暂不接受 `ALL`（400 `ALL_ACCOUNTS_NOT_SUPPORTED`，FEAT-046）。
+>
+> **FEAT-046 修订**：`GET /api/closed-trades` 接受 `ALL`（行新增 `accountId`、`accountName`，合计为全部账户之和）；下文"同一日期范围下 `closedCount` / `realizedPnlTotal` = 已平仓合计"的一致性在 `ALL` 下同样成立。见 [FEAT-046.md](FEAT-046.md)。
 
 只读，不新增接口、不改任何数据，**没有数据库迁移**。股票卖出的被卖出批次、被卖出成本、已实现盈亏与 FEAT-011 完全相同（读取时按 FIFO 重放，Q69、Q87），这里只是把它们并入三个已有接口。所有规则按账户（`X-Account-Id`）独立。
 

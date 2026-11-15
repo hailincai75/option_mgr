@@ -1,3 +1,4 @@
+import { useIsAllAccounts } from '../account/AccountContext'
 import { useAccountQuery } from '../account/useAccountQuery'
 import { Alert, Button, Card, Pagination, Radio, Space, Typography } from 'antd'
 import { useEffect, useState } from 'react'
@@ -114,9 +115,12 @@ function serverFilterErrors(error: Error | null): Partial<Record<TradeFilterFiel
  * The URL query string is the single source of truth for filters, page and size, so the page
  * is bookmarkable and the browser's back button restores earlier filters. Invalid values in
  * the URL are shown in the form with an error and are not queried.
+ * FEAT-046: in 全部账户 mode the merged list of all accounts (backend order, totals and pages), with
+ * no 录入开仓 entries (Q217).
  */
 export function TradeListPage() {
   const [searchParams, setSearchParams] = useSearchParams()
+  const allAccounts = useIsAllAccounts()
   const [editing, setEditing] = useState<OptionTrade | null>(null)
   const [deleting, setDeleting] = useState<OptionTrade | null>(null)
   const state = parseTradeListSearch(searchParams)
@@ -206,9 +210,11 @@ export function TradeListPage() {
       empty = (
         <Space orientation="vertical" data-testid="trade-list-empty">
           <span>暂无交易</span>
-          <Link to="/trades/new" data-testid="trade-list-empty-new">
-            录入开仓
-          </Link>
+          {!allAccounts && (
+            <Link to="/trades/new" data-testid="trade-list-empty-new">
+              录入开仓
+            </Link>
+          )}
         </Space>
       )
     }
@@ -291,9 +297,11 @@ export function TradeListPage() {
       <Card
         title="交易（按成交时间倒序）"
         extra={
-          <Link to="/trades/new" data-testid="trade-list-new">
-            录入开仓
-          </Link>
+          allAccounts ? undefined : (
+            <Link to="/trades/new" data-testid="trade-list-new">
+              录入开仓
+            </Link>
+          )
         }
         data-testid="trade-list"
       >

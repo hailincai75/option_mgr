@@ -1,5 +1,7 @@
 # FEAT-035 全部账户合并查看（一）：`X-Account-Id: ALL` 只读范围
 
+> **FEAT-046 修订**：接受 `ALL` 的 GET 从 7 个增加到 11 个：新增 `GET /api/option-trades`、`GET /api/stock-trades`、`GET /api/closed-trades`、`GET /api/cash/ledger`（行新增 `accountId`、`accountName`，合并后分页，流水余额为该行账户自己的余额，Q228）；`GET /api/option-trades/{id}`、`GET /api/stock-trades/{id}` 仍不支持；盈亏汇总与已平仓的一致性在 `ALL` 下恢复。见 [FEAT-046.md](FEAT-046.md)。下文"7 个"处按此理解。
+
 口径全部已定：Q53–Q56、Q214–Q226（以及引用的 Q35 / Q110 / Q158 / Q160 / Q215）。本节只写**新增或不同**的部分；示例账户名（甲账户、乙账户）和标的（QRTV、IXQZ）均为虚构，数字与需求场景 S 一致（今天 2026-11-23 星期一，10:00 拉取成功）。
 
 **兼容性一览**
@@ -50,6 +52,10 @@
 | `GET /api/positions/unrealized-summary` | 持仓页未实现合计 |
 | `GET /api/pnl-summary` | 盈亏汇总页 |
 | `GET /api/adhoc-closure-alerts` | 首页、持仓页顶部提醒 |
+| `GET /api/option-trades`（FEAT-046 起） | 交易列表 |
+| `GET /api/stock-trades`（FEAT-046 起） | 股票交易 |
+| `GET /api/closed-trades`（FEAT-046 起） | 已平仓 |
+| `GET /api/cash/ledger`（FEAT-046 起） | 资金页流水区 |
 
 **其它要求账户的接口收到 `ALL`**：
 
@@ -60,7 +66,7 @@
 
 - 两种错误都**什么都不读、不写**，不写审计。`message` 是中文，可直接显示（与 `CASH_INSUFFICIENT` 等业务码一样）。
 - 判断只看 HTTP 方法，不看路径：所以不存在的方法仍是 405（方法不匹配时不会走到账户解析）。
-- 返回 `ALL_ACCOUNTS_NOT_SUPPORTED` 的 GET 接口（FEAT-035 时）：`/api/option-trades`、`/api/option-trades/{id}`、`/api/closed-trades`、`/api/stock-trades`、`/api/stock-trades/{id}`、`/api/cash/ledger`（FEAT-046 再支持）；`/api/positions/greeks-summary`（FEAT-047，Q224）；`/api/positions/underlying-summary`（见文末"需求问题 1"）；`/api/audit-log`（**永久**不支持，Q225）。
+- 返回 `ALL_ACCOUNTS_NOT_SUPPORTED` 的 GET 接口：~~`/api/option-trades`、`/api/closed-trades`、`/api/stock-trades`、`/api/cash/ledger`~~（FEAT-046 起支持）；`/api/option-trades/{id}`、`/api/stock-trades/{id}`（FEAT-046 决定仍不支持：只用于已隐藏的修改对话框）；`/api/positions/greeks-summary`（FEAT-047，Q224）；`/api/positions/underlying-summary`（见文末"需求问题 1"）；`/api/audit-log`（**永久**不支持，Q225）。
 - 不要求账户的接口（行情刷新与手动覆盖、账户、交易日历、健康检查、测试支持的 reset / clock / fetch 等）仍**忽略**该请求头，带 `ALL` 也照常成功（Q218、规则 6）。已核对：`/api/market-data/refresh`、`PUT` / `DELETE /api/market-data/overrides/**` 今天就不取账户（行情全系统一份）。
 
 写请求被拒示例（需求验收 9）：
@@ -171,7 +177,7 @@ X-Account-Id: ALL
 ```
 单账户（`X-Account-Id: 2`）：`{"totalCash": "20210.00", "frozenCash": "9500.00", "availableCash": "10710.00", "accounts": [{"accountId": 2, "accountName": "乙账户", "totalCash": "20210.00", "frozenCash": "9500.00", "availableCash": "10710.00"}]}`。
 
-资金页的合计行直接用顶层三项。流水 `GET /api/cash/ledger` 不支持 `ALL`（规则 7，FEAT-046）。
+资金页的合计行直接用顶层三项。流水 `GET /api/cash/ledger`：FEAT-035 时不支持 `ALL`，**FEAT-046 起支持**（见 [FEAT-046.md](FEAT-046.md)）。
 
 ---
 
@@ -294,7 +300,7 @@ X-Account-Id: ALL
 结构、参数、校验、错误都不变（FEAT-008 / FEAT-040）。范围内全部账户的平仓、作废、指派、行权、股票卖出一起统计（Q222）：
 - `bySymbol[]`：同一标的跨账户**合并为一行**（不加账户字段）；`byMonth[]`：同一美东月份合并为一行。排序不变。
 - 每行与总计的 `closedCount`、`realizedPnl`、`option`、`stock` 都是各账户对应数之和；各组之和仍等于总计。
-- FEAT-008 的一致性"= `GET /api/closed-trades` 的 `filteredCount` / `filteredRealizedPnlTotal`"在 `ALL` 下暂不适用（已平仓 `ALL` 在 FEAT-046）。
+- ~~FEAT-008 的一致性"= `GET /api/closed-trades` 的 `filteredCount` / `filteredRealizedPnlTotal`"在 `ALL` 下暂不适用（已平仓 `ALL` 在 FEAT-046）。~~ **FEAT-046 起恢复**：`ALL` 下同样成立，见 [FEAT-046.md](FEAT-046.md)。
 
 示例（验收 7，全部时间）：
 ```

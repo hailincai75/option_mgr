@@ -74,7 +74,8 @@ public class OptionTradeService {
             CashSourceType.OPTION_EXPIRE, CashSourceType.OPTION_ASSIGN, CashSourceType.OPTION_EXERCISE);
 
     /** Trade list order: newest first, same instant: later entered (higher id) first. */
-    static final Sort LIST_ORDER = Sort.by(Sort.Order.desc("tradedAt"), Sort.Order.desc("id"));
+    /** Newest first, same instant: later entered first; FEAT-046 (Q229): then account id (ids are global). */
+    static final Sort LIST_ORDER = Sort.by(Sort.Order.desc("tradedAt"), Sort.Order.desc("id"), Sort.Order.asc("accountId"));
 
     private static final Predicate<ViolationKind> ANY = k -> true;
     private static final Predicate<ViolationKind> NOT_MULTIPLIER = k -> k != ViolationKind.MULTIPLIER_MISMATCH;
@@ -362,10 +363,29 @@ public class OptionTradeService {
     /** One page of the trade list (FEAT-002): newest first, same instant: later entered first. */
     @Transactional(readOnly = true)
     public TradePage list(long accountId, TradeFilter filter, int page, int size) {
-        Page<OptionTradeEntity> result = trades.findAll(OptionTradeSpecifications.matching(accountId, filter),
+        return list(List.of(accountId), filter, page, size);
+    }
+
+    /**
+     * FEAT-046: one page of the trade list of several accounts - one database query over all of them (pagination of
+     * the merged list); each row's figures are computed in its own account (Q53), the rows keep the page order.
+     */
+    @Transactional(readOnly = true)
+    public TradePage list(List<Long> accountIds, TradeFilter filter, int page, int size) {
+        Page<OptionTradeEntity> result = trades.findAll(OptionTradeSpecifications.matching(accountIds, filter),
                 PageRequest.of(page - 1, size, LIST_ORDER));
-        return new TradePage(views(accountId, result.getContent()), page, size, result.getTotalElements(),
+        return new TradePage(viewsByAccount(result.getContent()), page, size, result.getTotalElements(),
                 result.getTotalPages());
+    }
+
+    /** Views of trades of possibly several accounts, each computed in its own account, in the given order. */
+    private List<TradeView> viewsByAccount(List<OptionTradeEntity> page) {
+        Map<Long, List<OptionTradeEntity>> byAccount = new LinkedHashMap<>();
+        page.forEach(t -> byAccount.computeIfAbsent(t.getAccountId(), a -> new ArrayList<>()).add(t));
+        Map<Long, TradeView> byId = new HashMap<>();
+        byAccount.forEach((accountId, rows) -> views(accountId, rows)
+                .forEach(v -> byId.put(v.trade().getId(), v)));
+        return page.stream().map(t -> byId.get(t.getId())).toList();
     }
 
     /** All stored trades of one contract with their ledger entries, in replay order. */

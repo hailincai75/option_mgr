@@ -63,7 +63,8 @@ public class StockTradeService {
     public static final Set<CashSourceType> STOCK_SOURCE_TYPES = Set.of(CashSourceType.STOCK_BUY,
             CashSourceType.STOCK_SELL);
 
-    static final Sort LIST_ORDER = Sort.by(Sort.Order.desc("tradedAt"), Sort.Order.desc("id"));
+    /** Newest first, same instant: later entered first; FEAT-046 (Q229): then account id (ids are global). */
+    static final Sort LIST_ORDER = Sort.by(Sort.Order.desc("tradedAt"), Sort.Order.desc("id"), Sort.Order.asc("accountId"));
 
     private final StockTradeRepository trades;
     private final CashLedgerService ledger;
@@ -166,10 +167,24 @@ public class StockTradeService {
     /** Newest first (same instant: later entry first), 1-based page. */
     @Transactional(readOnly = true)
     public StockTradePage list(long accountId, StockTradeFilter filter, int page, int size) {
-        Page<StockTradeEntity> result = trades.findAll(StockTradeSpecifications.matching(accountId, filter),
+        return list(List.of(accountId), filter, page, size);
+    }
+
+    /**
+     * FEAT-046: one page of the records of several accounts - one database query over all of them (pagination of
+     * the merged list); each row is computed in its own account (FIFO per account + symbol, Q53), page order kept.
+     */
+    @Transactional(readOnly = true)
+    public StockTradePage list(List<Long> accountIds, StockTradeFilter filter, int page, int size) {
+        Page<StockTradeEntity> result = trades.findAll(StockTradeSpecifications.matching(accountIds, filter),
                 PageRequest.of(page - 1, size, LIST_ORDER));
-        return new StockTradePage(views(accountId, result.getContent()), page, size, result.getTotalElements(),
-                result.getTotalPages());
+        List<StockTradeEntity> rows = result.getContent();
+        Map<Long, List<StockTradeEntity>> byAccount = new java.util.LinkedHashMap<>();
+        rows.forEach(t -> byAccount.computeIfAbsent(t.getAccountId(), a -> new ArrayList<>()).add(t));
+        Map<Long, StockTradeView> byId = new HashMap<>();
+        byAccount.forEach((accountId, part) -> views(accountId, part).forEach(v -> byId.put(v.trade().getId(), v)));
+        return new StockTradePage(rows.stream().map(t -> byId.get(t.getId())).toList(), page, size,
+                result.getTotalElements(), result.getTotalPages());
     }
 
     StockTradeEntity find(long accountId, long id) {

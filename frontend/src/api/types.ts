@@ -83,7 +83,10 @@ export interface CashSummaryAccount {
   availableCash: MoneyString
 }
 
-/** FEAT-035: account of a position row (always sent by the contract; optional for older fixtures). */
+/**
+ * FEAT-035: account of a position row (always sent by the contract; optional for older fixtures).
+ * FEAT-046: also on option trades, stock trades, closed records and cash ledger entries.
+ */
 export interface RowAccountFields {
   accountId?: number
   /** Current account name at request time. */
@@ -136,7 +139,7 @@ export type CashSourceType =
   | (string & {})
 
 /** Contract: `GET /api/cash/ledger` → `items[]`. */
-export interface CashLedgerEntry {
+export interface CashLedgerEntry extends RowAccountFields {
   id: number
   occurredAt: InstantString
   sourceType: CashSourceType
@@ -207,7 +210,7 @@ export interface CreateOptionTradeRequest {
 }
 
 /** Contract: `POST /api/option-trades` → 201 and `GET /api/option-trades/{id}` → 200. */
-export interface OptionTrade {
+export interface OptionTrade extends RowAccountFields {
   id: number
   symbol: string
   expirationDate: LocalDateString
@@ -818,7 +821,7 @@ export interface AuditLogParams {
 export type ClosedRecordType = 'OPTION' | 'STOCK'
 
 /** Fields shared by both row types of `GET /api/closed-trades` → `items[]`. */
-interface ClosedRecordBase {
+interface ClosedRecordBase extends RowAccountFields {
   tradedAt: InstantString
   tradedAtLocal: LocalDateTimeString
   symbol: string
@@ -1095,7 +1098,7 @@ export interface StockSoldLot {
 }
 
 /** Contract: stock trade representation (POST / GET / PUT responses, list items). */
-export interface StockTrade {
+export interface StockTrade extends RowAccountFields {
   id: number
   type: StockRecordType | (string & {})
   symbol: string

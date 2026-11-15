@@ -1,5 +1,7 @@
 # FEAT-006 已实现盈亏 / 已平仓记录
 
+> **FEAT-046 修订**：`GET /api/closed-trades` 接受 `X-Account-Id: ALL`：参数（含 `type`）、校验、错误不变；行新增 `accountId`、`accountName`；排序原规则 + `accountId` 升序，合并后分页；`filteredCount` / `filteredRealizedPnlTotal` 为全部账户之和，与 `ALL` 的盈亏汇总一致。见 [FEAT-046.md](FEAT-046.md)。
+
 只读。每笔平仓交易（BTC / STC）一条。被平批次和已实现盈亏都在读取时按 FIFO 重放得出（FEAT-004），所以补录、修改、删除交易后，结果自动是新的匹配（Q39、FEAT-005）。
 
 > **FEAT-040 起**：结果还包含股票卖出（`type: "STOCK"` 行），新增 `type` 筛选与行字段，排序在同一时间把股票行放在期权行之上，股票行上期权专用字段为 `null`。本节描述的是期权行（`type: "OPTION"`）；变化见文末「FEAT-040」。

@@ -1,5 +1,7 @@
 # FEAT-002 交易列表与筛选
 
+> **FEAT-046 修订**：`GET /api/option-trades` 接受 `X-Account-Id: ALL`（全部账户，只读）：参数、校验、错误不变；排序 `tradedAt` 倒序 → `id` 倒序 → `accountId` 升序；对合并后的整个列表分页。每项（以及所有返回期权交易表示的接口）新增 `accountId`、`accountName`（单账户也有值）。`GET /api/option-trades/{id}` 仍不接受 `ALL`。见 [FEAT-046.md](FEAT-046.md)。
+
 只读：不新增、不修改任何数据，不影响现金汇总和流水。列出所有期权交易（不论方向；FEAT-004 之后的 BTC / STC 也会自动出现，不需要改接口）。
 
 #### `GET /api/option-trades`

@@ -1,6 +1,9 @@
 package com.optionmgr.trade.web;
 
+import com.optionmgr.account.service.AccountService;
 import com.optionmgr.account.web.AccountRef;
+import com.optionmgr.account.web.AccountScope;
+import java.util.Map;
 import com.optionmgr.common.money.Money;
 import com.optionmgr.common.time.MarketTime;
 import com.optionmgr.stock.domain.SaleMatch;
@@ -57,10 +60,13 @@ public class OptionTradeController {
     private final OptionAssignmentService assignments;
     private final OptionExerciseService exercises;
     private final jakarta.validation.Validator validator;
+    private final AccountService accounts;
 
     public OptionTradeController(OptionTradeService service, OptionTradeEditService edits,
                                  OptionExpiryService expiries, OptionAssignmentService assignments,
-                                 OptionExerciseService exercises, jakarta.validation.Validator validator) {
+                                 OptionExerciseService exercises, jakarta.validation.Validator validator,
+                                 AccountService accounts) {
+        this.accounts = accounts;
         this.validator = validator;
         this.service = service;
         this.edits = edits;
@@ -74,7 +80,8 @@ public class OptionTradeController {
     @ResponseStatus(HttpStatus.CREATED)
     public TradeResponse exercise(AccountRef account, @Valid @RequestBody ExerciseRequest req) {
         ContractKey contract = new ContractKey(req.symbol(), req.expirationDate(), req.strike(), req.optionType());
-        return toResponse(exercises.exercise(account.id(), new OptionExerciseService.ExerciseCommand(contract,
+        return toResponse(name(account), exercises.exercise(account.id(),
+                new OptionExerciseService.ExerciseCommand(contract,
                 req.contracts().intValueExact(), req.exerciseDate(), req.exerciseFee(), req.note())));
     }
 
@@ -83,7 +90,8 @@ public class OptionTradeController {
     @ResponseStatus(HttpStatus.CREATED)
     public TradeResponse assign(AccountRef account, @Valid @RequestBody AssignRequest req) {
         ContractKey contract = new ContractKey(req.symbol(), req.expirationDate(), req.strike(), req.optionType());
-        return toResponse(assignments.assign(account.id(), new OptionAssignmentService.AssignCommand(contract,
+        return toResponse(name(account), assignments.assign(account.id(),
+                new OptionAssignmentService.AssignCommand(contract,
                 req.contracts().intValueExact(), req.assignmentDate(), req.assignmentFee(), req.note())));
     }
 
@@ -94,7 +102,8 @@ public class OptionTradeController {
         int multiplier = req.multiplier() == null
                 ? OpenTradeTerms.DEFAULT_MULTIPLIER
                 : req.multiplier().intValueExact();
-        return toResponse(service.open(account.id(), new OptionTradeService.OpenCommand(contract, req.action(),
+        return toResponse(name(account), service.open(account.id(),
+                new OptionTradeService.OpenCommand(contract, req.action(),
                 req.contracts().intValueExact(), multiplier, req.netAmount(), req.tradedAtLocal(), req.note())));
     }
 
@@ -103,7 +112,8 @@ public class OptionTradeController {
     @ResponseStatus(HttpStatus.CREATED)
     public TradeResponse close(AccountRef account, @Valid @RequestBody CloseTradeRequest req) {
         ContractKey contract = new ContractKey(req.symbol(), req.expirationDate(), req.strike(), req.optionType());
-        return toResponse(service.close(account.id(), new OptionTradeService.CloseCommand(contract, req.action(),
+        return toResponse(name(account), service.close(account.id(),
+                new OptionTradeService.CloseCommand(contract, req.action(),
                 req.contracts().intValueExact(), req.netAmount(), req.tradedAtLocal(), req.note())));
     }
 
@@ -112,7 +122,7 @@ public class OptionTradeController {
     @ResponseStatus(HttpStatus.CREATED)
     public TradeResponse expire(AccountRef account, @Valid @RequestBody ExpireRequest req) {
         ContractKey contract = new ContractKey(req.symbol(), req.expirationDate(), req.strike(), req.optionType());
-        return toResponse(expiries.expire(account.id(),
+        return toResponse(name(account), expiries.expire(account.id(),
                 new OptionExpiryService.ExpireCommand(contract, req.contracts().intValueExact())));
     }
 
@@ -131,14 +141,15 @@ public class OptionTradeController {
                     req.items().get(i).contracts().intValueExact()));
         }
         OptionExpiryService.BatchResult result = expiries.expireAll(account.id(), cmds);
+        String name = name(account);
         return new OptionTradeDtos.BatchExpireResponse(result.expirations().size(), result.realizedPnlTotal(),
-                result.frozenChangeTotal(), result.expirations().stream().map(OptionTradeController::toResponse).toList());
+                result.frozenChangeTotal(), result.expirations().stream().map(v -> toResponse(name, v)).toList());
     }
 
     /** FEAT-002 trade list; all filters optional, see TradeListQuery. */
     @GetMapping
     public TradePageResponse list(
-            AccountRef account,
+            AccountScope scope,
             @RequestParam(required = false) String symbol,
             @RequestParam(required = false) String expirationDate,
             @RequestParam(required = false) String strike,
@@ -150,15 +161,24 @@ public class OptionTradeController {
             @RequestParam(defaultValue = "20") int size) {
         TradeFilter filter = TradeListQuery.parse(symbol, expirationDate, strike, optionType, actions, startDate,
                 endDate, page, size);
-        OptionTradeService.TradePage p = service.list(account.id(), filter, page, size);
-        return new TradePageResponse(p.items().stream().map(OptionTradeController::toResponse).toList(),
+        // FEAT-046: one query over the scope's accounts (database pagination of the merged list)
+        OptionTradeService.TradePage p = service.list(scope.ids(), filter, page, size);
+        Map<Long, String> names = scope.names();
+        return new TradePageResponse(
+                p.items().stream().map(v -> toResponse(names.get(v.trade().getAccountId()), v)).toList(),
                 p.page(), p.size(), p.totalItems(), p.totalPages());
+    }
+
+    /** FEAT-046: the current name of the request's account (every trade response carries it). */
+    private String name(AccountRef account) {
+        return accounts.get(account.id()).getName();
     }
 
     /** FEAT-005: edit the editable fields of a trade. */
     @PutMapping("/{id}")
     public TradeResponse update(AccountRef account, @PathVariable long id, @Valid @RequestBody EditTradeRequest req) {
-        return toResponse(edits.update(account.id(), id, new OptionTradeEditService.EditCommand(req.contracts().intValueExact(),
+        return toResponse(name(account), edits.update(account.id(), id,
+                new OptionTradeEditService.EditCommand(req.contracts().intValueExact(),
                 req.netAmount(), req.tradedAtLocal(),
                 req.multiplier() == null ? null : req.multiplier().intValueExact(), req.note())));
     }
@@ -172,16 +192,16 @@ public class OptionTradeController {
 
     @GetMapping("/{id}")
     public TradeResponse get(AccountRef account, @PathVariable long id) {
-        return toResponse(service.get(account.id(), id));
+        return toResponse(name(account), service.get(account.id(), id));
     }
 
-    public static TradeResponse toResponse(OptionTradeService.TradeView view) {
+    public static TradeResponse toResponse(String accountName, OptionTradeService.TradeView view) {
         OptionTradeEntity t = view.trade();
         ContractKey contract = t.contract();
         PositionDirection expiredDirection = t.getAction() == TradeAction.EXP
                 ? view.closeMatch().map(m -> PositionDirection.openedBy(m.coveredLots().get(0).action())).orElse(null)
                 : null;
-        return new TradeResponse(t.getId(), t.getSymbol(), t.getExpirationDate(),
+        return new TradeResponse(t.getAccountId(), accountName, t.getId(), t.getSymbol(), t.getExpirationDate(),
                 ContractKey.strikeText(t.getStrike()), t.getOptionType(), t.getAction(), t.getContracts(),
                 t.getMultiplier(), Money.of(t.getNetAmount()), t.getTradedAt(),
                 LOCAL_SECONDS.format(MarketTime.toLocal(t.getTradedAt())), view.cashChange(), view.frozenChange(),

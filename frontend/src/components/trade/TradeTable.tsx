@@ -1,8 +1,9 @@
 import { Button, Space, Table, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { HTMLAttributes, ReactNode } from 'react'
-import { Link } from 'react-router-dom'
-import { auditUrl } from '../audit/auditLinks'
+import { useIsAllAccounts } from '../../account/AccountContext'
+import { AccountNameCell } from '../account/AccountNameCell'
+import { HistoryLink } from '../account/HistoryLink'
 import type { OptionTrade } from '../../api/types'
 import { decimalSign, EMPTY_VALUE, formatDateTimeNY, formatMoney } from '../../utils/format'
 import {
@@ -31,6 +32,8 @@ interface TradeTableProps {
  * Trade rows in the order returned by the backend; values are only formatted. Each row has
  * 修改 / 删除 / 历史 (FEAT-005); 到期作废 (FEAT-012), 被指派 (FEAT-013) and 行权 (FEAT-014) rows have
  * no 修改.
+ * FEAT-046: in 全部账户 mode a first 账户 column is added and 修改 / 删除 are hidden (Q217); 历史
+ * switches to the row's account first (Q231).
  */
 export function TradeTable({
   trades,
@@ -40,7 +43,21 @@ export function TradeTable({
   onEdit,
   onDelete,
 }: TradeTableProps) {
+  const allAccounts = useIsAllAccounts()
+  // FEAT-046 (Q214): 账户 first column, only in 全部账户 mode.
+  const accountColumns: ColumnsType<OptionTrade> = allAccounts
+    ? [
+        {
+          title: '账户',
+          key: 'account',
+          render: (_value: unknown, trade: OptionTrade) => (
+            <AccountNameCell row={trade} testId="trade-cell-account" />
+          ),
+        },
+      ]
+    : []
   const columns: ColumnsType<OptionTrade> = [
+    ...accountColumns,
     {
       title: '成交时间（美东时间）',
       key: 'tradedAt',
@@ -185,7 +202,7 @@ export function TradeTable({
       render: (_value: unknown, trade) => (
         <Space size={4} style={{ whiteSpace: 'nowrap' }}>
           {/* FEAT-012 / FEAT-013: 到期作废 and 被指派 cannot be edited (delete and re-record). */}
-          {!isDeleteOnlyAction(trade.action) && (
+          {!allAccounts && !isDeleteOnlyAction(trade.action) && (
             <Button
               size="small"
               type="link"
@@ -197,21 +214,26 @@ export function TradeTable({
               修改
             </Button>
           )}
-          <Button
-            size="small"
-            type="link"
-            danger
-            onClick={() => {
-              onDelete(trade)
-            }}
-            data-testid="trade-delete"
-          >
-            删除
-          </Button>
+          {!allAccounts && (
+            <Button
+              size="small"
+              type="link"
+              danger
+              onClick={() => {
+                onDelete(trade)
+              }}
+              data-testid="trade-delete"
+            >
+              删除
+            </Button>
+          )}
           {trade.hasAuditLog && (
-            <Link to={auditUrl('OPTION_TRADE', trade.id)} data-testid="trade-history">
-              历史
-            </Link>
+            <HistoryLink
+              objectType="OPTION_TRADE"
+              objectId={trade.id}
+              row={trade}
+              testId="trade-history"
+            />
           )}
         </Space>
       ),
@@ -227,7 +249,11 @@ export function TradeTable({
       loading={loading}
       pagination={false}
       onRow={(trade) =>
-        ({ 'data-testid': 'trade-row', 'data-trade-id': trade.id }) as HTMLAttributes<HTMLElement>
+        ({
+          'data-testid': 'trade-row',
+          'data-trade-id': trade.id,
+          'data-account-id': trade.accountId,
+        }) as HTMLAttributes<HTMLElement>
       }
       locale={{ emptyText: empty }}
       scroll={{ x: 'max-content' }}

@@ -1,6 +1,6 @@
 # FEAT-033 多账户（**不兼容变更：所有业务接口都要求指明账户**）
 
-> **FEAT-035 修订**：`X-Account-Id` 新取值 `ALL`（全部账户，只读，只被 7 个 GET 接受）；其它接口收到 `ALL` → 400 `ALL_ACCOUNTS_READ_ONLY`（写）/ `ALL_ACCOUNTS_NOT_SUPPORTED`（读，含审计，Q225）。见 [FEAT-035.md](FEAT-035.md)。
+> **FEAT-035 修订**：`X-Account-Id` 新取值 `ALL`（全部账户，只读，只被 7 个 GET 接受；**FEAT-046 起 11 个**，加 `option-trades`、`stock-trades`、`closed-trades`、`cash/ledger` 列表，见 [FEAT-046.md](FEAT-046.md)）；其它接口收到 `ALL` → 400 `ALL_ACCOUNTS_READ_ONLY`（写）/ `ALL_ACCOUNTS_NOT_SUPPORTED`（读，含审计，Q225）。见 [FEAT-035.md](FEAT-035.md)。
 
 > ⚠️ **不兼容变更（FEAT-033）**：从本版本起，下面列出的**全部现有业务接口**都必须带请求头 `X-Account-Id`。不带 → 400 `ACCOUNT_REQUIRED`，什么都不读、不写。路径、请求体、响应体、其它错误都**不变**；前面 FEAT-007 ~ FEAT-008 各小节的说明全部改为"在该账户内"成立。
 

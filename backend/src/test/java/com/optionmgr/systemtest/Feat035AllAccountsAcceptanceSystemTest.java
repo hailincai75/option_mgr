@@ -121,8 +121,12 @@ class Feat035AllAccountsAcceptanceSystemTest extends Feat035AllAccountsSystemTes
         assertThat(okAs(A, CASH_SUMMARY)).isEqualTo(parse("""
                 {"totalCash": "50263.05", "frozenCash": "5000.00", "availableCash": "45263.05",
                  "accounts": [{"accountId": 1, "accountName": "甲账户", "totalCash": "50263.05", "frozenCash": "5000.00", "availableCash": "45263.05"}]}"""));
-        // the ledger (流水) part is not merged in FEAT-035 (rule 7, FEAT-046)
-        assertGuardError(getAs(ALL, "/api/cash/ledger"), NOT_SUPPORTED_CODE, "/api/cash/ledger");
+        // FEAT-046 (requirement change): the ledger (流水) is merged under ALL now — no longer ALL_ACCOUNTS_NOT_SUPPORTED;
+        // the merged rows themselves are covered by Feat046AllAccountsListsAcceptanceSystemTest
+        Resp ledger = getAs(ALL, "/api/cash/ledger");
+        assertThat(ledger.status()).as("FEAT-046: ALL ledger -> %s", ledger.body()).isEqualTo(200);
+        assertThat(ledger.body().get("totalItems").asInt()).isEqualTo(okAs(A, "/api/cash/ledger").get("totalItems")
+                .asInt() + okAs(B, "/api/cash/ledger").get("totalItems").asInt());
     }
 
     // =========================================================================================== AC 4
@@ -436,17 +440,20 @@ class Feat035AllAccountsAcceptanceSystemTest extends Feat035AllAccountsSystemTes
     // =========================================================================================== AC 10
 
     @Test
-    @DisplayName("AC10 兜底：交易列表、股票交易、已平仓、策略（underlying-summary）、组合 Greeks、审计、流水收到 ALL → 400 ALL_ACCOUNTS_NOT_SUPPORTED；ALL 持仓行的每行 Greeks 照常")
+    @DisplayName("AC10 兜底：单笔交易 / 股票记录（/{id}）、策略（underlying-summary）、组合 Greeks、审计收到 ALL → 400 ALL_ACCOUNTS_NOT_SUPPORTED（FEAT-046 起交易列表、股票交易、已平仓、流水支持 ALL）；ALL 持仓行的每行 Greeks 照常")
     void ac10_unsupportedAndRowGreeks() {
         scenarioS();
         long a1 = ids.get("A1");
         long ixqz = ids.get("A_IXQZ");
-        for (String path : List.of(TRADES, TRADES + "/" + a1, "/api/closed-trades", STOCK_TRADES,
-                STOCK_TRADES + "/" + ixqz, "/api/cash/ledger", "/api/positions/greeks-summary",
+        for (String path : List.of(TRADES + "/" + a1, STOCK_TRADES + "/" + ixqz, "/api/positions/greeks-summary",
                 "/api/positions/underlying-summary", "/api/audit-log")) {
             Resp r = getAs(ALL, path);
             assertGuardError(r, NOT_SUPPORTED_CODE, path);
             assertThat(getAs(A, path).status()).as("%s still OK for a single account", path).isEqualTo(200);
+        }
+        // FEAT-046 (requirement change): the 4 list GETs accept ALL now
+        for (String path : List.of(TRADES, STOCK_TRADES, "/api/closed-trades", "/api/cash/ledger")) {
+            assertThat(getAs(ALL, path).status()).as("FEAT-046: %s accepts ALL", path).isEqualTo(200);
         }
         JsonNode all = okAs(ALL, OPTION_POSITIONS);
         JsonNode g = optRowOf(all, 2, L_B3).get("greeks");

@@ -86,7 +86,10 @@ public final class OptionTradeDtos {
                                     int totalPages) {
     }
 
+    /** FEAT-046: {@code accountId} / {@code accountName} = the trade's account (current name), on every response. */
     public record TradeResponse(
+            long accountId,
+            String accountName,
             long id,
             String symbol,
             LocalDate expirationDate,

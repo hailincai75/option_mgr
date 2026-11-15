@@ -466,15 +466,15 @@ class AllAccountsControllerTest {
         assertThat(count("audit_record")).isEqualTo(auditBefore);
     }
 
-    // ---------------------------------------------------------------- AC 10: reads not supported yet
+    // ---------------------------------------------------------------- AC 10: reads not supported (FEAT-046: the 4 lists now are)
 
     @Test
     void ac10_unsupportedReadsAreRejected() throws Exception {
         scenarioS();
         long tradeId = b4Id;
         long stockId = jdbc.queryForObject("SELECT MIN(id) FROM stock_trade", Long.class);
-        for (String url : new String[] {"/api/option-trades", "/api/option-trades/" + tradeId, "/api/closed-trades",
-                "/api/stock-trades", "/api/stock-trades/" + stockId, "/api/cash/ledger",
+        for (String url : new String[] {"/api/option-trades/" + tradeId,
+                "/api/stock-trades/" + stockId,
                 "/api/positions/greeks-summary", "/api/positions/underlying-summary", "/api/audit-log"}) {
             JsonNode r = call(get(url), "ALL", null, 400);
             assertThat(r.get("code").asText()).as(url).isEqualTo("ALL_ACCOUNTS_NOT_SUPPORTED");

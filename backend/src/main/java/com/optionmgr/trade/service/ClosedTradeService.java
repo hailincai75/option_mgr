@@ -96,22 +96,14 @@ public class ClosedTradeService {
         }
     }
 
-    public record ClosedTradePage(List<ClosedRecordView> items, int page, int size, long totalItems, int totalPages,
-                                  BigDecimal filteredRealizedPnlTotal) {
-    }
 
+    /**
+     * FEAT-046: {@link #all} of each account (in the given order, one read transaction); each account's records are
+     * computed on their own (FIFO per account, Q53). The caller merges them.
+     */
     @Transactional(readOnly = true)
-    public ClosedTradePage page(long accountId, ClosedRecordFilter filter, int page, int size) {
-        List<ClosedRecordView> views = all(accountId, filter);
-        BigDecimal total = views.stream().map(ClosedRecordView::realizedPnl).reduce(Money.ZERO, BigDecimal::add);
-
-        long totalItems = views.size();
-        int totalPages = (int) ((totalItems + size - 1) / size);
-        long from = (long) (page - 1) * size;
-        List<ClosedRecordView> items = from >= totalItems
-                ? List.of()
-                : views.subList((int) from, (int) Math.min(from + size, totalItems));
-        return new ClosedTradePage(List.copyOf(items), page, size, totalItems, totalPages, total);
+    public List<List<ClosedRecordView>> allByAccount(List<Long> accountIds, ClosedRecordFilter filter) {
+        return accountIds.stream().map(id -> all(id, filter)).toList();
     }
 
     /** Every record matching {@code filter}, newest first (same instant: stock sales first, Q92), with figures. */

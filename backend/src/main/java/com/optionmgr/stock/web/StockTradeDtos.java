@@ -97,7 +97,10 @@ public final class StockTradeDtos {
                                  LocalDate tradeDate, int shares, BigDecimal cost) {
     }
 
+    /** FEAT-046: {@code accountId} / {@code accountName} = the record's account (current name), on every response. */
     public record StockTradeResponse(
+            long accountId,
+            String accountName,
             long id,
             StockTradeType type,
             String symbol,

@@ -1,5 +1,7 @@
 # FEAT-001 录入开仓期权交易（BTO / STO）
 
+> **FEAT-046 修订**：期权交易表示（本节响应体，以及所有返回它的接口）新增 `accountId`（number）、`accountName`（string，当前名称），单账户也有值；纯新增。写接口仍不接受 `X-Account-Id: ALL`。见 [FEAT-046.md](FEAT-046.md)。
+
 单账户、只有 USD。一笔交易只记**含手续费的净额**（Q6）。交易成功后同一事务内自动产生一条现金流水（`sourceType = OPTION_OPEN`，`sourceId` = 交易 id），现金汇总和流水沿用 FEAT-007 的 `GET /api/cash/summary`、`GET /api/cash/ledger`（流水项新增 `frozenChange` 字段，见上）。
 
 #### 概念

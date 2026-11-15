@@ -314,6 +314,11 @@ function startServer({ accounts = [JIA, YI], closure = false }: ServerOptions = 
         return Promise.resolve(jsonResponse(DASHBOARD_ALL))
       case '/api/cash/summary':
         return Promise.resolve(jsonResponse(CASH[scope]))
+      // FEAT-046: the ledger accepts ALL (rows are covered by AllAccountsLists.test.tsx).
+      case '/api/cash/ledger':
+        return Promise.resolve(
+          jsonResponse({ items: [], page: 1, size: 20, totalItems: 0, totalPages: 0 }),
+        )
       case '/api/option-positions': {
         const shown = rows(scope)
         const frozen = { '1': '5000.00', '2': '9500.00', ALL: '14500.00' }[scope]
@@ -530,7 +535,7 @@ describe('FEAT-035 home page (acceptance 2)', () => {
 })
 
 describe('FEAT-035 cash page (acceptance 3)', () => {
-  it('lists every account plus 合计, without deposit / withdraw or ledger', async () => {
+  it('lists every account plus 合计, without deposit / withdraw', async () => {
     rememberAll()
     const requests = startServer()
     renderApp('/cash')
@@ -551,20 +556,20 @@ describe('FEAT-035 cash page (acceptance 3)', () => {
     expect(within(sum).getByTestId('cash-summary-available')).toHaveTextContent('55,973.05')
 
     expect(screen.queryByTestId('cash-transfer-card')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('cash-ledger')).not.toBeInTheDocument()
-    expect(byTestId('cash-ledger-all-accounts-message')).toHaveTextContent(
-      '此页暂不支持全部账户，请选择一个账户查看',
-    )
-    expect(byTestId('cash-ledger-all-accounts-account-1')).toHaveTextContent('甲账户')
-    expect(byTestId('cash-ledger-all-accounts-account-2')).toHaveTextContent('乙账户')
-    expect(requests.some((r) => r.path === '/api/cash/ledger')).toBe(false)
+    // FEAT-046: the ledger is no longer a placeholder (merged ledger, see AllAccountsLists.test.tsx).
+    expect(await screen.findByTestId('cash-ledger')).toBeInTheDocument()
+    expect(screen.queryByTestId('cash-ledger-all-accounts')).not.toBeInTheDocument()
+    await waitFor(() => {
+      expect(requests.find((r) => r.path === '/api/cash/ledger')?.account).toBe('ALL')
+    })
   })
 
-  it('a ledger placeholder button switches to that account and shows the normal page', async () => {
+  it('switching to 乙账户 shows the normal single-account page', async () => {
     rememberAll()
     startServer()
     renderApp('/cash')
-    await userEvent.click(await screen.findByTestId('cash-ledger-all-accounts-account-2'))
+    await screen.findAllByTestId('cash-summary-account-row')
+    await chooseInSwitcher('account-option-2')
     expect(await screen.findByTestId('cash-transfer-card')).toBeInTheDocument()
     expect(byTestId('account-current')).toHaveTextContent('乙账户')
     expect(screen.queryByTestId('cash-summary-accounts')).not.toBeInTheDocument()
@@ -735,7 +740,8 @@ describe('FEAT-035 pnl summary (acceptance 7)', () => {
 })
 
 describe('FEAT-035 unsupported pages and entry pages (rule 5, rule 7)', () => {
-  it.each(['/trades', '/stocks', '/closed', '/strategies', '/audit'])(
+  // FEAT-046: /trades, /stocks and /closed show merged lists now (AllAccountsLists.test.tsx).
+  it.each(['/strategies', '/audit'])(
     '%s shows the placeholder and sends no request with ALL',
     async (route) => {
       rememberAll()
@@ -747,9 +753,6 @@ describe('FEAT-035 unsupported pages and entry pages (rule 5, rule 7)', () => {
       expect(byTestId('all-accounts-placeholder-account-1')).toHaveTextContent('甲账户')
       expect(byTestId('all-accounts-placeholder-account-2')).toHaveTextContent('乙账户')
       const forbidden = [
-        '/api/option-trades',
-        '/api/stock-trades',
-        '/api/closed-trades',
         '/api/positions/underlying-summary',
         '/api/positions/greeks-summary',
         '/api/audit-log',
@@ -761,14 +764,16 @@ describe('FEAT-035 unsupported pages and entry pages (rule 5, rule 7)', () => {
   it('a placeholder button switches to that account', async () => {
     rememberAll()
     const requests = startServer()
-    renderApp('/closed')
+    renderApp('/strategies')
     await userEvent.click(await screen.findByTestId('all-accounts-placeholder-account-2'))
     await waitFor(() => {
       expect(byTestId('account-current')).toHaveTextContent('乙账户')
     })
     expect(screen.queryByTestId('all-accounts-placeholder')).not.toBeInTheDocument()
     await waitFor(() => {
-      expect(requests.some((r) => r.path === '/api/closed-trades' && r.account === '2')).toBe(true)
+      expect(
+        requests.some((r) => r.path === '/api/positions/underlying-summary' && r.account === '2'),
+      ).toBe(true)
     })
   })
 

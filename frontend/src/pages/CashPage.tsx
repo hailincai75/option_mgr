@@ -1,8 +1,6 @@
 import { Col, Row, Space } from 'antd'
 import { useState } from 'react'
 import { useIsAllAccounts } from '../account/AccountContext'
-import { PAGE_NOT_SUPPORTED_TEXT } from '../account/allAccountsLabels'
-import { AllAccountsPlaceholder } from '../components/account/AllAccountsPlaceholder'
 import { CashLedgerTable } from '../components/cash/CashLedgerTable'
 import { CashSummaryCard } from '../components/cash/CashSummaryCard'
 import { CashTransferForm } from '../components/cash/CashTransferForm'
@@ -10,7 +8,7 @@ import { CashTransferForm } from '../components/cash/CashTransferForm'
 /**
  * 资金 page (FEAT-007): cash summary, deposit/withdraw form and the cash ledger.
  * FEAT-035 全部账户: one summary row per account plus 合计; no deposit / withdraw form (rule 5);
- * the ledger is a placeholder until FEAT-046 (rule 7).
+ * FEAT-046: the merged ledger of all accounts (账户 column, 账户余额, read-only).
  */
 export function CashPage() {
   const [ledgerPage, setLedgerPage] = useState(1)
@@ -20,11 +18,7 @@ export function CashPage() {
     return (
       <Space orientation="vertical" size={16} style={{ width: '100%' }} data-testid="cash-page">
         <CashSummaryCard perAccount />
-        <AllAccountsPlaceholder
-          title="现金流水"
-          message={PAGE_NOT_SUPPORTED_TEXT}
-          testId="cash-ledger-all-accounts"
-        />
+        <CashLedgerTable page={ledgerPage} onPageChange={setLedgerPage} />
       </Space>
     )
   }

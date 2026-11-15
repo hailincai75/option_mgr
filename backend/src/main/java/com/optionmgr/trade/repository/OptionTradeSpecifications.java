@@ -4,6 +4,7 @@ import com.optionmgr.trade.domain.TradeFilter;
 import jakarta.persistence.criteria.Predicate;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import org.springframework.data.jpa.domain.Specification;
 
@@ -15,9 +16,16 @@ public final class OptionTradeSpecifications {
 
     /** Trades of {@code accountId} matching {@code f} (FEAT-033: always within one account). */
     public static Specification<OptionTradeEntity> matching(long accountId, TradeFilter f) {
+        return matching(List.of(accountId), f);
+    }
+
+    /** FEAT-046: trades of any of {@code accountIds} matching {@code f} (the all-accounts list, one query). */
+    public static Specification<OptionTradeEntity> matching(Collection<Long> accountIds, TradeFilter f) {
         return (root, query, cb) -> {
             List<Predicate> p = new ArrayList<>();
-            p.add(cb.equal(root.get("accountId"), accountId));
+            p.add(accountIds.size() == 1
+                    ? cb.equal(root.get("accountId"), accountIds.iterator().next())
+                    : root.get("accountId").in(accountIds));
             if (f.symbol() != null) {
                 p.add(cb.equal(root.get("symbol"), f.symbol()));
             }

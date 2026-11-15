@@ -1,15 +1,20 @@
 package com.optionmgr.cash.web;
 
+import com.optionmgr.account.domain.AccountRows;
 import com.optionmgr.account.web.AccountRef;
 import com.optionmgr.account.web.AccountScope;
 import com.optionmgr.cash.web.CashDtos.AccountCashResponse;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.List;
 import com.optionmgr.cash.domain.CashBalance;
 import com.optionmgr.cash.service.CashLedgerService;
 import com.optionmgr.cash.service.CashTransferEditService;
 import com.optionmgr.cash.service.CashTransferService;
-import com.optionmgr.cash.service.LedgerPage;
+import com.optionmgr.cash.service.LedgerLine;
 import com.optionmgr.cash.web.CashDtos.CashSummaryResponse;
 import com.optionmgr.cash.web.CashDtos.CreateTransferRequest;
 import com.optionmgr.cash.web.CashDtos.LedgerEntryResponse;
@@ -86,15 +91,34 @@ public class CashController {
 
     @GetMapping("/ledger")
     public LedgerPageResponse ledger(
-            AccountRef account,
+            AccountScope scope,
             @RequestParam(defaultValue = "1") @Min(value = 1, message = "page 必须 ≥ 1") int page,
             @RequestParam(defaultValue = "20") @Min(value = 1, message = "size 必须在 1 到 100 之间")
             @Max(value = 100, message = "size 必须在 1 到 100 之间") int size) {
-        LedgerPage p = ledger.ledgerPage(account.id(), page, size);
-        return new LedgerPageResponse(
-                p.items().stream().map(l -> new LedgerEntryResponse(l.id(), l.occurredAt(), l.sourceType(),
-                        l.sourceId(), l.amount(), l.balanceAfter(), l.frozenChange(), l.description(),
-                        l.remark(), l.hasAuditLog())).toList(),
-                p.page(), p.size(), p.totalItems(), p.totalPages());
+        // FEAT-046: each account replayed on its own (balanceAfter = the row's own account, Q228), then merged
+        // (occurredAt desc, id desc, account id asc) and paged as one list
+        List<AccountRows.Row<LedgerLine>> rows = new ArrayList<>();
+        for (AccountScope.Member m : scope.accounts()) {
+            ledger.lines(m.id()).forEach(l -> rows.add(new AccountRows.Row<>(m.id(), m.name(), l)));
+        }
+        AccountRows.Page<AccountRows.Row<LedgerLine>> p = AccountRows.page(AccountRows.sorted(rows, LEDGER_ORDER),
+                page, size);
+        // hasAuditLog of the page's deposit / withdrawal lines, per account
+        Map<Long, List<LedgerLine>> byAccount = new LinkedHashMap<>();
+        p.items().forEach(r -> byAccount.computeIfAbsent(r.accountId(), a -> new ArrayList<>()).add(r.value()));
+        Map<Long, LedgerLine> flagged = new HashMap<>();
+        byAccount.forEach((accountId, lines) -> ledger.withTransferFlags(accountId, lines)
+                .forEach(l -> flagged.put(l.id(), l)));
+        return new LedgerPageResponse(p.items().stream().map(r -> {
+            LedgerLine l = flagged.get(r.value().id());
+            return new LedgerEntryResponse(r.accountId(), r.accountName(), l.id(), l.occurredAt(), l.sourceType(),
+                    l.sourceId(), l.amount(), l.balanceAfter(), l.frozenChange(), l.description(), l.remark(),
+                    l.hasAuditLog());
+        }).toList(), page, size, p.totalItems(), p.totalPages());
     }
+
+    /** FEAT-007 ledger order: newest first, same instant: later entry first (ledger ids are global, FEAT-033). */
+    private static final Comparator<LedgerLine> LEDGER_ORDER = Comparator
+            .comparing(LedgerLine::occurredAt, Comparator.reverseOrder())
+            .thenComparing(LedgerLine::id, Comparator.reverseOrder());
 }

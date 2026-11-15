@@ -1,5 +1,6 @@
 package com.optionmgr.testsupport.web;
 
+import com.optionmgr.account.service.AccountService;
 import com.optionmgr.account.web.AccountRef;
 import com.optionmgr.common.error.ApiException;
 import com.optionmgr.common.error.ErrorCode;
@@ -44,6 +45,7 @@ public class TestSupportController {
 
     private final DatabaseResetService resetService;
     private final OptionTradeService trades;
+    private final AccountService accounts;
     private final HolidayFetchService holidayFetches;
     private final TradingCalendarService calendar;
     private final SettableClock clock;
@@ -53,7 +55,9 @@ public class TestSupportController {
     public TestSupportController(DatabaseResetService resetService, OptionTradeService trades,
                                  HolidayFetchService holidayFetches, TradingCalendarService calendar,
                                  SettableClock clock, ObjectMapper mapper,
-                                 org.springframework.beans.factory.ObjectProvider<com.optionmgr.quote.service.InMemoryQuoteTransport> quoteSources) {
+                                 org.springframework.beans.factory.ObjectProvider<com.optionmgr.quote.service.InMemoryQuoteTransport> quoteSources,
+                                 AccountService accounts) {
+        this.accounts = accounts;
         this.quoteSources = quoteSources;
         this.resetService = resetService;
         this.trades = trades;
@@ -138,7 +142,8 @@ public class TestSupportController {
         int multiplier = req.multiplier() == null
                 ? OpenTradeTerms.DEFAULT_MULTIPLIER
                 : req.multiplier().intValueExact();
-        return OptionTradeController.toResponse(trades.open(account.id(), new OptionTradeService.OpenCommand(contract,
+        return OptionTradeController.toResponse(accounts.get(account.id()).getName(), trades.open(account.id(),
+                new OptionTradeService.OpenCommand(contract,
                 req.action(), req.contracts().intValueExact(), multiplier, req.netAmount(), req.tradedAtLocal(),
                 req.note()), true));
     }

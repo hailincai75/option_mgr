@@ -2,6 +2,7 @@ import { Button, Space, Table, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { HTMLAttributes, ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import { useIsAllAccounts } from '../../account/AccountContext'
 import type {
   ClosedExercise,
   ClosedOptionRecord,
@@ -16,7 +17,8 @@ import {
   formatInteger,
   formatMoney,
 } from '../../utils/format'
-import { auditUrl } from '../audit/auditLinks'
+import { AccountNameCell } from '../account/AccountNameCell'
+import { HistoryLink } from '../account/HistoryLink'
 import {
   tradesUrlForAssignment,
   tradesUrlForContract,
@@ -432,15 +434,24 @@ const columns: ColumnsType<ClosedTrade> = [
     // audit object is chosen by the row type, ids of the two types can be equal).
     render: (_value: unknown, trade) =>
       trade.hasAuditLog ? (
-        <Link
-          to={auditUrl(trade.type === 'STOCK' ? 'STOCK_TRADE' : 'OPTION_TRADE', trade.id)}
-          data-testid="closed-history"
-        >
-          历史
-        </Link>
+        <HistoryLink
+          objectType={trade.type === 'STOCK' ? 'STOCK_TRADE' : 'OPTION_TRADE'}
+          objectId={trade.id}
+          row={trade}
+          testId="closed-history"
+        />
       ) : null,
   },
 ]
+
+/** FEAT-046 (Q214): 账户 first column, only in 全部账户 mode (expanded lots belong to the row's account). */
+const accountColumn: ColumnsType<ClosedTrade>[number] = {
+  title: '账户',
+  key: 'account',
+  render: (_value: unknown, trade: ClosedTrade) => (
+    <AccountNameCell row={trade} testId="closed-cell-account" />
+  ),
+}
 
 function ExpandedLots({ trade }: { trade: ClosedTrade }) {
   if (trade.type === 'STOCK') {
@@ -486,13 +497,15 @@ interface ClosedTradeTableProps {
 /**
  * Read-only closed records in backend order (option closes and FEAT-040 stock sales); each row
  * expands to its covered lots (options) or sold lots (stocks), FIFO. Rows are keyed by type + id.
+ * FEAT-046: 全部账户 mode adds the 账户 column; 历史 switches to the row's account first (Q231).
  */
 export function ClosedTradeTable({ trades, loading, empty }: ClosedTradeTableProps) {
+  const allAccounts = useIsAllAccounts()
   return (
     <Table<ClosedTrade>
       rowKey={closedRowKey}
       size="small"
-      columns={columns}
+      columns={allAccounts ? [accountColumn, ...columns] : columns}
       dataSource={trades}
       loading={loading}
       pagination={false}
@@ -501,6 +514,7 @@ export function ClosedTradeTable({ trades, loading, empty }: ClosedTradeTablePro
           'data-testid': 'closed-row',
           'data-trade-id': trade.id,
           'data-record-type': trade.type,
+          'data-account-id': trade.accountId,
         }) as HTMLAttributes<HTMLElement>
       }
       expandable={{

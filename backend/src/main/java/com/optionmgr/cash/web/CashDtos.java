@@ -52,7 +52,9 @@ public final class CashDtos {
                                       BigDecimal availableCash) {
     }
 
-    public record LedgerEntryResponse(long id, Instant occurredAt, CashSourceType sourceType, long sourceId,
+    /** FEAT-046: {@code accountId} / {@code accountName} = the row's account (current name), also for one account. */
+    public record LedgerEntryResponse(long accountId, String accountName, long id, Instant occurredAt,
+                                      CashSourceType sourceType, long sourceId,
                                       BigDecimal amount, BigDecimal balanceAfter, BigDecimal frozenChange,
                                       String description,
                                       String remark,

@@ -182,24 +182,11 @@ export function App() {
         <Routes>
           <Route element={<AppLayout status={status} />}>
             <Route index element={<HomePage />} />
-            {/* FEAT-035 rule 7 (Q223 / Q225): placeholder in 全部账户 mode; rule 5 for entry pages. */}
-            <Route
-              path="trades"
-              element={
-                <SingleAccountOnly>
-                  <TradeListPage />
-                </SingleAccountOnly>
-              }
-            />
+            {/* FEAT-035 rule 7 (Q223 / Q225): placeholder in 全部账户 mode for the strategy and audit
+                pages; rule 5 for entry pages. FEAT-046: trades, stocks and closed show merged lists. */}
+            <Route path="trades" element={<TradeListPage />} />
             <Route path="positions" element={<PositionsPage />} />
-            <Route
-              path="stocks"
-              element={
-                <SingleAccountOnly>
-                  <StockTradesPage />
-                </SingleAccountOnly>
-              }
-            />
+            <Route path="stocks" element={<StockTradesPage />} />
             <Route
               path="stocks/new"
               element={
@@ -216,14 +203,7 @@ export function App() {
                 </SingleAccountOnly>
               }
             />
-            <Route
-              path="closed"
-              element={
-                <SingleAccountOnly>
-                  <ClosedTradesPage />
-                </SingleAccountOnly>
-              }
-            />
+            <Route path="closed" element={<ClosedTradesPage />} />
             <Route path="pnl-summary" element={<PnlSummaryPage />} />
             <Route
               path="trades/new"

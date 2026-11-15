@@ -1,6 +1,7 @@
 import { Alert, Button, Card, Pagination, Radio, Space, Typography } from 'antd'
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { useIsAllAccounts } from '../account/AccountContext'
 import { useAccountQuery } from '../account/useAccountQuery'
 import { ApiError } from '../api/client'
 import { deleteStockTrade, listStockTrades, stockTradeQueryKeys } from '../api/stockTrades'
@@ -45,9 +46,11 @@ const PAGE_NOTE =
  * 股票 page (FEAT-011): newest-first stock records with filters (symbol, type, NY date range),
  * pagination, expandable sold lots and 修改 / 删除 / 历史. Filters, page and size live in the URL
  * (same approach as the option trade list, FEAT-002).
+ * FEAT-046: in 全部账户 mode the merged list of all accounts, with no 录入股票交易 entries (Q217).
  */
 export function StockTradesPage() {
   const [searchParams, setSearchParams] = useSearchParams()
+  const allAccounts = useIsAllAccounts()
   const [editing, setEditing] = useState<StockTrade | null>(null)
   const [deleting, setDeleting] = useState<StockTrade | null>(null)
   const state = parseStockListSearch(searchParams)
@@ -127,9 +130,11 @@ export function StockTradesPage() {
       empty = (
         <Space orientation="vertical" data-testid="stock-list-empty">
           <span>暂无股票交易</span>
-          <Link to="/stocks/new" data-testid="stock-list-empty-new">
-            录入股票交易
-          </Link>
+          {!allAccounts && (
+            <Link to="/stocks/new" data-testid="stock-list-empty-new">
+              录入股票交易
+            </Link>
+          )}
         </Space>
       )
     }
@@ -213,9 +218,11 @@ export function StockTradesPage() {
       <Card
         title="股票交易（按时间倒序）"
         extra={
-          <Link to="/stocks/new" data-testid="stock-list-new">
-            录入股票交易
-          </Link>
+          allAccounts ? undefined : (
+            <Link to="/stocks/new" data-testid="stock-list-new">
+              录入股票交易
+            </Link>
+          )
         }
         data-testid="stock-list"
       >
