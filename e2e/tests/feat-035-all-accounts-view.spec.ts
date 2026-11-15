@@ -227,6 +227,9 @@ async function expectAllMode(page: Page): Promise<void> {
 
 async function switchTo(page: Page, accountId: number, name: string): Promise<void> {
   await id(page, 'account-switcher').click()
+  // wait for the dropdown to finish opening before clicking (a click during the open animation was lost once in
+  // the M5 full run under 3 workers)
+  await expect(id(page, `account-option-${accountId}`)).toBeVisible()
   await id(page, `account-option-${accountId}`).click()
   await expect(id(page, 'account-current')).toHaveText(name)
 }
@@ -477,6 +480,8 @@ test.describe('FEAT-035 全部账户合并查看（一）', () => {
     await expect(id(page, 'pnl-total')).toHaveText('+60.00')
 
     await id(page, 'pnl-filter-clear').click()
+    // let the clear-driven refetch settle (back to the full range) before opening the account switcher
+    await expect(id(page, 'pnl-total')).toHaveText('+90.00')
     await switchTo(page, 2, B_NAME)
     await expect.poll(() => pnlRows(page, 'symbol')).toEqual(['QRTV 1 +30.00 — +30.00'])
     await expect(id(page, 'pnl-total')).toHaveText('+30.00')
