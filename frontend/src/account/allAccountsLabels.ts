@@ -6,10 +6,8 @@ export const ALL_ACCOUNTS_CURRENT_TEXT = '全部账户（只读）'
 export const ALL_ACCOUNTS_READ_ONLY_HINT = '全部账户（只读）：录入、修改、删除请先选择一个账户'
 /** Rule 5: entry pages (/trades/new, /stocks/new) opened in 全部账户 mode. */
 export const ENTRY_NEEDS_ACCOUNT_TEXT = '录入需要选择一个账户'
-/** Rule 7 (Q223 / Q225): pages (or sections) that do not support 全部账户 yet. */
+/** Rule 7 (Q223 / Q225): pages that do not support 全部账户 (FEAT-047 on: only the audit page). */
 export const PAGE_NOT_SUPPORTED_TEXT = '此页暂不支持全部账户，请选择一个账户查看'
-/** Rule 7 (Q224): in place of the FEAT-019 portfolio Greeks summary. */
-export const GREEKS_SUMMARY_SINGLE_ONLY_TEXT = '组合 Greeks 汇总暂只支持单个账户'
 
 /** Q221: per-account link of an ad-hoc closure alert in 全部账户 mode. */
 export function switchToAdjustText(accountName: string): string {

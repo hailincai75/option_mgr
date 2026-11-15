@@ -1,6 +1,6 @@
 package com.optionmgr.valuation.web;
 
-import com.optionmgr.account.web.AccountRef;
+import com.optionmgr.account.web.AccountScope;
 import com.optionmgr.valuation.domain.GreeksSummary;
 import com.optionmgr.valuation.service.UnrealizedValuationService;
 import java.math.BigDecimal;
@@ -10,7 +10,10 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** FEAT-019 Greeks per underlying and for the whole account (docs/api/FEAT-019.md). */
+/**
+ * FEAT-019 Greeks per underlying and for the whole account (docs/api/FEAT-019.md); FEAT-047: with
+ * {@code X-Account-Id: ALL} the same symbol across accounts is one group (Q224, Q233 A), response shape unchanged.
+ */
 @RestController
 @RequestMapping("/api/positions/greeks-summary")
 public class GreeksSummaryController {
@@ -57,8 +60,8 @@ public class GreeksSummaryController {
     }
 
     @GetMapping
-    public SummaryResponse summary(AccountRef account) {
-        UnrealizedValuationService.GreeksSummaryResult r = service.greeksSummary(account.id());
+    public SummaryResponse summary(AccountScope scope) {
+        UnrealizedValuationService.GreeksSummaryResult r = service.greeksSummary(scope.ids());
         return new SummaryResponse(r.asOfDate(), r.summary().groups().stream().map(GroupResponse::of).toList(),
                 PortfolioResponse.of(r.summary().portfolio()));
     }

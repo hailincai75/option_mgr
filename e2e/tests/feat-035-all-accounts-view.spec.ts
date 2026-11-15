@@ -570,7 +570,7 @@ test.describe('FEAT-035 全部账户合并查看（一）', () => {
     expect(summary.accounts.map((a) => a.totalCash)).toEqual(['50263.05', '20210.00'])
   })
 
-  test('AC10 未支持页面：策略、审计显示占位 + 两个账户按钮且不发请求（FEAT-046 起交易列表、股票交易、已平仓不再是占位）；持仓页打开 Greeks → 组合汇总灰字，每行 Greeks 照常', async ({ page }) => {
+  test('AC10 未支持页面：审计显示占位 + 两个账户按钮且不发请求（FEAT-046 起交易列表、股票交易、已平仓，FEAT-047 起策略、组合 Greeks 不再是占位）；持仓页每行 Greeks 照常', async ({ page }) => {
     await scenarioS(page)
     const allRequests: string[] = []
     page.on('request', (req) => {
@@ -578,44 +578,41 @@ test.describe('FEAT-035 全部账户合并查看（一）', () => {
     })
     await page.goto('/')
     await switchToAll(page)
-    for (const path of ['/strategies', '/audit']) {
-      await page.goto(path)
-      const ph = id(page, TID.unsupported)
-      await expect(ph.getByTestId(TID.unsupportedMessage), path).toHaveText(UNSUPPORTED_TEXT)
-      await expect(ph.getByTestId(TID.unsupportedSwitch(1))).toHaveText(A_NAME)
-      await expect(ph.getByTestId(TID.unsupportedSwitch(2))).toHaveText(B_NAME)
-    }
-    // FEAT-046 (requirement change): the 4 list pages show merged data, no placeholder (details in feat-046 spec)
-    for (const path of ['/trades', '/stocks', '/closed']) {
+    await page.goto('/audit')
+    const ph = id(page, TID.unsupported)
+    await expect(ph.getByTestId(TID.unsupportedMessage)).toHaveText(UNSUPPORTED_TEXT)
+    await expect(ph.getByTestId(TID.unsupportedSwitch(1))).toHaveText(A_NAME)
+    await expect(ph.getByTestId(TID.unsupportedSwitch(2))).toHaveText(B_NAME)
+    // FEAT-046 / FEAT-047 (requirement changes): these pages show merged data, no placeholder (details in the
+    // feat-046 / feat-047 specs)
+    for (const path of ['/trades', '/stocks', '/closed', '/strategies']) {
       await page.goto(path)
       await expectAllMode(page)
-      await expect(id(page, TID.unsupported), `${path} no placeholder under ALL (FEAT-046)`).toHaveCount(0)
+      await expect(id(page, TID.unsupported), `${path} no placeholder under ALL`).toHaveCount(0)
     }
-    // the placeholder pages do not query their (unsupported) endpoints with ALL
-    for (const p of ['/api/positions/underlying-summary', '/api/audit-log', '/api/positions/greeks-summary']) {
-      expect(allRequests.filter((x) => x.startsWith(p)), `no ALL request to ${p}`).toEqual([])
-    }
+    // the placeholder page does not query its (unsupported) endpoint with ALL
+    expect(allRequests.filter((x) => x.startsWith('/api/audit-log')), 'no ALL request to /api/audit-log').toEqual([])
 
     // the switch button on a placeholder switches and shows the page
-    await page.goto('/strategies')
+    await page.goto('/audit')
     await id(page, TID.unsupportedSwitch(2)).click()
     await expect(id(page, 'account-current')).toHaveText(B_NAME)
     await expect(id(page, TID.unsupported)).toHaveCount(0)
     await page.goto('/closed')
     await expect(id(page, 'closed-count')).toHaveText('共 1 笔平仓')
 
-    // positions page with Greeks on
+    // positions page with Greeks on: FEAT-047 replaces the gray text by the merged summary
     await switchToAll(page)
     await openPositions(page)
     const toggle = id(page, 'positions-greeks-toggle')
     if ((await toggle.getAttribute('aria-checked')) !== 'true') await toggle.click()
     await expect(toggle).toHaveAttribute('aria-checked', 'true')
-    await expect(id(page, TID.greeksUnsupported)).toHaveText(GREEKS_UNSUPPORTED_TEXT)
-    await expect(id(page, 'greeks-summary')).toHaveCount(0)
+    await expect(id(page, 'greeks-summary')).toBeVisible()
+    await expect(id(page, TID.greeksUnsupported)).toHaveCount(0)
+    await expect(page.getByText(GREEKS_UNSUPPORTED_TEXT)).toHaveCount(0)
     await expect(optRow(page, A1, 1).getByTestId('position-greeks-iv')).toHaveText('35.12%')
     await expect(optRow(page, B3, 2).getByTestId('position-greeks-iv')).toHaveText('35.12%')
     await expect(optRow(page, A4, 1).getByTestId('position-greeks-iv')).toHaveText('28.10%')
-    expect(allRequests.filter((x) => x.startsWith('/api/positions/greeks-summary'))).toEqual([])
   })
 
   test('边界 只有一个账户：切换器没有全部账户；记住了全部账户但只剩一个账户 → 选 ID 最小的账户', async ({ page }) => {

@@ -1596,8 +1596,12 @@ export interface GreeksSummaryResponse {
  */
 export type UnderlyingRealized = Omit<PnlSymbolRow, 'symbol'>
 
-/** One card of `GET /api/positions/underlying-summary` (scale-2 strings, no "+" on positives). */
-export interface UnderlyingSummaryGroup {
+/**
+ * One card of `GET /api/positions/underlying-summary` (scale-2 strings, no "+" on positives).
+ * FEAT-047: `accountId` / `accountName` = the group's account (present for a single account too);
+ * in 全部账户 mode there is one group per account + symbol.
+ */
+export interface UnderlyingSummaryGroup extends RowAccountFields {
   symbol: string
   realized: UnderlyingRealized
   /** Sum of this symbol's OK rows' market values, signed; null when no row is included. */
@@ -1617,7 +1621,7 @@ export interface UnderlyingSummaryGroup {
   excludedLabel: string | null
 }
 
-/** Contract: `GET /api/positions/underlying-summary` → 200 (current account, ascending by symbol). */
+/** Contract: `GET /api/positions/underlying-summary` → 200 (ascending by symbol, then accountId). */
 export interface UnderlyingSummaryResponse {
   asOfDate: LocalDateString
   groups: UnderlyingSummaryGroup[]

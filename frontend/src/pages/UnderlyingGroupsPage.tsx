@@ -2,6 +2,7 @@ import { Button, Card, Empty, Space, Spin, Table, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { HTMLAttributes } from 'react'
 import { Link } from 'react-router-dom'
+import { useIsAllAccounts } from '../account/AccountContext'
 import { useAccountQuery } from '../account/useAccountQuery'
 import { getOptionPositions, optionPositionQueryKeys } from '../api/optionPositions'
 import { ApiError } from '../api/client'
@@ -29,6 +30,10 @@ const NUMERIC = { fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } as 
 /** Page hint (FEAT-023 requirement wording). */
 export const UNDERLYING_HINT =
   '按标的列出当前账户正在持有的期权和股票，只读；操作请到持仓页。已实现盈亏为该标的全部历史（含手续费）；市值和未实现盈亏按 mark / 现价计算，未扣平仓手续费，仅供参考'
+
+/** FEAT-047 (页面与交互): the same hint in 全部账户 mode, `当前账户` replaced. */
+export const UNDERLYING_HINT_ALL_ACCOUNTS =
+  '按标的列出全部账户（每个账户的每个标的一张卡片）正在持有的期权和股票，只读；操作请到持仓页。已实现盈亏为该标的全部历史（含手续费）；市值和未实现盈亏按 mark / 现价计算，未扣平仓手续费，仅供参考'
 
 /**
  * FEAT-021 rule 2: 合约 / 方向 / 张数 / 开仓净额 / 到期日 / DTE — same values as the positions page;
@@ -182,21 +187,43 @@ const stockColumns: ColumnsType<StockPosition> = [
   },
 ]
 
-function UnderlyingCard({ group, pnl }: { group: UnderlyingGroup; pnl: UnderlyingPnlState }) {
+function UnderlyingCard({
+  group,
+  pnl,
+  allAccounts,
+}: {
+  group: UnderlyingGroup
+  pnl: UnderlyingPnlState
+  /** FEAT-047 rule 2: in 全部账户 mode the title starts with `<账户名> · `. */
+  allAccounts: boolean
+}) {
+  const showAccount = allAccounts && group.accountName !== undefined
   return (
     <Card
       size="small"
       data-testid="underlying-card"
       data-symbol={group.symbol}
+      data-account-id={group.accountId}
       title={
         <Space size={12} wrap>
-          <Link
-            to={stocksUrlForSymbol(group.symbol)}
-            data-testid="underlying-card-symbol"
-            title="查看该标的的股票交易"
-          >
-            {group.symbol}
-          </Link>
+          <span data-testid="underlying-card-heading" style={{ whiteSpace: 'nowrap' }}>
+            {showAccount && (
+              <>
+                <span data-testid="underlying-card-account" data-account-id={group.accountId}>
+                  {group.accountName}
+                </span>
+                {' · '}
+              </>
+            )}
+            {/* Rule 7: stays in 全部账户 (the stock list shows merged rows, FEAT-046). */}
+            <Link
+              to={stocksUrlForSymbol(group.symbol)}
+              data-testid="underlying-card-symbol"
+              title="查看该标的的股票交易"
+            >
+              {group.symbol}
+            </Link>
+          </span>
           <Typography.Text type="secondary" data-testid="underlying-card-summary">
             {underlyingSummary(group)}
           </Typography.Text>
@@ -252,13 +279,21 @@ function UnderlyingCard({ group, pnl }: { group: UnderlyingGroup; pnl: Underlyin
  * FEAT-023: a card's summary from `GET /api/positions/underlying-summary`, matched by symbol. While
  * the summary has not arrived — or briefly has no group for a card the positions already show
  * (the three requests return separately) — the card's summary is loading (contract).
+ * FEAT-047: matched by account + symbol (in 全部账户 mode a symbol has one group per account);
+ * an absent account id on either side matches by symbol alone.
  */
 function pnlStateFor(
-  symbol: string,
+  card: UnderlyingGroup,
   data: UnderlyingSummaryResponse | undefined,
   failed: boolean,
 ): UnderlyingPnlState {
-  const group = data?.groups.find((candidate) => candidate.symbol === symbol)
+  const group = data?.groups.find(
+    (candidate) =>
+      candidate.symbol === card.symbol &&
+      (candidate.accountId === undefined ||
+        card.accountId === undefined ||
+        candidate.accountId === card.accountId),
+  )
   if (group !== undefined) return { kind: 'ready', group }
   return failed ? { kind: 'error' } : { kind: 'loading' }
 }
@@ -268,8 +303,11 @@ function pnlStateFor(
  * Reuses the positions page's queries (same keys), so every write that refreshes the positions
  * page refreshes this page too. FEAT-023 adds each card's P&L summary (its own query, invalidated
  * with the positions and the P&L summary) and the rows' 市值 / 未实现盈亏; still no Greeks (Q202).
+ * FEAT-047: also in 全部账户 mode — one card per account + symbol (Q224 A), titled with the account
+ * name; all three requests go out with `X-Account-Id: ALL` (the query key includes the account).
  */
 export function UnderlyingGroupsPage() {
+  const allAccounts = useIsAllAccounts()
   const options = useAccountQuery({
     queryKey: optionPositionQueryKeys.all,
     queryFn: ({ signal }) => getOptionPositions(signal),
@@ -313,9 +351,10 @@ export function UnderlyingGroupsPage() {
         <Space orientation="vertical" size={16} style={{ width: '100%' }}>
           {groups.map((group) => (
             <UnderlyingCard
-              key={group.symbol}
+              key={group.key}
               group={group}
-              pnl={pnlStateFor(group.symbol, summary.data, summary.error !== null)}
+              allAccounts={allAccounts}
+              pnl={pnlStateFor(group, summary.data, summary.error !== null)}
             />
           ))}
         </Space>
@@ -329,7 +368,7 @@ export function UnderlyingGroupsPage() {
           按标的
         </Typography.Title>
         <Typography.Text type="secondary" data-testid="underlying-hint">
-          {UNDERLYING_HINT}
+          {allAccounts ? UNDERLYING_HINT_ALL_ACCOUNTS : UNDERLYING_HINT}
         </Typography.Text>
       </div>
       {summary.error !== null && options.data !== undefined && stocks.data !== undefined && (

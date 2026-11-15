@@ -345,6 +345,25 @@ class GreeksSummaryControllerTest {
         assertThat(r.status()).isEqualTo(405);
     }
 
+    /** FEAT-047 Q233 A: merged exposure = merged net delta x price, rounded once (not the sum of rounded ones). */
+    @Test
+    void feat047_allAccountsMergedExposureRoundedOnce() throws Exception {
+        scenario();
+        run("2026-11-23T10:00:00");
+        assertExposure(group(summary(1), "QRTV"), "52.40", false, "4569.80");
+        assertExposure(group(summary(accountB), "QRTV"), "52.40", false, "9989.01");
+        JsonNode s = ok(get(URL).header(AccountRef.HEADER, "ALL"));
+        assertThat(symbols(s)).containsExactly("IXQZ", "QRTV");
+        JsonNode q = group(s, "QRTV");
+        // 87.21 + 190.63 = 277.84; x 52.40 = 14558.816 -> 14558.82 (per-account sum 4569.80 + 9989.01 = 14558.81)
+        assertNumbers(q, "177.84", "100.00", "277.84", "-10.88", "10.44", "-15.44");
+        assertExposure(q, "52.40", false, "14558.82");
+        assertThat(q.get("optionRowCount").asInt()).isEqualTo(4);
+        assertThat(q.get("noQuoteCount").asInt()).isEqualTo(1);
+        assertExposure(group(s, "IXQZ"), "61.10", false, "4988.82");
+        assertPortfolio(s.get("portfolio"), "19547.64", "12.91", "-20.47");
+    }
+
     @Test
     void groupValuesEqualPositionRows() throws Exception {
         scenario();

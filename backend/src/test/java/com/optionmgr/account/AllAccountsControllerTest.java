@@ -475,7 +475,7 @@ class AllAccountsControllerTest {
         long stockId = jdbc.queryForObject("SELECT MIN(id) FROM stock_trade", Long.class);
         for (String url : new String[] {"/api/option-trades/" + tradeId,
                 "/api/stock-trades/" + stockId,
-                "/api/positions/greeks-summary", "/api/positions/underlying-summary", "/api/audit-log"}) {
+                "/api/audit-log"}) { // FEAT-047: greeks-summary / underlying-summary accept ALL
             JsonNode r = call(get(url), "ALL", null, 400);
             assertThat(r.get("code").asText()).as(url).isEqualTo("ALL_ACCOUNTS_NOT_SUPPORTED");
             assertThat(r.get("message").asText()).isEqualTo("此接口暂不支持全部账户，请选择一个账户");

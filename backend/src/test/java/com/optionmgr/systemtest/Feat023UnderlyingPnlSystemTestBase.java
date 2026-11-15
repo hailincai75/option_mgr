@@ -42,7 +42,9 @@ abstract class Feat023UnderlyingPnlSystemTestBase extends Feat017UnrealizedSyste
     static final String STOCK_TRADES = "/api/stock-trades";
 
     static final List<String> TOP_FIELDS = List.of("asOfDate", "groups");
-    static final List<String> UGROUP_FIELDS = List.of("symbol", "realized", "marketValue", "unrealizedPnl",
+    /** FEAT-047 (contract change): every group also carries accountId / accountName, single-account requests too. */
+    static final List<String> UGROUP_FIELDS = List.of("accountId", "accountName", "symbol", "realized",
+            "marketValue", "unrealizedPnl",
             "totalPnl", "netPremium", "optionPositionCount", "hasStockPosition", "includedCount", "noQuoteCount",
             "expiredPendingCount", "excludedLabel");
     static final List<String> REALIZED_FIELDS = List.of("closedCount", "realizedPnl", "option", "stock");

@@ -1,6 +1,7 @@
 package com.optionmgr.valuation.web;
 
-import com.optionmgr.account.web.AccountRef;
+import com.optionmgr.account.domain.AccountRows;
+import com.optionmgr.account.web.AccountScope;
 import com.optionmgr.trade.domain.PnlSummary;
 import com.optionmgr.trade.web.PnlSummaryController;
 import com.optionmgr.valuation.domain.UnderlyingSummary;
@@ -12,7 +13,10 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** FEAT-023 per-underlying P&amp;L summary of the account (strategy page cards). */
+/**
+ * FEAT-023 per-underlying P&amp;L summary of the account (strategy page cards); FEAT-047: with
+ * {@code X-Account-Id: ALL} one group per account + symbol (Q224 A), every group carrying its account.
+ */
 @RestController
 @RequestMapping("/api/positions/underlying-summary")
 public class UnderlyingSummaryController {
@@ -34,13 +38,15 @@ public class UnderlyingSummaryController {
         }
     }
 
-    public record GroupResponse(String symbol, RealizedResponse realized, BigDecimal marketValue,
-                                BigDecimal unrealizedPnl, BigDecimal totalPnl, BigDecimal netPremium,
-                                int optionPositionCount, boolean hasStockPosition, int includedCount,
-                                int noQuoteCount, int expiredPendingCount, String excludedLabel) {
+    public record GroupResponse(long accountId, String accountName, String symbol, RealizedResponse realized,
+                                BigDecimal marketValue, BigDecimal unrealizedPnl, BigDecimal totalPnl,
+                                BigDecimal netPremium, int optionPositionCount, boolean hasStockPosition,
+                                int includedCount, int noQuoteCount, int expiredPendingCount, String excludedLabel) {
 
-        static GroupResponse of(UnderlyingSummary.Group g) {
-            return new GroupResponse(g.symbol(), RealizedResponse.of(g.realized()), g.marketValue(),
+        static GroupResponse of(AccountRows.Row<UnderlyingSummary.Group> row) {
+            UnderlyingSummary.Group g = row.value();
+            return new GroupResponse(row.accountId(), row.accountName(), g.symbol(),
+                    RealizedResponse.of(g.realized()), g.marketValue(),
                     g.unrealizedPnl(), g.totalPnl(), g.netPremium(), g.optionPositionCount(), g.hasStockPosition(),
                     g.includedCount(), g.noQuoteCount(), g.expiredPendingCount(), g.excludedLabel());
         }
@@ -50,8 +56,8 @@ public class UnderlyingSummaryController {
     }
 
     @GetMapping
-    public SummaryResponse summary(AccountRef account) {
-        UnderlyingSummaryService.Result r = service.summary(account.id());
-        return new SummaryResponse(r.asOfDate(), r.summary().groups().stream().map(GroupResponse::of).toList());
+    public SummaryResponse summary(AccountScope scope) {
+        UnderlyingSummaryService.ScopeResult r = service.summary(scope.names());
+        return new SummaryResponse(r.asOfDate(), r.groups().stream().map(GroupResponse::of).toList());
     }
 }

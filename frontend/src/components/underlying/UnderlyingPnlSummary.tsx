@@ -1,6 +1,7 @@
 import { Space, Typography } from 'antd'
 import type { ReactNode } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import { useAccount } from '../../account/AccountContext'
 import type { PnlBreakdown, UnderlyingSummaryGroup } from '../../api/types'
 import { decimalSign, EMPTY_VALUE, formatMoney } from '../../utils/format'
 import { closedUrlForSymbol, EMPTY_PNL_RANGE } from '../pnl/pnlSummarySearch'
@@ -49,6 +50,52 @@ function BreakdownPart({ part, testId }: { part: PnlBreakdown; testId: string })
   return <PnlMoney value={part.realizedPnl} testId={testId} />
 }
 
+/**
+ * 已实现 link to the 已平仓 page for the symbol (all types and dates). FEAT-047 (Q235 B, same as
+ * the Q231 "历史" link): in 全部账户 mode a card's realized figure is that account's only, so a
+ * click first switches the current account to the card's account, then opens the page — whose
+ * total then matches the card. In single-account mode it is a plain link.
+ */
+function RealizedLink({
+  symbol,
+  accountId,
+  color,
+  children,
+}: {
+  symbol: string
+  accountId: number | undefined
+  color: string | undefined
+  children: ReactNode
+}) {
+  const { isAllAccounts, selectAccount } = useAccount()
+  const navigate = useNavigate()
+  const to = closedUrlForSymbol(symbol, EMPTY_PNL_RANGE)
+  const style = { ...NUMERIC, color }
+  if (!isAllAccounts || accountId === undefined) {
+    return (
+      <Link to={to} data-testid="underlying-pnl-realized" title="查看该标的的已平仓记录" style={style}>
+        {children}
+      </Link>
+    )
+  }
+  return (
+    <Link
+      to={to}
+      data-testid="underlying-pnl-realized"
+      data-account-id={accountId}
+      title="切换到该账户并查看该标的的已平仓记录"
+      style={style}
+      onClick={(event) => {
+        event.preventDefault()
+        selectAccount(accountId)
+        void navigate(to)
+      }}
+    >
+      {children}
+    </Link>
+  )
+}
+
 function Item({ label, children }: { label: string; children: ReactNode }) {
   return (
     <span style={{ whiteSpace: 'nowrap' }}>
@@ -87,14 +134,9 @@ export function UnderlyingPnlSummary({ symbol, state }: { symbol: string; state:
     <div data-testid="underlying-pnl">
       <Space size={[16, 4]} wrap>
         <Item label="已实现">
-          <Link
-            to={closedUrlForSymbol(symbol, EMPTY_PNL_RANGE)}
-            data-testid="underlying-pnl-realized"
-            title="查看该标的的已平仓记录"
-            style={{ ...NUMERIC, color: realizedColor }}
-          >
+          <RealizedLink symbol={symbol} accountId={group.accountId} color={realizedColor}>
             {formatMoney(group.realized.realizedPnl, { signed: true })}
-          </Link>{' '}
+          </RealizedLink>{' '}
           <span style={{ fontSize: 12 }} data-testid="underlying-pnl-realized-split">
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               期权

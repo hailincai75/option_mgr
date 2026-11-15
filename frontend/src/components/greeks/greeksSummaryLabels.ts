@@ -8,6 +8,10 @@ export const GREEKS_SUMMARY_TITLE = '按标的 Greeks 汇总'
 export const GREEKS_SUMMARY_NOTE =
   '按标的汇总当前账户的期权与股票（股票每股 Delta 1）；美元敞口 = 净 Delta × 标的价，仅供参考'
 
+/** FEAT-047: the same line in 全部账户 mode (each symbol merged across accounts, Q224). */
+export const GREEKS_SUMMARY_NOTE_ALL_ACCOUNTS =
+  '按标的汇总全部账户的期权与股票（股票每股 Delta 1）；美元敞口 = 净 Delta × 标的价，仅供参考'
+
 /** Plain-language hints (requirement 白话解释), shown on hover of the `?`. */
 export const GREEKS_SUMMARY_HINTS = {
   title:

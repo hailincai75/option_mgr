@@ -1,6 +1,7 @@
 import { Button, Space, Table, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { HTMLAttributes, ReactNode } from 'react'
+import { useIsAllAccounts } from '../../account/AccountContext'
 import { useAccountQuery } from '../../account/useAccountQuery'
 import { ApiError } from '../../api/client'
 import { getGreeksSummary, greeksSummaryQueryKeys } from '../../api/greeksSummary'
@@ -10,6 +11,7 @@ import {
   exposureText,
   GREEKS_SUMMARY_HINTS,
   GREEKS_SUMMARY_NOTE,
+  GREEKS_SUMMARY_NOTE_ALL_ACCOUNTS,
   GREEKS_SUMMARY_TITLE,
   groupNotes,
   PORTFOLIO_LABEL,
@@ -134,9 +136,11 @@ const COLUMNS: ColumnsType<GreeksSummaryGroup> = [
  * FEAT-019 按标的 Greeks 汇总 (shown only while 显示 Greeks is on, Q175): one row per symbol and
  * the 全组合 row from `GET /api/positions/greeks-summary` for the current account (never filtered
  * by 到期, Q174). Formatting only — every number and sentence is the backend's. Reloads whenever
- * the positions do (same invalidations as FEAT-017's totals).
+ * the positions do (same invalidations as FEAT-017's totals). FEAT-047: in 全部账户 mode the
+ * backend merges each symbol across accounts (no 账户 column, Q234); only the note's wording changes.
  */
 export function GreeksSummaryCard() {
+  const allAccounts = useIsAllAccounts()
   const { data, error, isPending, isFetching, refetch } = useAccountQuery({
     queryKey: greeksSummaryQueryKeys.all,
     queryFn: ({ signal }) => getGreeksSummary(signal),
@@ -242,7 +246,7 @@ export function GreeksSummaryCard() {
       </Typography.Text>
       <div>
         <Typography.Text type="secondary" style={{ fontSize: 12 }} data-testid="greeks-summary-note">
-          {GREEKS_SUMMARY_NOTE}
+          {allAccounts ? GREEKS_SUMMARY_NOTE_ALL_ACCOUNTS : GREEKS_SUMMARY_NOTE}
         </Typography.Text>
       </div>
       <div style={{ marginTop: 8 }} data-testid="greeks-summary-body">

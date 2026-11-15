@@ -515,8 +515,8 @@ class AllAccountsListsControllerTest {
     @Test
     void ac10_byIdAndAuditStillRejectAll() throws Exception {
         scenarioL();
-        for (String url : List.of(TRADES + "/" + idOf.get("#10"), STOCKS + "/" + idOf.get("#13"), "/api/audit-log",
-                "/api/positions/greeks-summary", "/api/positions/underlying-summary")) {
+        // FEAT-047: greeks-summary / underlying-summary accept ALL now
+        for (String url : List.of(TRADES + "/" + idOf.get("#10"), STOCKS + "/" + idOf.get("#13"), "/api/audit-log")) {
             JsonNode r = call(get(url), "ALL", null, 400);
             assertThat(r.get("code").asText()).as(url).isEqualTo("ALL_ACCOUNTS_NOT_SUPPORTED");
         }

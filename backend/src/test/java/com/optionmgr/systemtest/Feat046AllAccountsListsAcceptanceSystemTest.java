@@ -396,7 +396,7 @@ class Feat046AllAccountsListsAcceptanceSystemTest extends Feat046AllAccountsList
     }
 
     @Test
-    @DisplayName("AC10 只读：ALL 修改 #10 备注、删除 #13 → 400 ALL_ACCOUNTS_READ_ONLY，数据（含审计）不变；/{id} 与审计带 ALL 仍 NOT_SUPPORTED")
+    @DisplayName("AC10 只读：ALL 修改 #10 备注、删除 #13 → 400 ALL_ACCOUNTS_READ_ONLY，数据（含审计）不变；/{id} 与审计带 ALL 仍 NOT_SUPPORTED（FEAT-047 起策略、组合 Greeks 支持 ALL）")
     void ac10_guards() {
         scenarioL();
         Map<String, Object> before = listsWorld();
@@ -409,8 +409,8 @@ class Feat046AllAccountsListsAcceptanceSystemTest extends Feat046AllAccountsList
         assertGuardError(del, READ_ONLY_CODE, STOCK_TRADES + "/" + L.get("#13"));
         assertThat(listsWorld()).as("nothing written by the rejected ALL writes").isEqualTo(before);
 
-        for (String path : List.of(TRADES + "/" + L.get("#10"), STOCK_TRADES + "/" + L.get("#13"), "/api/audit-log",
-                "/api/positions/greeks-summary", "/api/positions/underlying-summary")) {
+        // FEAT-047 (requirement change): greeks-summary / underlying-summary accept ALL now
+        for (String path : List.of(TRADES + "/" + L.get("#10"), STOCK_TRADES + "/" + L.get("#13"), "/api/audit-log")) {
             assertGuardError(getAs(ALL, path), NOT_SUPPORTED_CODE, path);
         }
         // control: the same reads work with the record's own account

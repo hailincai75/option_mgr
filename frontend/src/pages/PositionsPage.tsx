@@ -1,5 +1,4 @@
 import { useAccount } from '../account/AccountContext'
-import { GREEKS_SUMMARY_SINGLE_ONLY_TEXT } from '../account/allAccountsLabels'
 import { useAccountQuery } from '../account/useAccountQuery'
 import { Button, Card, Radio, Space, Spin, Switch, Typography } from 'antd'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -200,15 +199,8 @@ export function PositionsPage() {
           )}
         </Space>
         {/* FEAT-019 (Q175): per-symbol Greeks summary, only while 显示 Greeks is on (no request when off). */}
-        {/* FEAT-035 (Q224): not for 全部账户 yet; per-row Greeks stay. */}
-        {showGreeks &&
-          (isAllAccounts ? (
-            <Typography.Text type="secondary" data-testid="greeks-summary-all-accounts">
-              {GREEKS_SUMMARY_SINGLE_ONLY_TEXT}
-            </Typography.Text>
-          ) : (
-            <GreeksSummaryCard />
-          ))}
+        {/* FEAT-047 (Q224 B): in 全部账户 mode the backend merges each symbol across accounts. */}
+        {showGreeks && <GreeksSummaryCard />}
         <PositionTable
           positions={shown}
           showGreeks={showGreeks}

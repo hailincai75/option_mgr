@@ -440,13 +440,14 @@ class Feat035AllAccountsAcceptanceSystemTest extends Feat035AllAccountsSystemTes
     // =========================================================================================== AC 10
 
     @Test
-    @DisplayName("AC10 兜底：单笔交易 / 股票记录（/{id}）、策略（underlying-summary）、组合 Greeks、审计收到 ALL → 400 ALL_ACCOUNTS_NOT_SUPPORTED（FEAT-046 起交易列表、股票交易、已平仓、流水支持 ALL）；ALL 持仓行的每行 Greeks 照常")
+    @DisplayName("AC10 兜底：单笔交易 / 股票记录（/{id}）、审计收到 ALL → 400 ALL_ACCOUNTS_NOT_SUPPORTED（FEAT-046 起交易列表、股票交易、已平仓、流水支持 ALL；FEAT-047 起策略、组合 Greeks 支持 ALL）；ALL 持仓行的每行 Greeks 照常")
     void ac10_unsupportedAndRowGreeks() {
         scenarioS();
         long a1 = ids.get("A1");
         long ixqz = ids.get("A_IXQZ");
-        for (String path : List.of(TRADES + "/" + a1, STOCK_TRADES + "/" + ixqz, "/api/positions/greeks-summary",
-                "/api/positions/underlying-summary", "/api/audit-log")) {
+        // FEAT-047 (requirement change): greeks-summary / underlying-summary accept ALL now
+        // (see Feat047AllAccountsStrategyGreeks*SystemTest)
+        for (String path : List.of(TRADES + "/" + a1, STOCK_TRADES + "/" + ixqz, "/api/audit-log")) {
             Resp r = getAs(ALL, path);
             assertGuardError(r, NOT_SUPPORTED_CODE, path);
             assertThat(getAs(A, path).status()).as("%s still OK for a single account", path).isEqualTo(200);

@@ -1,6 +1,8 @@
 # FEAT-023 按标的盈亏（只读，实时计算，不存库）
 
-> **FEAT-035 修订**：`X-Account-Id: ALL` → 400 `ALL_ACCOUNTS_NOT_SUPPORTED`（待 PM 确认，见 [FEAT-035.md](FEAT-035.md) 需求问题 1）。
+> **FEAT-035 修订**：~~`X-Account-Id: ALL` → 400 `ALL_ACCOUNTS_NOT_SUPPORTED`（待 PM 确认，见 [FEAT-035.md](FEAT-035.md) 需求问题 1）。~~
+>
+> **FEAT-047 修订**：接受 `X-Account-Id: ALL`：每个"账户 + 标的"一组（Q224 A），每组数字与切到该账户时逐字相同（`realized` 为该账户自己的 `pnl-summary` `bySymbol` 行）；`groups[]` 新增 `accountId`、`accountName`（**单账户请求也有值**，就是该账户，纯新增）；排序 `symbol` → `accountId`。`ALL` 下卡片"已实现"链接先切到该组账户再打开已平仓（Q235 B，纯前端）。见 [FEAT-047.md](FEAT-047.md)。
 
 口径全部已定：Q195–Q203（以及引用的 Q6 / Q8 / Q21 / Q53 / Q64 / Q72 / Q91 / Q97 / Q111 / Q152–Q162 / Q183–Q189 / Q193）。已实现沿用 [FEAT-008.md](FEAT-008.md) + [FEAT-040.md](FEAT-040.md) 的 `GET /api/pnl-summary`，行上市值 / 未实现沿用 [FEAT-017.md](FEAT-017.md)，卡片集合与顺序沿用 [FEAT-021.md](FEAT-021.md)。示例标的均为虚构（QRTV、IXQZ、ZWLK、QFZ），数字与需求验收一致（今天 2026-11-23 星期一，10:00 拉取成功，multiplier 100）。
 

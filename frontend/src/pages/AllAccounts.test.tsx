@@ -641,21 +641,7 @@ describe('FEAT-035 positions page (acceptance 4, 5, 6, 9, 10)', () => {
     expect(byTestId('positions-frozen-total')).toHaveTextContent('14,500.00')
     expect(screen.queryByTestId('positions-batch-expire')).not.toBeInTheDocument()
   })
-
-  it('shows the Greeks summary note instead of the summary, and no greeks-summary request', async () => {
-    rememberAll()
-    const requests = startServer()
-    renderApp('/positions')
-    await waitFor(() => {
-      expect(screen.getAllByTestId('position-row')).toHaveLength(4)
-    })
-    await userEvent.click(byTestId('positions-greeks-toggle'))
-    expect(await screen.findByTestId('greeks-summary-all-accounts')).toHaveTextContent(
-      '组合 Greeks 汇总暂只支持单个账户',
-    )
-    expect(screen.getByRole('columnheader', { name: /Delta/ })).toBeInTheDocument()
-    expect(requests.some((r) => r.path === '/api/positions/greeks-summary')).toBe(false)
-  })
+  // FEAT-047: the merged Greeks summary replaced the single-account note (AllAccountsStrategies.test.tsx).
 })
 
 describe('FEAT-035 ad-hoc closure alerts (acceptance 8)', () => {
@@ -740,40 +726,31 @@ describe('FEAT-035 pnl summary (acceptance 7)', () => {
 })
 
 describe('FEAT-035 unsupported pages and entry pages (rule 5, rule 7)', () => {
-  // FEAT-046: /trades, /stocks and /closed show merged lists now (AllAccountsLists.test.tsx).
-  it.each(['/strategies', '/audit'])(
-    '%s shows the placeholder and sends no request with ALL',
-    async (route) => {
-      rememberAll()
-      const requests = startServer()
-      renderApp(route)
-      expect(await screen.findByTestId('all-accounts-placeholder-message')).toHaveTextContent(
-        '此页暂不支持全部账户，请选择一个账户查看',
-      )
-      expect(byTestId('all-accounts-placeholder-account-1')).toHaveTextContent('甲账户')
-      expect(byTestId('all-accounts-placeholder-account-2')).toHaveTextContent('乙账户')
-      const forbidden = [
-        '/api/positions/underlying-summary',
-        '/api/positions/greeks-summary',
-        '/api/audit-log',
-      ]
-      expect(requests.filter((r) => forbidden.includes(r.path))).toEqual([])
-    },
-  )
+  // FEAT-046: /trades, /stocks and /closed show merged lists now (AllAccountsLists.test.tsx);
+  // FEAT-047: /strategies shows merged cards (AllAccountsStrategies.test.tsx). Only /audit is left.
+  it('/audit shows the placeholder and sends no request with ALL', async () => {
+    rememberAll()
+    const requests = startServer()
+    renderApp('/audit')
+    expect(await screen.findByTestId('all-accounts-placeholder-message')).toHaveTextContent(
+      '此页暂不支持全部账户，请选择一个账户查看',
+    )
+    expect(byTestId('all-accounts-placeholder-account-1')).toHaveTextContent('甲账户')
+    expect(byTestId('all-accounts-placeholder-account-2')).toHaveTextContent('乙账户')
+    expect(requests.filter((r) => r.path === '/api/audit-log')).toEqual([])
+  })
 
   it('a placeholder button switches to that account', async () => {
     rememberAll()
     const requests = startServer()
-    renderApp('/strategies')
+    renderApp('/audit')
     await userEvent.click(await screen.findByTestId('all-accounts-placeholder-account-2'))
     await waitFor(() => {
       expect(byTestId('account-current')).toHaveTextContent('乙账户')
     })
     expect(screen.queryByTestId('all-accounts-placeholder')).not.toBeInTheDocument()
     await waitFor(() => {
-      expect(
-        requests.some((r) => r.path === '/api/positions/underlying-summary' && r.account === '2'),
-      ).toBe(true)
+      expect(requests.some((r) => r.path === '/api/audit-log' && r.account === '2')).toBe(true)
     })
   })
 
