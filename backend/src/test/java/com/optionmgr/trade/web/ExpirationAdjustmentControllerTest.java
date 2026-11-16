@@ -318,6 +318,14 @@ class ExpirationAdjustmentControllerTest {
         assertThat(pos.get("frozenCash").asText()).isEqualTo("5000.00");
         assertThat(pos.get("expiresOnAdhocClosure").asBoolean()).isFalse();
         assertThat(pos.get("expirationAdjustable").asBoolean()).isFalse();
+        // FEAT-048: the position's lots carry the per-lot valuation fields, status / label = the row's
+        for (JsonNode lot : pos.get("lots")) {
+            assertThat(lot.get("unrealizedStatus").asText()).isEqualTo(pos.get("unrealizedStatus").asText());
+            assertThat(lot.get("unrealizedLabel")).isEqualTo(pos.get("unrealizedLabel"));
+            assertThat(lot.has("marketValue")).isTrue();
+            assertThat(lot.has("unrealizedPnl")).isTrue();
+            assertThat(lot.has("unrealizedPnlPercent")).isTrue();
+        }
 
         assertThat(position(1, P1)).isNull();
         JsonNode p1 = position(1, P1_NEW);

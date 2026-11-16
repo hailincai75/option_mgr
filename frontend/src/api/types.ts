@@ -358,8 +358,12 @@ export type PositionDirection = 'SHORT' | 'LONG' | (string & {})
 /** ACTIVE (dte > 0) / EXPIRES_TODAY (dte = 0) / EXPIRED (dte < 0). */
 export type ExpirationStatus = 'ACTIVE' | 'EXPIRES_TODAY' | 'EXPIRED' | (string & {})
 
-/** Contract: `GET /api/option-positions` → `positions[].lots[]` (FIFO order). */
-export interface OptionPositionLot {
+/**
+ * Contract: `GET /api/option-positions` → `positions[].lots[]` (FIFO order).
+ * FEAT-048: also the lot's `marketValue` / `unrealizedPnl` / `unrealizedPnlPercent` /
+ * `unrealizedStatus` / `unrealizedLabel` (same formats as the row; status and label = the row's).
+ */
+export interface OptionPositionLot extends UnrealizedFields {
   tradeId: number
   action: string
   tradedAt: InstantString
@@ -1190,8 +1194,11 @@ export interface StockTradePage {
   totalPages: number
 }
 
-/** Contract: `GET /api/stock-positions` → `positions[].lots[]` (FIFO order). */
-export interface StockPositionLot {
+/**
+ * Contract: `GET /api/stock-positions` → `positions[].lots[]` (FIFO order).
+ * FEAT-048 (Q237): the same five unrealized fields as the row (status and label = the row's).
+ */
+export interface StockPositionLot extends UnrealizedFields {
   tradeId: number
   type: StockRecordType | (string & {})
   tradedAt: InstantString

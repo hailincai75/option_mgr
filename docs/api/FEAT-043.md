@@ -1,6 +1,8 @@
 # FEAT-043 临时休市时调整合约到期日（Q43 的例外）
 
 > **FEAT-035 修订**：调整响应的 `position` 与持仓行同一结构，也带 `accountId`、`accountName`；`X-Account-Id: ALL` 时调整请求 → 400 `ALL_ACCOUNTS_READ_ONLY`。见 [FEAT-035.md](FEAT-035.md)。
+>
+> **FEAT-048 修订**：`position.lots[]` 同样新增批次的 `marketValue`、`unrealizedPnl`、`unrealizedPnlPercent`、`unrealizedStatus`、`unrealizedLabel`。见 [FEAT-048.md](FEAT-048.md)。
 
 建立在 FEAT-042（临时休市记录、`AdhocClosureService.findActive`、持仓 `expiresOnAdhocClosure`）、FEAT-009（交易日判断）、FEAT-005（审计、重放、`hasAuditLog`）之上。Q43 例外、Q83、Q126、Q129–Q133 已定。本节只写**新增或不同**的部分；示例标的均为虚构。
 

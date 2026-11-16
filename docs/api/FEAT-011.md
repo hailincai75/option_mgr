@@ -3,6 +3,8 @@
 > **FEAT-035 修订**：`GET /api/stock-positions` 接受 `X-Account-Id: ALL`，行新增 `accountId`、`accountName`（单账户也有值），`positionCount` 为跨账户的**不同标的数**（同一标的在两个账户分两行，但只算 1 个；单账户不变）；`/api/stock-trades/**` 不接受 `ALL`。见 [FEAT-035.md](FEAT-035.md)。
 >
 > **FEAT-046 修订**：`GET /api/stock-trades`（列表）接受 `ALL`：参数、校验、错误不变，排序原规则 + `accountId` 升序，合并后分页；股票记录表示（所有接口）新增 `accountId`、`accountName`（单账户也有值）。`GET /api/stock-trades/{id}` 与写接口仍不接受 `ALL`。见 [FEAT-046.md](FEAT-046.md)。
+>
+> **FEAT-048 修订**：`GET /api/stock-positions` 的 `lots[]` 新增 `marketValue`、`unrealizedPnl`、`unrealizedPnlPercent`、`unrealizedStatus`、`unrealizedLabel`（纯新增；分母为批次 `remainingCost`，最后一个批次市值取余数使之和等于行，Q238 A）。见 [FEAT-048.md](FEAT-048.md)。
 
 **兼容性**：新增接口、新增枚举值（流水 `sourceType` 的 `STOCK_BUY` / `STOCK_SELL`、审计 `objectType` 的 `STOCK_TRADE`）属于兼容变更，已有接口的路径、字段、数字都不变（期权交易列表、期权持仓、已平仓、盈亏汇总、首页**不含**股票，股票盈亏并入在 FEAT-040）。**FEAT-040 起**已平仓、盈亏汇总、首页包含股票卖出的已实现盈亏，见「FEAT-040」。数据库迁移 `V8__stock_trade.sql` 新建表 `stock_trade`、放宽审计对象类型的检查约束，不改任何已有数据。所有接口都要求 `X-Account-Id`（FEAT-033），只读写该账户。
 

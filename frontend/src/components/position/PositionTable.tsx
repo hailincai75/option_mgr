@@ -102,6 +102,19 @@ const lotColumns: ColumnsType<OptionPositionLot> = [
       <SignedMoney value={lot.remainingNetAmount} testId="lot-cell-net-amount" />
     ),
   },
+  // FEAT-048: the lot's backend 市值 / 未实现盈亏, rendered exactly like the position row's cells.
+  {
+    title: '市值',
+    key: 'marketValue',
+    align: 'right',
+    render: (_value: unknown, lot) => <MarketValueCell row={lot} testIdPrefix="lot-cell" />,
+  },
+  {
+    title: '未实现盈亏',
+    key: 'unrealizedPnl',
+    align: 'right',
+    render: (_value: unknown, lot) => <UnrealizedPnlCell row={lot} testIdPrefix="lot-cell" />,
+  },
   {
     title: '冻结',
     key: 'remainingFrozen',

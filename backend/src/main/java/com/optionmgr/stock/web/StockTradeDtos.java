@@ -136,7 +136,12 @@ public final class StockTradeDtos {
 
     public record StockLotResponse(long tradeId, StockTradeType type, Instant tradedAt, String tradedAtLocal,
                                    LocalDate tradeDate, int originalShares, int remainingShares,
-                                   BigDecimal originalCost, BigDecimal remainingCost, String note) {
+                                   BigDecimal originalCost, BigDecimal remainingCost, String note,
+                                   /* FEAT-048: valued with the row's quote.price; status / label = the row's (Q239) */
+                                   BigDecimal marketValue, BigDecimal unrealizedPnl,
+                                   BigDecimal unrealizedPnlPercent,
+                                   com.optionmgr.valuation.domain.ValuationStatus unrealizedStatus,
+                                   String unrealizedLabel) {
     }
 
     /** FEAT-039: {@code coveredShares} = shares covered by CHECKED short calls now; available = shares - covered. */

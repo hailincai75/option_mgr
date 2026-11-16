@@ -62,6 +62,19 @@ const lotColumns: ColumnsType<StockPositionLot> = [
       </span>
     ),
   },
+  // FEAT-048 (Q237): the lot's backend 市值 / 未实现盈亏, rendered exactly like the position row's cells.
+  {
+    title: '市值',
+    key: 'marketValue',
+    align: 'right',
+    render: (_value: unknown, lot) => <MarketValueCell row={lot} testIdPrefix="stock-lot" />,
+  },
+  {
+    title: '未实现盈亏',
+    key: 'unrealizedPnl',
+    align: 'right',
+    render: (_value: unknown, lot) => <UnrealizedPnlCell row={lot} testIdPrefix="stock-lot" />,
+  },
   {
     title: '备注',
     key: 'note',

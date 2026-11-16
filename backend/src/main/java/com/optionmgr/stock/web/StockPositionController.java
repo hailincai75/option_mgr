@@ -57,15 +57,21 @@ public class StockPositionController {
         StockPosition p = row.value();
         QuoteViews.UnderlyingQuote quote = book.underlying(p.symbol());
         RowValuation v = UnrealizedValuationService.stock(p, quote);
+        List<RowValuation> lotValues = UnrealizedValuationService.stockLots(p, v, quote);
+        List<StockLotResponse> lots = new ArrayList<>(p.lots().size());
+        for (int i = 0; i < p.lots().size(); i++) {
+            lots.add(toLot(p.lots().get(i), lotValues.get(i)));
+        }
         return new StockPositionResponse(row.accountId(), row.accountName(), p.symbol(), p.shares(), covered,
                 p.shares() - covered, p.totalCost(), p.averageCost(), p.lots().size(),
-                p.lots().stream().map(StockPositionController::toLot).toList(), quote,
+                lots, quote,
                 v.marketValue(), v.unrealizedPnl(), v.percent(), v.status(), v.label());
     }
 
-    private static StockLotResponse toLot(StockLot l) {
+    private static StockLotResponse toLot(StockLot l, RowValuation v) {
         return new StockLotResponse(l.sourceId(), l.type(), l.tradedAt(), StockTradeController.local(l.tradedAt()),
                 StockTradeController.transferDate(l.type(), l.tradedAt()), l.originalShares(), l.remainingShares(),
-                l.originalCost(), l.remainingCost(), l.note());
+                l.originalCost(), l.remainingCost(), l.note(), v.marketValue(), v.unrealizedPnl(), v.percent(),
+                v.status(), v.label());
     }
 }

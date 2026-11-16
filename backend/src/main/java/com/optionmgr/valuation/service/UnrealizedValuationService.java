@@ -11,6 +11,7 @@ import com.optionmgr.trade.domain.PositionDirection;
 import com.optionmgr.trade.service.OptionPositionService;
 import com.optionmgr.valuation.domain.GreeksSummary;
 import com.optionmgr.valuation.domain.GreeksValuation;
+import com.optionmgr.valuation.domain.LotValuation;
 import com.optionmgr.valuation.domain.RowGreeks;
 import com.optionmgr.valuation.domain.RowValuation;
 import com.optionmgr.valuation.domain.UnrealizedSummary;
@@ -63,6 +64,26 @@ public class UnrealizedValuationService {
         }
         return GreeksValuation.option(p.direction() == PositionDirection.LONG, p.contracts(), p.multiplier(),
                 p.contract().expirationDate(), today, q);
+    }
+
+    /**
+     * FEAT-048: the lots of one option row (same order as {@code p.lots()}, FIFO); {@code row} is the row's
+     * {@link #option} valuation with the same {@code quote}.
+     */
+    public static List<RowValuation> optionLots(OptionPosition p, RowValuation row, QuoteViews.OptionQuote quote) {
+        return LotValuation.optionLots(row, p.direction() == PositionDirection.LONG, p.multiplier(),
+                quote == null ? null : quote.mark(), p.lots().stream()
+                        .map(l -> new LotValuation.OptionLotSize(l.remainingContracts(), l.remainingNetAmount()))
+                        .toList());
+    }
+
+    /**
+     * FEAT-048: the lots of one stock row (same order as {@code p.lots()}, FIFO); {@code row} is the row's
+     * {@link #stock} valuation with the same {@code quote}.
+     */
+    public static List<RowValuation> stockLots(StockPosition p, RowValuation row, QuoteViews.UnderlyingQuote quote) {
+        return LotValuation.stockLots(row, quote == null ? null : quote.price(), p.lots().stream()
+                .map(l -> new LotValuation.StockLotSize(l.remainingShares(), l.remainingCost())).toList());
     }
 
     /** One stock row; {@code quote} is the row's {@code quote}. */

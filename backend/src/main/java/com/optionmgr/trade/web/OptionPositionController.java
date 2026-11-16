@@ -133,7 +133,10 @@ public class OptionPositionController {
                               String note,
                               /* FEAT-039: short call lots only (null otherwise) */
                               CoverageStatus coverage, Long requiredShares, Instant shortfallAt,
-                              String shortfallAtLocal, Long shortfallHeldShares) {
+                              String shortfallAtLocal, Long shortfallHeldShares,
+                              /* FEAT-048: valued with the row's mark; status / label = the row's (Q239) */
+                              BigDecimal marketValue, BigDecimal unrealizedPnl, BigDecimal unrealizedPnlPercent,
+                              ValuationStatus unrealizedStatus, String unrealizedLabel) {
     }
 
     @GetMapping
@@ -188,11 +191,16 @@ public class OptionPositionController {
         OptionPositionService.Adjustability adj = s.adjustability(p);
         QuoteViews.OptionQuote optionQuote = book.option(c);
         RowValuation v = UnrealizedValuationService.option(p, today, optionQuote);
+        List<RowValuation> lotValues = UnrealizedValuationService.optionLots(p, v, optionQuote);
+        List<LotResponse> lots = new ArrayList<>(p.lots().size());
+        for (int i = 0; i < p.lots().size(); i++) {
+            lots.add(toResponse(p.lots().get(i), rc, lotValues.get(i)));
+        }
         return new PositionResponse(accountId, accountName, c.symbol(), c.expirationDate(),
                 ContractKey.strikeText(c.strike()),
                 c.optionType(), c.label(), p.direction(), p.contracts(), p.multiplier(), p.openingNetTotal(),
                 p.averageNetPerContract(), p.frozenCash(), dte, s.remainingTradingDays(p), p.expirationStatus(today), Math.max(0, -dte),
-                p.lots().size(), p.lots().stream().map(l -> toResponse(l, rc)).toList(),
+                p.lots().size(), lots,
                 p.closeAction(), p.allowedCloseContracts(), p.closable(now), p.expiryPending(now), p.expirable(now),
                 s.expiryContracts(p), cutoff, LOCAL_SECONDS.format(MarketTime.toLocal(cutoff)), assignable,
                 assignable
@@ -215,7 +223,7 @@ public class OptionPositionController {
                 GreeksResponse.of(UnrealizedValuationService.greeks(p, today, optionQuote, book.stored(c))));
     }
 
-    private static LotResponse toResponse(PositionLot l, OptionPositionService.RowCoverage rc) {
+    private static LotResponse toResponse(PositionLot l, OptionPositionService.RowCoverage rc, RowValuation v) {
         OptionPositionService.LotCoverage lc = rc == null ? null : rc.lots().get(l.tradeId());
         CoverageTimeline.Shortfall sf = lc == null ? null : lc.shortfall();
         return new LotResponse(l.tradeId(), l.action(), l.tradedAt(),
@@ -223,6 +231,7 @@ public class OptionPositionController {
                 l.remainingContracts(), l.originalNetAmount(), l.remainingNetAmount(), l.originalFrozen(),
                 l.remainingFrozen(), l.note(), lc == null ? null : lc.status(), lc == null ? null : lc.requiredShares(),
                 sf == null ? null : sf.at(), sf == null ? null : LOCAL_SECONDS.format(MarketTime.toLocal(sf.at())),
-                sf == null ? null : sf.held());
+                sf == null ? null : sf.held(), v.marketValue(), v.unrealizedPnl(), v.percent(), v.status(),
+                v.label());
     }
 }
