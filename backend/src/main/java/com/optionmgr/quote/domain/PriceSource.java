@@ -1,7 +1,8 @@
 package com.optionmgr.quote.domain;
 
-/** FEAT-016: where an automatic underlying price came from. */
+/** FEAT-016 / FEAT-052: where an automatic underlying price came from. */
 public enum PriceSource {
     CBOE,
-    FINNHUB
+    FINNHUB,
+    YAHOO
 }

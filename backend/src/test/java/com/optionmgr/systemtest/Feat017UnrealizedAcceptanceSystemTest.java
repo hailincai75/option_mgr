@@ -119,7 +119,7 @@ class Feat017UnrealizedAcceptanceSystemTest extends Feat017UnrealizedSystemTestB
     }
 
     @Test
-    @DisplayName("AC6 P6 mark 0.125 → 12.50 / −3.15 / −20.13，合计 期权 172.50 / 58.60、总 6282.50 / 288.60；10:15 bid 0 theo 0.03 → 3.00 / −12.65 / −80.83，合计 163.00 / 49.10、6273.00 / 279.10")
+    @DisplayName("AC6 P6 mark 0.125 → 12.50 / −3.15 / −20.13，合计 期权 172.50 / 58.60、总 6282.50 / 288.60；11:00 bid 0 theo 0.03 → 3.00 / −12.65 / −80.83，合计 163.00 / 49.10、6273.00 / 279.10")
     void ac6MidWithThreeDecimalsThenTheo() {
         scenario017();
         openN("BTO", 1, "QRTV", "2026-12-18", "60", "CALL", "15.65", "2026-11-20T10:25");
@@ -136,7 +136,7 @@ class Feat017UnrealizedAcceptanceSystemTest extends Feat017UnrealizedSystemTestB
 
         sources().cboe("QRTV", qrtv017("2026-11-23 10:00:00", option(OCC_C_P6, "bid", "0", "ask", "0.05", "theo", "0.03")))
                 .cboe("IXQZ", ixqz017("2026-11-23 10:00:00")).apply();
-        tickAt("2026-11-23T10:15", "SCHEDULED");
+        tickAt("2026-11-23T11:00", "SCHEDULED");
 
         p6 = optRow("1", C_P6);
         assertThat(p6.get("optionQuote").get("mark").asText()).isEqualTo("0.03");
@@ -149,12 +149,12 @@ class Feat017UnrealizedAcceptanceSystemTest extends Feat017UnrealizedSystemTestB
     }
 
     @Test
-    @DisplayName("AC7 10:15 起 QRTV 拉取失败（行情未更新（上次：11-23 10:00））→ P1、P2 仍按 1.25、1.85 算 −6.30、68.70，计入合计")
+    @DisplayName("AC7 11:00 起 QRTV 拉取失败（行情未更新（上次：11-23 10:00））→ P1、P2 仍按 1.25、1.85 算 −6.30、68.70，计入合计")
     void ac7FetchFailedKeepsLastQuote() {
         scenarioPulled();
         sources().cboe("QRTV", httpError(500)).cboe("IXQZ", ixqz017("2026-11-23 10:00:00")).apply();
-        tickAt("2026-11-23T10:15", "SCHEDULED");
-        tickAt("2026-11-23T10:30", "SCHEDULED");
+        tickAt("2026-11-23T11:00", "SCHEDULED");
+        tickAt("2026-11-23T12:00", "SCHEDULED");
 
         JsonNode p1 = optRow("1", C_P1);
         assertThat(p1.get("optionQuote").get("fetchFailed").asBoolean()).isTrue();

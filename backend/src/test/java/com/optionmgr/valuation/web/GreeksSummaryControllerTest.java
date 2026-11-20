@@ -203,7 +203,7 @@ class GreeksSummaryControllerTest {
         Map<String, Reply> failing = new LinkedHashMap<>();
         failing.put("QRTV", Reply.of(500, "boom"));
         fake.configure(new InMemoryQuoteTransport.Sources(true, failing, new LinkedHashMap<>()));
-        run("2026-11-23T10:15:00");
+        run("2026-11-23T11:00:00");
         assertManualQrtv();
 
         ok(delete("/api/market-data/overrides/underlyings/QRTV"));
@@ -234,7 +234,7 @@ class GreeksSummaryControllerTest {
         qrtv.put("55C", option("QRTV261218C00055000", "1.80", "1.90",
                 greeks("0.3320", "0.2850", "null", "-0.0390", "null")));
         apply();
-        run("2026-11-23T10:15:00");
+        run("2026-11-23T11:00:00");
         JsonNode s = summary(1);
         JsonNode q = group(s, "QRTV");
         assertNumbers(q, "87.21", "0.00", "87.21", "-5.12", "-3.24", "-7.11");

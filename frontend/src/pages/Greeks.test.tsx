@@ -5,6 +5,7 @@ import type {
   OptionGreeks,
   OptionPosition,
   GreeksSummaryResponse,
+  MarketDataStatus,
   OptionPositionsResponse,
   UnrealizedSummaryResponse,
 } from '../api/types'
@@ -19,6 +20,7 @@ import { PositionsPage } from './PositionsPage'
 const NO_GREEKS: OptionGreeks = {
   status: 'OK',
   label: null,
+  source: 'CBOE',
   ivPercent: null,
   deltaPerContract: null,
   deltaPosition: null,
@@ -212,13 +214,40 @@ function optionsResponse(positions: OptionPosition[]): OptionPositionsResponse {
   return { asOfDate: '2026-11-23', positionCount: positions.length, frozenTotal: '0.00', positions }
 }
 
-/** Fake backend keyed by `X-Account-Id`; `positions` is a function so tests can change it. */
-function startFakeServer(byAccount: Record<number, () => OptionPosition[]>) {
+/** FEAT-052 `GET /api/market-data/status` (fields other than the source / rate are irrelevant). */
+function marketStatus(partial: Pick<MarketDataStatus, 'optionSource' | 'riskFreeRatePercent'>): MarketDataStatus {
+  return {
+    stale: false,
+    warning: null,
+    lastSuccessAt: '2026-11-23T15:00:00Z',
+    lastSuccessAtLocal: '2026-11-23T10:00:00',
+    lastAttemptAt: '2026-11-23T15:00:00Z',
+    lastAttemptAtLocal: '2026-11-23T10:00:00',
+    lastRefreshAt: null,
+    lastRefreshAtLocal: null,
+    refreshAvailableAt: null,
+    refreshAllowed: true,
+    trackedSymbolCount: 2,
+    ...partial,
+  }
+}
+
+/**
+ * Fake backend keyed by `X-Account-Id`; `positions` is a function so tests can change it.
+ * Without `status` the market-data status request fails (the page must cope).
+ */
+function startFakeServer(
+  byAccount: Record<number, () => OptionPosition[]>,
+  status?: MarketDataStatus,
+) {
   mockFetch({ accounts: false }).mockImplementation((input, init) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
     const headers = (init?.headers ?? {}) as Record<string, string>
     const positions = byAccount[Number(headers['X-Account-Id'])]
     if (url === '/api/accounts') return Promise.resolve(jsonResponse(ACCOUNTS))
+    if (url === '/api/market-data/status' && status !== undefined) {
+      return Promise.resolve(jsonResponse(status))
+    }
     if (url === '/api/option-positions' && positions !== undefined) {
       return Promise.resolve(jsonResponse(optionsResponse(positions())))
     }
@@ -284,7 +313,10 @@ describe('FEAT-018 Greeks on the positions page', () => {
   })
 
   it('shows IV and position / per-contract Greeks after 未实现盈亏 (AC 1–3)', async () => {
-    startFakeServer({ 1: () => [P3, P4, P1, P2] })
+    startFakeServer(
+      { 1: () => [P3, P4, P1, P2] },
+      marketStatus({ optionSource: 'CBOE', riskFreeRatePercent: '4.00' }),
+    )
     renderWithProviders(<PositionsPage />)
     await screen.findAllByTestId('position-row')
     await turnOnGreeks()
@@ -327,9 +359,52 @@ describe('FEAT-018 Greeks on the positions page', () => {
       'data-status',
       'OK',
     )
-    expect(screen.getByTestId('positions-greeks-note')).toHaveTextContent(
-      'IV / Greeks 来自 CBOE 延迟报价，持仓值 = 每张 × 张数 × 100 × 方向（空头取反），仅供参考',
+    // FEAT-052: the CBOE data source keeps the FEAT-018 note.
+    await waitFor(() => {
+      expect(screen.getByTestId('positions-greeks-note')).toHaveTextContent(
+        'IV / Greeks 来自 CBOE 延迟报价，持仓值 = 每张 × 张数 × 100 × 方向（空头取反），仅供参考',
+      )
+    })
+  })
+
+  it('shows the Yahoo note with the backend rate (FEAT-052)', async () => {
+    startFakeServer(
+      { 1: () => [P1] },
+      marketStatus({ optionSource: 'YAHOO', riskFreeRatePercent: '0.00' }),
     )
+    renderWithProviders(<PositionsPage />)
+    await screen.findAllByTestId('position-row')
+    await turnOnGreeks()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('positions-greeks-note').textContent).toBe(
+        'IV 来自 Yahoo Finance 延迟报价，Greeks 由系统按 Black-Scholes 计算（无风险利率 0.00%），与券商数值可能略有差异；持仓值 = 每张 × 张数 × 100 × 方向（空头取反），仅供参考',
+      )
+    })
+  })
+
+  it('shows the Yahoo note with "—" when the status request fails (FEAT-052)', async () => {
+    startFakeServer({ 1: () => [P1] })
+    renderWithProviders(<PositionsPage />)
+    await screen.findAllByTestId('position-row')
+    await turnOnGreeks()
+
+    expect(screen.getByTestId('positions-greeks-note')).toHaveTextContent(
+      'Greeks 由系统按 Black-Scholes 计算（无风险利率 —）',
+    )
+  })
+
+  it('shows the backend Yahoo manual-mark note verbatim (FEAT-052 AC 9)', async () => {
+    const note = 'Greeks 按 Yahoo 报价计算（11-20 10:00），未随手动 Mark 调整'
+    const p1 = option({ greeks: { ...P1_GREEKS, source: 'YAHOO', manualMarkNote: note } })
+    startFakeServer({ 1: () => [p1] })
+    renderWithProviders(<PositionsPage />)
+    await screen.findAllByTestId('position-row')
+    await turnOnGreeks()
+
+    const row = rowOf(P1.contractLabel)
+    expect(within(row).getByTestId('position-greeks-manual-note')).toHaveTextContent(note)
+    expect(greeksTexts(P1.contractLabel).delta).toBe('+30.21（−0.3021）')
   })
 
   it('shows 无报价 in all five columns for a never-quoted contract (AC 4)', async () => {

@@ -1,4 +1,4 @@
-import type { OptionGreeks } from '../../api/types'
+import type { MarketDataStatus, OptionGreeks } from '../../api/types'
 import { EMPTY_VALUE, formatMoney, formatPlainPercent } from '../../utils/format'
 
 /** The four Greeks with a position value (IV has only the per-contract percent, Q168). */
@@ -37,9 +37,23 @@ export const GREEKS_COLUMNS: readonly { key: GreeksColumnKey; title: string; hin
   },
 ]
 
-/** FEAT-018 requirement (Q169, Q161 — multiplier written as 100): note above the table. */
-export const GREEKS_NOTE =
+/** FEAT-018 requirement (Q169, Q161 — multiplier written as 100): note above the table, CBOE source. */
+export const GREEKS_NOTE_CBOE =
   'IV / Greeks 来自 CBOE 延迟报价，持仓值 = 每张 × 张数 × 100 × 方向（空头取反），仅供参考'
+
+/**
+ * FEAT-052 note above the table, picked by the backend's `optionSource`: `CBOE` → the FEAT-018
+ * text; otherwise (YAHOO, or status not loaded / failed) the Yahoo text with the backend's
+ * `riskFreeRatePercent` verbatim (`—` while unknown).
+ */
+export function greeksNote(
+  status: Pick<MarketDataStatus, 'optionSource' | 'riskFreeRatePercent'> | undefined,
+): string {
+  if (status?.optionSource === 'CBOE') return GREEKS_NOTE_CBOE
+  const rate = status?.riskFreeRatePercent ?? ''
+  const rateText = rate.trim() === '' ? EMPTY_VALUE : `${rate.trim()}%`
+  return `IV 来自 Yahoo Finance 延迟报价，Greeks 由系统按 Black-Scholes 计算（无风险利率 ${rateText}），与券商数值可能略有差异；持仓值 = 每张 × 张数 × 100 × 方向（空头取反），仅供参考`
+}
 
 export const GREEKS_TOGGLE_LABEL = '显示 Greeks'
 

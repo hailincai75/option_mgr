@@ -3,6 +3,8 @@
 > **FEAT-035 修订**：~~`X-Account-Id: ALL` → 400 `ALL_ACCOUNTS_NOT_SUPPORTED`（跨账户 Greeks 汇总在 FEAT-047，Q224）。~~ 见 [FEAT-035.md](FEAT-035.md)。
 >
 > **FEAT-047 修订**：接受 `X-Account-Id: ALL`。响应结构不变、不加账户字段（Q234 A）；同一标的跨账户**合并为一组**（Q224 B）：期权行、持股数、计数都是全部账户之和，`dollarExposure` = 合并后的 `netDelta` × 标的价再 `HALF_UP` 到分（Q233 A，可能与各账户敞口之和差几分）；全组合按合并后的组计算（`noUnderlyingPriceCount` 按合并后的标的计）。单账户行为与数字不变。见 [FEAT-047.md](FEAT-047.md)。
+>
+> **FEAT-052 修订**：结构与规则不变。行 Greeks 来自 FEAT-018（Yahoo 数据源时为后端 Black-Scholes 计算值），标的价来源可为 `YAHOO`；美元敞口仍为净 Delta × 显示用标的价。见 [FEAT-052.md](FEAT-052.md)。
 
 口径全部已定：Q174–Q182（以及引用的 Q154 / Q157 / Q158 / Q160 / Q161 / Q163–Q173）。行情字段沿用 [FEAT-016.md](FEAT-016.md)，行 Greeks 沿用 [FEAT-018.md](FEAT-018.md)，"未计入"提示文字沿用 [FEAT-017.md](FEAT-017.md)。示例标的均为虚构（QRTV、IXQZ），数字与需求验收一致（今天 2026-11-23 星期一，10:00 拉取成功，标的价 QRTV 52.40、IXQZ 61.10，multiplier 100）。
 

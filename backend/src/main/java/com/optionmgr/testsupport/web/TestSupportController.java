@@ -51,13 +51,18 @@ public class TestSupportController {
     private final SettableClock clock;
     private final ObjectMapper mapper;
     private final org.springframework.beans.factory.ObjectProvider<com.optionmgr.quote.service.InMemoryQuoteTransport> quoteSources;
+    private final com.optionmgr.quote.service.QuoteSettings quoteSettings;
+    private final com.optionmgr.quote.service.YahooSession yahooSession;
 
     public TestSupportController(DatabaseResetService resetService, OptionTradeService trades,
                                  HolidayFetchService holidayFetches, TradingCalendarService calendar,
                                  SettableClock clock, ObjectMapper mapper,
                                  org.springframework.beans.factory.ObjectProvider<com.optionmgr.quote.service.InMemoryQuoteTransport> quoteSources,
-                                 AccountService accounts) {
+                                 AccountService accounts, com.optionmgr.quote.service.QuoteSettings quoteSettings,
+                                 com.optionmgr.quote.service.YahooSession yahooSession) {
         this.accounts = accounts;
+        this.quoteSettings = quoteSettings;
+        this.yahooSession = yahooSession;
         this.quoteSources = quoteSources;
         this.resetService = resetService;
         this.trades = trades;
@@ -156,5 +161,8 @@ public class TestSupportController {
         clock.reset();
         // FEAT-016: fake quote sources back to empty, request log cleared (quote tables: by the reset snapshot)
         quoteSources.ifAvailable(com.optionmgr.quote.service.InMemoryQuoteTransport::reset);
+        // FEAT-052: configured option source and rate, no Yahoo session
+        quoteSettings.reset();
+        yahooSession.clear();
     }
 }

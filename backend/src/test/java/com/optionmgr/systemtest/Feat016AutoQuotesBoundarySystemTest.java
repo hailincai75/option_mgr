@@ -51,8 +51,8 @@ class Feat016AutoQuotesBoundarySystemTest extends Feat016QuoteSystemTestBase {
         setNow("2026-11-23T10:05");
         overrideMark("SPX", "2026-12-18", "7000", "CALL", "25.50");
         overrideUnderlying("SPX", "6810.25");
-        tickAt("2026-11-23T10:15", "SCHEDULED");
-        tickAt("2026-11-23T10:30", "SCHEDULED");
+        tickAt("2026-11-23T11:00", "SCHEDULED");
+        tickAt("2026-11-23T12:00", "SCHEDULED");
         JsonNode q = optionQuote("1", "SPX 2026-12-18 7000 C");
         assertThat(q.get("mark").asText()).isEqualTo("25.50");
         assertThat(q.get("manual").asBoolean()).isTrue();
@@ -105,14 +105,14 @@ class Feat016AutoQuotesBoundarySystemTest extends Feat016QuoteSystemTestBase {
 
         // quoted once, then ambiguous → treated as not in the chain
         scenarioSources();
-        tickAt("2026-11-23T10:15", "SCHEDULED");
+        tickAt("2026-11-23T11:00", "SCHEDULED");
         assertThat(optionQuote("1", P1).get("contractStatus").asText()).isEqualTo("QUOTED");
-        setNow("2026-11-23T10:20");
+        setNow("2026-11-23T11:05");
         overrideMark("QRTV", "2026-12-18", "50", "PUT", "1.40");
         sources().cboe("QRTV", ok(cboeBody("QRTV", "52.40", "2026-11-23 10:15:00",
                         List.of(p1Option("1.50", "1.60"), option(b1, "bid", "0.40", "ask", "0.50")))))
                 .cboe("IXQZ", ixqzOk()).apply();
-        tickAt("2026-11-23T10:30", "SCHEDULED");
+        tickAt("2026-11-23T12:00", "SCHEDULED");
         p1 = optionQuote("1", P1);
         assertThat(p1.get("contractStatus").asText()).isEqualTo("MISSING_FROM_SOURCE");
         assertThat(p1.get("contractStatusLabel").asText()).isEqualTo("数据源已无该合约（最后报价：11-23 09:45）");
@@ -198,7 +198,7 @@ class Feat016AutoQuotesBoundarySystemTest extends Feat016QuoteSystemTestBase {
         ObjectNode zero = json.createObjectNode();
         zero.put("c", 0).put("pc", 0).put("t", 0);
 
-        String[] slots = {"10:00", "10:15", "10:30", "10:45"};
+        String[] slots = {"10:00", "11:00", "12:00", "13:00"};
         List<ObjectNode> bad = List.of(rawBody("<html>maintenance</html>"), ok(noTimestamp), ok(noOptions),
                 ok(badTimestamp));
         for (int i = 0; i < bad.size(); i++) {
@@ -227,7 +227,7 @@ class Feat016AutoQuotesBoundarySystemTest extends Feat016QuoteSystemTestBase {
 
         sources().cboe("QRTV", qrtvOk()).cboe("IXQZ", ok(cboeBody("IXQZ", "61.10", "2026-11-23 10:00:00",
                 List.of(option(OCC_P2, "bid", "0", "ask", "0.05"))))).apply();
-        tickAt("2026-11-23T10:15", "SCHEDULED");
+        tickAt("2026-11-23T11:00", "SCHEDULED");
         JsonNode p2 = optionQuote(accountB, P2);
         assertThat(p2.get("mark").asText()).isEqualTo("2.50");
         assertThat(p2.get("automaticMark").isNull()).isTrue();
@@ -235,7 +235,7 @@ class Feat016AutoQuotesBoundarySystemTest extends Feat016QuoteSystemTestBase {
         assertThat(p2.get("bid").asText()).isEqualTo("0.00");
 
         scenarioSources();
-        tickAt("2026-11-23T10:30", "SCHEDULED");
+        tickAt("2026-11-23T12:00", "SCHEDULED");
         p2 = optionQuote(accountB, P2);
         assertThat(p2.get("mark").asText()).isEqualTo("2.20");
         assertThat(p2.get("manual").asBoolean()).isFalse();
@@ -253,7 +253,7 @@ class Feat016AutoQuotesBoundarySystemTest extends Feat016QuoteSystemTestBase {
 
         sources().cboe("QRTV", httpError(503)).finnhub("QRTV", finnhubOk("52.10", "2026-11-23T10:14:00"))
                 .cboe("IXQZ", ixqzOk()).apply();
-        JsonNode t = tickAt("2026-11-23T10:15", "SCHEDULED");
+        JsonNode t = tickAt("2026-11-23T11:00", "SCHEDULED");
         assertThat(results(t)).contains("QRTV FALLBACK HTTP_ERROR SUCCESS FINNHUB");
         JsonNode u = underlyingQuote("1", P1);
         assertThat(u.get("price").asText()).isEqualTo("52.10");
@@ -442,7 +442,7 @@ class Feat016AutoQuotesBoundarySystemTest extends Feat016QuoteSystemTestBase {
         // still overridable
         overrideMark("QRTV", "2026-11-20", "45", "PUT", "0.05");
         overrideUnderlying("QRTV", "52.80");
-        tickAt("2026-11-23T11:15", "SCHEDULED");
+        tickAt("2026-11-23T12:00", "SCHEDULED");
         assertThat(optionQuote("1", EXP_C).get("mark").asText()).isEqualTo("0.05");
         assertThat(underlyingQuote("1", EXP_C).get("price").asText()).isEqualTo("52.80");
         assertThat(requests()).isEmpty();
@@ -503,15 +503,24 @@ class Feat016AutoQuotesBoundarySystemTest extends Feat016QuoteSystemTestBase {
     }
 
     @Test
-    @DisplayName("定时时刻：09:30 / 16:00 SCHEDULED，09:29 / 16:05 / 10:07 不是时刻，10:00:30 截到分钟算 10:00；周六不拉；11-27 提前收盘日 16:20 仍 CLOSE")
+    @DisplayName("定时时刻（Q270）：10:00–16:00 整点 SCHEDULED；09:29 / 09:30 / 09:45 / 10:07 / 10:15 / 10:20 / 10:30 / 10:45 / 15:20 / 15:45 / 16:05 / 16:15 不是时刻；10:00:30 截到分钟算 10:00；周六不拉；11-27 提前收盘日 16:20 仍 CLOSE")
     void scheduleSlots() {
         scenario();
         scenarioSources();
         tickSkipped("2026-11-23T09:29", "NOT_A_SLOT");
-        tickAt("2026-11-23T09:30", "SCHEDULED");
+        tickSkipped("2026-11-23T09:30", "NOT_A_SLOT");
+        tickSkipped("2026-11-23T09:45", "NOT_A_SLOT");
         tickAt("2026-11-23T10:00:30", "SCHEDULED");
         tickSkipped("2026-11-23T10:07", "NOT_A_SLOT");
-        tickAt("2026-11-23T15:45", "SCHEDULED");
+        tickSkipped("2026-11-23T10:15", "NOT_A_SLOT");
+        tickSkipped("2026-11-23T10:30", "NOT_A_SLOT");
+        tickSkipped("2026-11-23T10:45", "NOT_A_SLOT");
+        tickSkipped("2026-11-23T10:20", "NOT_A_SLOT");
+        tickSkipped("2026-11-23T15:20", "NOT_A_SLOT");
+        for (String hour : List.of("11:00", "12:00", "13:00", "14:00", "15:00")) {
+            tickAt("2026-11-23T" + hour, "SCHEDULED");
+        }
+        tickSkipped("2026-11-23T15:45", "NOT_A_SLOT");
         tickAt("2026-11-23T16:00", "SCHEDULED");
         tickSkipped("2026-11-23T16:05", "NOT_A_SLOT");
         tickSkipped("2026-11-23T16:15", "NOT_A_SLOT");
@@ -546,7 +555,7 @@ class Feat016AutoQuotesBoundarySystemTest extends Feat016QuoteSystemTestBase {
     // ============================================================================================== top warning window
 
     @Test
-    @DisplayName("顶部提示时段：16:00（含）提示、16:01 不提示；次日 09:30–10:00 按 09:30 起算不提示，10:01 提示 上次：2026-11-23 10:00 美东")
+    @DisplayName("顶部提示时段：16:00（含）提示、16:01 不提示；次日 09:30–11:00 按 09:30 起算不提示（Q270 90 分钟），11:01 提示 上次：2026-11-23 10:00 美东")
     void staleWindow() {
         scenario();
         scenarioSources();
@@ -560,9 +569,9 @@ class Feat016AutoQuotesBoundarySystemTest extends Feat016QuoteSystemTestBase {
         assertThat(status().get("stale").asBoolean()).isFalse();
         setNow("2026-11-24T09:31");
         assertThat(status().get("stale").asBoolean()).isFalse();
-        setNow("2026-11-24T10:00");
+        setNow("2026-11-24T11:00");
         assertThat(status().get("stale").asBoolean()).isFalse();
-        setNow("2026-11-24T10:01");
+        setNow("2026-11-24T11:01");
         JsonNode s = status();
         assertThat(s.get("stale").asBoolean()).isTrue();
         assertThat(s.get("warning").asText()).isEqualTo("行情未更新（上次：2026-11-23 10:00 美东）");
@@ -588,14 +597,14 @@ class Feat016AutoQuotesBoundarySystemTest extends Feat016QuoteSystemTestBase {
         assertThat(r.get("performed").asBoolean()).as("reset cleared the cooldown").isTrue();
         assertThat(results(r)).hasSize(2);
 
-        setNow("2026-11-30T10:14:30");
+        setNow("2026-11-30T10:59:30");
         assertThat(refresh().get("performed").asBoolean()).isTrue();
-        JsonNode t = tickAt("2026-11-30T10:15", "SCHEDULED");
-        assertThat(t.get("status").get("lastRefreshAtLocal").asText()).isEqualTo("2026-11-30T10:14:30");
+        JsonNode t = tickAt("2026-11-30T11:00", "SCHEDULED");
+        assertThat(t.get("status").get("lastRefreshAtLocal").asText()).isEqualTo("2026-11-30T10:59:30");
         assertThat(t.get("status").get("refreshAllowed").asBoolean()).isFalse();
-        setNow("2026-11-30T10:15:29");
+        setNow("2026-11-30T11:00:29");
         assertThat(refresh().get("reason").asText()).isEqualTo("COOLDOWN");
-        setNow("2026-11-30T10:15:30");
+        setNow("2026-11-30T11:00:30");
         assertThat(refresh().get("performed").asBoolean()).isTrue();
     }
 

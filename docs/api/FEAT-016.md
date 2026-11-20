@@ -1,5 +1,7 @@
 # FEAT-016 自动行情（只读：CBOE 延迟报价 + Finnhub 股价兜底，手动覆盖）
 
+> **FEAT-052 修订（行为变化）**：期权数据源改为配置项 `optionmgr.quotes.option-source`，**默认 `yahoo`**（Yahoo Finance：会话握手 + 按 标的 + 到期日 请求，Greeks 由后端 Black-Scholes 计算）；下文 CBOE 的请求、解析与 Q139 mark 只在 `option-source=cboe` 时生效（`test` / `e2e` profile 默认 `cboe`）。两种数据源共同的变化：定时时刻改为交易日 10:00–16:00 每整点 + 16:20（Q270，下文"每 15 分钟 / 27 次"不再成立，测试支持 `tick` 同步改）；顶部提示阈值 30 → 90 分钟。字段变化：`underlyingQuote.source` / `quote.source` / `results[].underlyingPriceSource` 新值 `YAHOO`；`optionQuote.source` 可为 `YAHOO`、`markBasis` 新值 `LAST`（mark 规则按已存报价的来源）；`status` 新增 `optionSource`、`riskFreeRatePercent`；`results[]` 新增 `optionSource`、`yahooResult`，`cboeResult` 在 Yahoo 下为 `null`。收盘后 0 / 缺失报价不覆盖已有有效报价（Q265），手动 mark 只在 Yahoo 有效报价替换时删除。测试支持新增 `PUT /api/test-support/market-data/settings`、`sources.yahoo`，请求记录新增 `kind` / `expirationDate`，`stored` 新增 `source` / `lastYahooResult`。迁移 V19（`price_source` 允许 `YAHOO`、`option_quote` / `option_quote_close` 新列 `quote_source`；failing-migration fixture 改 V20）。见 [FEAT-052.md](FEAT-052.md)。
+
 Q135–Q144 已定；契约阶段提出的 12 个细节已由用户确认，记入 decisions.md（Q145 起；第 11 条改为"指数标的不拉取"，第 12 条 CBOE `timestamp` 已实测）；交易日 / 时段沿用 FEAT-009（含 FEAT-042 临时休市，它们本来就是 Finnhub 全天休市日）。本节只写**新增或不同**的部分；示例标的均为虚构（QRTV、IXQZ）。
 
 **兼容性一览**

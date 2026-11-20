@@ -10,7 +10,8 @@ import java.util.Optional;
 /** FEAT-016 Q141: row labels and the top warning (texts shown verbatim by the frontend). Pure. */
 public final class QuoteLabels {
 
-    public static final Duration STALE_AFTER = Duration.ofMinutes(30);
+    /** FEAT-052 Q270: 90 minutes (was 30, Q141). */
+    public static final Duration STALE_AFTER = Duration.ofMinutes(90);
 
     private static final DateTimeFormatter SHORT = DateTimeFormatter.ofPattern("MM-dd HH:mm");
 
@@ -41,7 +42,7 @@ public final class QuoteLabels {
      * The top warning:
      * <ol>
      *   <li>tracked symbols but never a successful run: always {@code 行情未更新（从未成功获取）};</li>
-     *   <li>on a trading day between 09:30 and 16:00 New York, more than 30 minutes since max(last success, 09:30
+     *   <li>on a trading day between 09:30 and 16:00 New York, more than 90 minutes (Q270) since max(last success, 09:30
      *       today): {@code 行情未更新（上次：2026-11-23 10:00 美东）};</li>
      *   <li>otherwise none.</li>
      * </ol>

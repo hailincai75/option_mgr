@@ -168,7 +168,7 @@ class Feat048LotUnrealizedAcceptanceSystemTest extends Feat048LotUnrealizedSyste
     // =========================================================================================== AC 6
 
     @Test
-    @DisplayName("AC6 无法计算与旧报价：7P（链中无）批次 无报价；已过期 8P 批次 已到期，待处理；10:15 起拉取失败（行情未更新）→ A、B 仍 −1.66 / +17.34")
+    @DisplayName("AC6 无法计算与旧报价：7P（链中无）批次 无报价；已过期 8P 批次 已到期，待处理；11:00 起拉取失败（行情未更新）→ A、B 仍 −1.66 / +17.34")
     void ac6_noQuoteExpiredAndStale() {
         scenarioZ(() -> {
             ids.put("P7", openN("STO", 1, "ZZQ", "2026-12-18", "7", "PUT", "12.00", "2026-11-13T10:20"));
@@ -189,10 +189,10 @@ class Feat048LotUnrealizedAcceptanceSystemTest extends Feat048LotUnrealizedSyste
         assertThat(x.get("lots").get(0).get("remainingNetAmount").asText()).isEqualTo("15.00");
         assertAllLotInvariants(A);
 
-        // 10:15 on: ZZQ pull fails → the rows keep the 10:00 quote, lots computed with the same mark
+        // 11:00 on: ZZQ pull fails → the rows keep the 10:00 quote, lots computed with the same mark
         sources().cboe("ZZQ", httpError(500)).apply();
-        tickAt("2026-11-16T10:15", "SCHEDULED");
-        tickAt("2026-11-16T10:30", "SCHEDULED");
+        tickAt("2026-11-16T11:00", "SCHEDULED");
+        tickAt("2026-11-16T12:00", "SCHEDULED");
         JsonNode c = opt(A, C9);
         assertThat(c.get("optionQuote").get("fetchFailed").asBoolean()).isTrue();
         assertThat(text(c.get("optionQuote").get("staleLabel"))).isEqualTo("行情未更新（上次：11-16 10:00）");
@@ -215,7 +215,7 @@ class Feat048LotUnrealizedAcceptanceSystemTest extends Feat048LotUnrealizedSyste
     void ac7_roundingRemainder() {
         scenarioZ();
         sources().cboe("ZZQ", zzqChain("8.655", "2026-11-16 10:10:00")).apply();
-        tickAt("2026-11-16T10:15", "SCHEDULED");
+        tickAt("2026-11-16T11:00", "SCHEDULED");
 
         JsonNode s = stk(B, "ZZQ");
         assertThat(s.get("quote").get("price").asText()).isEqualTo("8.655");

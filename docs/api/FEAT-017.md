@@ -3,6 +3,8 @@
 > **FEAT-035 修订**：`GET /api/positions/unrealized-summary` 接受 `X-Account-Id: ALL`（结构不变，全部账户之和）。见 [FEAT-035.md](FEAT-035.md)。
 >
 > **FEAT-048 修订**：期权 / 股票持仓的每个批次（`lots[]`）也带同名 5 个字段，用行的同一个 mark / 现价；行上的值、合计接口都不变，且各批次市值 / 未实现之和始终等于行（最后一个批次取余数，Q238 A）。见 [FEAT-048.md](FEAT-048.md)。
+>
+> **FEAT-052 修订**：计算规则与字段不变。`optionQuote.mark` 可来自 Yahoo（`markBasis` `MID`，或从未有过有效报价时的 `LAST` = `lastPrice`）；Yahoo 收盘后 0 / 缺失的 bid / ask 不覆盖已存的有效报价，所以收盘后市值 / 未实现按盘中最后一次有效报价（Q265）。股票行 `quote.source` 可为 `YAHOO`。见 [FEAT-052.md](FEAT-052.md)。
 
 口径全部已定：Q152–Q161（以及引用的 Q6 / Q8 / Q21 / Q22 / Q67 / Q69 / Q87 / Q150 / Q151）。行情字段沿用 [FEAT-016.md](FEAT-016.md)，本节只写**新增**的部分。示例标的均为虚构（QRTV、IXQZ），数字与需求验收一致（今天 2026-11-23，10:00 拉取成功）。
 

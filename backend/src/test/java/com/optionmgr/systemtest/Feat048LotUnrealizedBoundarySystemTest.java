@@ -134,7 +134,7 @@ class Feat048LotUnrealizedBoundarySystemTest extends Feat048LotUnrealizedSystemT
         scenarioZ();
         sources().cboe("ZZQ", ok(cboeBody("ZZQ", "8.65", "2026-11-16 10:10:00",
                 List.of(option(OCC_P8, "bid", "0.15", "ask", "0.19"))))).apply();
-        tickAt("2026-11-16T10:15", "SCHEDULED");
+        tickAt("2026-11-16T11:00", "SCHEDULED");
 
         JsonNode c = opt(A, C9);
         assertThat(c.get("optionQuote").get("contractStatus").asText()).isEqualTo("MISSING_FROM_SOURCE");
@@ -151,7 +151,7 @@ class Feat048LotUnrealizedBoundarySystemTest extends Feat048LotUnrealizedSystemT
         ObjectNode c9 = option(OCC_C9, "bid", "0", "ask", "0.30", "theo", "0.25");
         sources().cboe("ZZQ", ok(cboeBody("ZZQ", "8.65", "2026-11-16 10:10:00",
                 List.of(c9, option(OCC_P8, "bid", "0.15", "ask", "0.19"))))).apply();
-        tickAt("2026-11-16T10:15", "SCHEDULED");
+        tickAt("2026-11-16T11:00", "SCHEDULED");
 
         JsonNode c = opt(A, C9);
         assertThat(c.get("optionQuote").get("markBasis").asText()).isEqualTo("THEO");

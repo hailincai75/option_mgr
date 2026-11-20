@@ -262,7 +262,7 @@ class UnrealizedPnlControllerTest {
         qrtvExtra.put("60C", option("QRTV261218C00060000", "0", "0.05", "0.03"));
         qrtv();
         apply();
-        run("2026-11-23T10:15:00");
+        run("2026-11-23T11:00:00");
         assertOption(1, P6, "3.00", "-12.65", "-80.83");
         sum = summary(1);
         assertGroup(sum.get("option"), "163.00", "49.10", 4, 1, 0);
@@ -275,7 +275,7 @@ class UnrealizedPnlControllerTest {
         run("2026-11-23T10:00:00");
         cboe.put("QRTV", Reply.of(500, "boom"));
         apply();
-        run("2026-11-23T10:15:00");
+        run("2026-11-23T11:00:00");
         JsonNode p1 = position(1, P1);
         assertThat(p1.at("/optionQuote/staleLabel").asText()).isEqualTo("行情未更新（上次：11-23 10:00）");
         assertOption(1, P1, "-125.00", "-6.30", "-5.31");

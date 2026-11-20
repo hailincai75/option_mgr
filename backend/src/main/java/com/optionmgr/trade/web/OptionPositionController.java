@@ -106,7 +106,8 @@ public class OptionPositionController {
      * position values scale 2 (x contracts x multiplier x direction), IV percent scale 2; values {@code null} unless
      * status OK or when CBOE gave no value. No rho (Q167).
      */
-    public record GreeksResponse(GreeksStatus status, String label, BigDecimal ivPercent,
+    public record GreeksResponse(GreeksStatus status, String label, com.optionmgr.quote.domain.QuoteSource source,
+                                 BigDecimal ivPercent,
                                  BigDecimal deltaPerContract, BigDecimal deltaPosition,
                                  BigDecimal gammaPerContract, BigDecimal gammaPosition,
                                  BigDecimal thetaPerContract, BigDecimal thetaPosition,
@@ -114,7 +115,7 @@ public class OptionPositionController {
                                  Instant quoteTime, String quoteTimeLocal, String manualMarkNote) {
 
         static GreeksResponse of(RowGreeks g) {
-            return new GreeksResponse(g.status(), g.label(), g.ivPercent(),
+            return new GreeksResponse(g.status(), g.label(), g.source(), g.ivPercent(),
                     g.delta().perContract(), g.delta().position(), g.gamma().perContract(), g.gamma().position(),
                     g.theta().perContract(), g.theta().position(), g.vega().perContract(), g.vega().position(),
                     g.quoteTime(),

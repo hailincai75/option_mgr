@@ -85,4 +85,102 @@ class HttpQuoteTransportTest {
         assertThat(t.cboe("QRTV")).isInstanceOf(FetchAttempt.NetworkError.class);
         assertThat(t.finnhubQuote("QRTV")).isInstanceOf(FetchAttempt.NetworkError.class);
     }
+
+    // ---------------------------------------------------------------- FEAT-052 Yahoo (local fake server only)
+
+    record YahooReceived(String uri, String cookie, String userAgent) {
+    }
+
+    final List<YahooReceived> yahooReceived = new CopyOnWriteArrayList<>();
+    volatile int optionsStatus = 200;
+    volatile String crumbBody = "AbCdEfGhIjK";
+    final List<Long> slept = new CopyOnWriteArrayList<>();
+
+    HttpQuoteTransport yahoo(long intervalMillis) {
+        server.removeContext("/");
+        server.createContext("/", ex -> {
+            String path = ex.getRequestURI().getPath();
+            yahooReceived.add(new YahooReceived(ex.getRequestURI().toString(),
+                    ex.getRequestHeaders().getFirst("Cookie"), ex.getRequestHeaders().getFirst("User-Agent")));
+            int code;
+            String text;
+            if (path.equals("/fc/")) {
+                ex.getResponseHeaders().add("Set-Cookie", "A3=d=fakecookie; Path=/");
+                code = 404;
+                text = "not found";
+            } else if (path.equals("/v1/test/getcrumb")) {
+                String c = ex.getRequestHeaders().getFirst("Cookie");
+                boolean ok = c != null && c.contains("A3=d=fakecookie");
+                code = ok ? 200 : 401;
+                text = ok ? crumbBody : "{\"finance\":{\"error\":\"Unauthorized\"}}";
+            } else {
+                code = optionsStatus;
+                text = "{\"optionChain\":{}}";
+            }
+            byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
+            ex.sendResponseHeaders(code, bytes.length);
+            try (OutputStream out = ex.getResponseBody()) {
+                out.write(bytes);
+            }
+            ex.close();
+        });
+        QuoteProperties p = new QuoteProperties(false, "http", base(), 2, 2, null, "yahoo",
+                java.math.BigDecimal.ZERO, intervalMillis,
+                new QuoteProperties.Yahoo(base() + "/", base() + "/fc/", "FakeBrowser/1.0"));
+        return new HttpQuoteTransport(p, new FinnhubProperties(base(), null, List.of("build/no-env-in-tests/.env"),
+                false, false, 2, 2), slept::add);
+    }
+
+    @Test
+    void yahoo_handshakeSendsCookieAndUserAgent_thenOptionsWithCrumbAndDate() {
+        HttpQuoteTransport t = yahoo(0);
+        assertThat(t.yahooHandshake()).isEqualTo(new QuoteTransport.Handshake.Ok("AbCdEfGhIjK"));
+        FetchAttempt a = t.yahooOptions("QRTV", java.time.LocalDate.parse("2027-02-19"), "AbCdEfGhIjK");
+        assertThat(a).isEqualTo(new FetchAttempt.Response(200, "{\"optionChain\":{}}"));
+        t.yahooOptions("IXQZ", null, "AbCdEfGhIjK");
+        assertThat(yahooReceived).extracting(YahooReceived::uri).containsExactly("/fc/", "/v1/test/getcrumb",
+                "/v7/finance/options/QRTV?crumb=AbCdEfGhIjK&date=1802995200",
+                "/v7/finance/options/IXQZ?crumb=AbCdEfGhIjK");
+        assertThat(yahooReceived).extracting(YahooReceived::userAgent).containsOnly("FakeBrowser/1.0");
+        assertThat(yahooReceived.subList(1, 4)).extracting(YahooReceived::cookie).containsOnly("A3=d=fakecookie");
+        assertThat(slept).as("interval 0").isEmpty();
+    }
+
+    @Test
+    void yahoo_handshakeFailures() {
+        HttpQuoteTransport t = yahoo(0);
+        crumbBody = "<html>blocked</html>";
+        assertThat(t.yahooHandshake()).isEqualTo(new QuoteTransport.Handshake.Failed("getcrumb invalid crumb"));
+        HttpQuoteTransport down = new HttpQuoteTransport(new QuoteProperties(false, "http", "http://127.0.0.1:9", 1, 1,
+                null, "yahoo", java.math.BigDecimal.ZERO, 0L,
+                new QuoteProperties.Yahoo("http://127.0.0.1:9", "http://127.0.0.1:9/", null)),
+                new FinnhubProperties("http://127.0.0.1:9", null, List.of(), false, false, 1, 1));
+        assertThat(down.yahooHandshake()).isInstanceOf(QuoteTransport.Handshake.Failed.class)
+                .extracting(h -> ((QuoteTransport.Handshake.Failed) h).detail()).asString().startsWith("cookie ");
+        assertThat(down.yahooOptions("QRTV", null, "x")).isInstanceOf(FetchAttempt.NetworkError.class);
+    }
+
+    @Test
+    void yahoo_rejectedStatusesReturnedAsIs_noRetryInTransport() {
+        HttpQuoteTransport t = yahoo(0);
+        optionsStatus = 429;
+        assertThat(t.yahooOptions("QRTV", null, "c")).isEqualTo(new FetchAttempt.Response(429, "{\"optionChain\":{}}"));
+        optionsStatus = 401;
+        assertThat(t.yahooOptions("QRTV", null, "c")).isEqualTo(new FetchAttempt.Response(401, "{\"optionChain\":{}}"));
+        assertThat(yahooReceived).hasSize(2);
+    }
+
+    @Test
+    void yahoo_requestIntervalBetweenRequests() {
+        HttpQuoteTransport t = yahoo(1000);
+        t.yahooHandshake();
+        t.yahooOptions("QRTV", null, "c");
+        assertThat(slept).hasSize(2).allSatisfy(ms -> assertThat(ms).isBetween(1L, 1000L));
+    }
+
+    @Test
+    void yahoo_epochSecondIsMidnightUtc() {
+        assertThat(HttpQuoteTransport.epochSecond(java.time.LocalDate.parse("2026-11-20"))).isEqualTo(1795132800L);
+        assertThat(HttpQuoteTransport.epochSecond(java.time.LocalDate.parse("2027-02-19"))).isEqualTo(1802995200L);
+    }
 }

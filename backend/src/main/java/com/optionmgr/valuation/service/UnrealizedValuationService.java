@@ -58,7 +58,7 @@ public class UnrealizedValuationService {
         GreeksValuation.Quote q = GreeksValuation.Quote.NONE;
         if (quote != null && quote.contractStatus() != ContractStatus.NEVER_QUOTED && stored != null) {
             q = new GreeksValuation.Quote(true, quote.manual(), quote.quoteTime(), stored.iv(), stored.delta(),
-                    stored.gamma(), stored.theta(), stored.vega());
+                    stored.gamma(), stored.theta(), stored.vega(), stored.source());
         } else if (quote != null) {
             q = new GreeksValuation.Quote(false, quote.manual(), quote.quoteTime(), null, null, null, null, null);
         }

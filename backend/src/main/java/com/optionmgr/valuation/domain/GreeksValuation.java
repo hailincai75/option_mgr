@@ -1,6 +1,7 @@
 package com.optionmgr.valuation.domain;
 
 import com.optionmgr.quote.domain.QuoteLabels;
+import com.optionmgr.quote.domain.QuoteSource;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
@@ -31,30 +32,38 @@ public final class GreeksValuation {
      * @param quoteTime CBOE quote time of the stored values
      */
     public record Quote(boolean quoted, boolean manual, Instant quoteTime, BigDecimal iv, BigDecimal delta,
-                        BigDecimal gamma, BigDecimal theta, BigDecimal vega) {
+                        BigDecimal gamma, BigDecimal theta, BigDecimal vega, QuoteSource source) {
 
-        public static final Quote NONE = new Quote(false, false, null, null, null, null, null, null);
+        public static final Quote NONE = new Quote(false, false, null, null, null, null, null, null, null);
+
+        /** FEAT-018 form: a quoted contract's values are CBOE values. */
+        public Quote(boolean quoted, boolean manual, Instant quoteTime, BigDecimal iv, BigDecimal delta,
+                     BigDecimal gamma, BigDecimal theta, BigDecimal vega) {
+            this(quoted, manual, quoteTime, iv, delta, gamma, theta, vega, quoted ? QuoteSource.CBOE : null);
+        }
     }
 
     public static RowGreeks option(boolean longPosition, int contracts, int multiplier, LocalDate expirationDate,
                                    LocalDate today, Quote quote) {
         Quote q = quote == null ? Quote.NONE : quote;
         if (expirationDate.isBefore(today)) {
-            return unavailable(GreeksStatus.EXPIRED_PENDING, q.quoteTime());
+            return unavailable(GreeksStatus.EXPIRED_PENDING, q.quoteTime(), q.quoted() ? q.source() : null);
         }
         if (!q.quoted()) {
-            return unavailable(GreeksStatus.NO_QUOTE, q.quoteTime());
+            return unavailable(GreeksStatus.NO_QUOTE, q.quoteTime(), null);
         }
         BigDecimal size = BigDecimal.valueOf((long) contracts * multiplier);
         if (!longPosition) {
             size = size.negate();
         }
         BigDecimal iv = q.iv() == null ? null : q.iv().movePointRight(2).setScale(POSITION_SCALE, ROUNDING);
+        // FEAT-052: the note names how the Greeks were obtained (Yahoo: computed by the backend)
         String note = q.manual() && q.quoteTime() != null
-                ? "Greeks 按 CBOE 报价（" + QuoteLabels.shortTime(q.quoteTime()) + "），未随手动 Mark 调整"
+                ? (q.source() == QuoteSource.YAHOO ? "Greeks 按 Yahoo 报价计算（" : "Greeks 按 CBOE 报价（")
+                        + QuoteLabels.shortTime(q.quoteTime()) + "），未随手动 Mark 调整"
                 : null;
         return new RowGreeks(GreeksStatus.OK, iv, greek(q.delta(), size), greek(q.gamma(), size),
-                greek(q.theta(), size), greek(q.vega(), size), q.quoteTime(), note);
+                greek(q.theta(), size), greek(q.vega(), size), q.quoteTime(), note, q.source());
     }
 
     static RowGreeks.Greek greek(BigDecimal raw, BigDecimal size) {
@@ -65,8 +74,8 @@ public final class GreeksValuation {
                 raw.multiply(size).setScale(POSITION_SCALE, ROUNDING));
     }
 
-    private static RowGreeks unavailable(GreeksStatus status, Instant quoteTime) {
+    private static RowGreeks unavailable(GreeksStatus status, Instant quoteTime, QuoteSource source) {
         return new RowGreeks(status, null, RowGreeks.Greek.NONE, RowGreeks.Greek.NONE, RowGreeks.Greek.NONE,
-                RowGreeks.Greek.NONE, quoteTime, null);
+                RowGreeks.Greek.NONE, quoteTime, null, source);
     }
 }

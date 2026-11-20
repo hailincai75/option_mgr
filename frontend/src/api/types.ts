@@ -523,15 +523,20 @@ export type GreeksStatus = 'OK' | 'NO_QUOTE' | 'EXPIRED_PENDING'
 /**
  * Contract: `positions[].greeks` of `GET /api/option-positions` (FEAT-018). Every value is the
  * backend's; the frontend only formats. All value fields are null unless `status = OK`; a single
- * null field (CBOE gave none) only affects that field (Q172).
+ * null field (none given / not computable) only affects that field (Q172).
  */
 export interface OptionGreeks {
   status: GreeksStatus
   /** `无报价` / `已到期，待处理`; null when OK. Shown verbatim in all five columns. */
   label: string | null
+  /**
+   * FEAT-052: source of the quote the Greeks belong to — `YAHOO` (computed by the backend with
+   * Black-Scholes) / `CBOE` (CBOE values); null when never quoted. Display only, never branched on.
+   */
+  source: QuoteSource | (string & {}) | null
   /** IV percent already ×100, scale 2, no "%" ("35.12"). */
   ivPercent: string | null
-  /** Per-contract CBOE value (long view, not flipped), scale 4 ("-0.3021"). */
+  /** Per-contract value (long view, not flipped), scale 4 ("-0.3021"). */
   deltaPerContract: string | null
   /** Position value (per contract × contracts × multiplier × direction), scale 2, no "+" ("30.21"). */
   deltaPosition: string | null
@@ -541,10 +546,14 @@ export interface OptionGreeks {
   thetaPosition: string | null
   vegaPerContract: string | null
   vegaPosition: string | null
-  /** CBOE quote time the Greeks belong to; null when never quoted. */
+  /** Quote time the Greeks belong to; null when never quoted. */
   quoteTime: InstantString | null
   quoteTimeLocal: LocalDateTimeString | null
-  /** `Greeks 按 CBOE 报价（MM-DD HH:mm），未随手动 Mark 调整` when the mark is manual; else null. */
+  /**
+   * When the mark is manual, the backend's note chosen by source (shown verbatim): Yahoo
+   * `Greeks 按 Yahoo 报价计算（MM-DD HH:mm），未随手动 Mark 调整`, CBOE
+   * `Greeks 按 CBOE 报价（MM-DD HH:mm），未随手动 Mark 调整`; else null.
+   */
   manualMarkNote: string | null
 }
 
@@ -1417,8 +1426,11 @@ export interface AuditExpirationAdjustment {
 // FEAT-016 自动行情（只读）
 // ---------------------------------------------------------------------------
 
-/** FEAT-016: where an automatic underlying price came from. */
-export type UnderlyingQuoteSource = 'CBOE' | 'FINNHUB'
+/** FEAT-016 / FEAT-052: where an automatic underlying price came from. */
+export type UnderlyingQuoteSource = 'YAHOO' | 'CBOE' | 'FINNHUB'
+
+/** FEAT-052 (Q261): option data source — of a stored contract quote / Greeks, or the configured one. */
+export type QuoteSource = 'YAHOO' | 'CBOE'
 
 /**
  * Contract: 标的行情对象 — `positions[].underlyingQuote` (option positions), `positions[].quote`
@@ -1436,7 +1448,7 @@ export interface UnderlyingQuote {
   manual: boolean
   manualEnteredAt: InstantString | null
   manualEnteredAtLocal: LocalDateTimeString | null
-  /** Latest fetch of this symbol got no price (CBOE and Finnhub both failed). */
+  /** Latest fetch of this symbol got no price (Yahoo / CBOE and Finnhub both failed). */
   fetchFailed: boolean
   lastSuccessAt: InstantString | null
   lastSuccessAtLocal: LocalDateTimeString | null
@@ -1447,8 +1459,11 @@ export interface UnderlyingQuote {
 /** FEAT-016 (Q143). */
 export type ContractQuoteStatus = 'QUOTED' | 'MISSING_FROM_SOURCE' | 'NEVER_QUOTED'
 
-/** FEAT-016 (Q139): basis of `automaticMark`. */
-export type MarkBasis = 'MID' | 'THEO'
+/**
+ * FEAT-016 (Q139) / FEAT-052 (Q271): basis of `automaticMark` — `MID` (bid / ask midpoint),
+ * `THEO` (CBOE theo), `LAST` (Yahoo last price; the contract never had a valid bid / ask).
+ */
+export type MarkBasis = 'MID' | 'THEO' | 'LAST'
 
 /**
  * Contract: `positions[].optionQuote` of `GET /api/option-positions` and the
@@ -1461,7 +1476,8 @@ export interface OptionQuote {
   mark: PriceString | null
   automaticMark: PriceString | null
   markBasis: MarkBasis | (string & {}) | null
-  source: string | null
+  /** Source of the stored contract quote (`YAHOO` / `CBOE`); null when never quoted. */
+  source: QuoteSource | (string & {}) | null
   quoteTime: InstantString | null
   quoteTimeLocal: LocalDateTimeString | null
   contractStatus: ContractQuoteStatus | (string & {})
@@ -1495,6 +1511,13 @@ export interface MarketDataStatus {
   /** The 立即刷新 button is disabled when false. */
   refreshAllowed: boolean
   trackedSymbolCount: number
+  /** FEAT-052: configured option data source; picks the Greeks note text (Yahoo / CBOE). */
+  optionSource: QuoteSource | (string & {})
+  /**
+   * FEAT-052: risk-free rate of computed Greeks, percent number without "%", ≥ 2 decimals
+   * ("4.00", "0.00", "4.125"); shown verbatim in the Greeks note. The current configuration.
+   */
+  riskFreeRatePercent: string
 }
 
 export type MarketDataSymbolResult = 'SUCCESS' | 'FALLBACK' | 'FAILED'
@@ -1503,7 +1526,15 @@ export type MarketDataSymbolResult = 'SUCCESS' | 'FALLBACK' | 'FAILED'
 export interface MarketDataRefreshResult {
   symbol: string
   result: MarketDataSymbolResult | (string & {})
-  cboeResult: string
+  /** FEAT-052: data source used in this run (`YAHOO` / `CBOE`). */
+  optionSource: QuoteSource | (string & {})
+  /**
+   * FEAT-052: `SUCCESS` / `NETWORK_ERROR` / `HTTP_ERROR` / `INVALID_RESPONSE` / `HANDSHAKE_FAILED`;
+   * null under the CBOE data source.
+   */
+  yahooResult: string | null
+  /** CBOE result; null under the Yahoo data source (FEAT-052). */
+  cboeResult: string | null
   finnhubResult: string | null
   underlyingPriceSource: UnderlyingQuoteSource | (string & {}) | null
   failureDetail: string | null

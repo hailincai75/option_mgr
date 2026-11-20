@@ -4,6 +4,7 @@ import com.optionmgr.calendar.service.TradingCalendarService;
 import com.optionmgr.common.time.MarketTime;
 import com.optionmgr.quote.domain.OptionState;
 import com.optionmgr.quote.domain.QuoteLabels;
+import com.optionmgr.quote.domain.QuotePrices;
 import com.optionmgr.quote.domain.UnderlyingState;
 import com.optionmgr.quote.repository.MarketDataStatusEntity;
 import com.optionmgr.quote.repository.MarketDataStatusRepository;
@@ -30,11 +31,14 @@ public class QuoteQueryService {
     private final HeldPositionsService held;
     private final TradingCalendarService calendar;
     private final QuoteProperties props;
+    private final QuoteSettings settings;
     private final Clock clock;
 
     public QuoteQueryService(UnderlyingQuoteRepository underlyings, OptionQuoteRepository options,
                              MarketDataStatusRepository statuses, HeldPositionsService held,
-                             TradingCalendarService calendar, QuoteProperties props, Clock clock) {
+                             TradingCalendarService calendar, QuoteProperties props, QuoteSettings settings,
+                             Clock clock) {
+        this.settings = settings;
         this.underlyings = underlyings;
         this.options = options;
         this.statuses = statuses;
@@ -74,6 +78,7 @@ public class QuoteQueryService {
         Instant available = refresh == null ? null : refresh.plus(QuoteFetchService.REFRESH_COOLDOWN);
         return new QuoteViews.Status(warning.isPresent(), warning.orElse(null), row.getLastSuccessAt(),
                 QuoteViews.local(row.getLastSuccessAt()), row.getLastAttemptAt(), QuoteViews.local(row.getLastAttemptAt()),
-                refresh, QuoteViews.local(refresh), available, available == null || !now.isBefore(available), tracked);
+                refresh, QuoteViews.local(refresh), available, available == null || !now.isBefore(available), tracked,
+                settings.optionSource(), QuotePrices.display(settings.riskFreeRatePercent()));
     }
 }

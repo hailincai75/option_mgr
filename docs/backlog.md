@@ -18,9 +18,9 @@ PM 维护。状态：Draft / Approved / Implemented / Verified / Failed
 | M3 行情、未实现盈亏与 Greeks（已完成） | 自动行情（CBOE + Finnhub 兜底，手动只作覆盖）→ 未实现盈亏 → Greeks（取自数据源） | FEAT-016 ~ 019（FEAT-020 已并入 016；已全部 Verified；里程碑全量 E2E 370/371 通过，唯一失败为 feat-043 测试时序问题，修复测试后 feat-043 复跑 7/7 通过，见 FEAT-019 测试报告） |
 | M4 策略（已完成） | 按标的自动分组（Q183，不做手动策略组）、按标的盈亏与风险。多腿交易暂缓（Q193），展期暂缓（Q212） | FEAT-021、023（均已 Verified；里程碑全量 E2E 396 个通过）。已暂缓并移到"未排期"：多腿 FEAT-022、045（Q193）、展期 FEAT-024（Q212）、策略识别 / Wheel / 资金占用 FEAT-025 ~ 027（Q213） |
 | M5 公司行动、数据进出与分析（已完成） | 原计划：拆股、导入导出、统计、外部接入；多账户增强（合并查看、账户间转账、归档，从 M1.5 移来）。只做了合并查看 FEAT-035、046、047（均 Verified），其余移到未排期（Q236） | FEAT-035、046、047（均已 Verified；里程碑全量 E2E 435 个通过）。已移到"未排期"：FEAT-028 ~ 032、034、036、037（Q236） |
-| 按需（无里程碑） | 用户临时提出、单独做的小需求，不开新里程碑 | FEAT-048（Verified）、049、050（Draft）、051（Verified） |
+| 按需（无里程碑） | 用户临时提出、单独做的小需求，不开新里程碑 | FEAT-048（Verified）、049、050（Draft）、051（Verified）、052（Verified） |
 
-**目前没有进行中的里程碑，按需从"未排期"挑。** 每个未排期条目都写了"回头做的时机"。**当前进行中：FEAT-051**（用户 2026-11-20 提出，要求先做，与 049 / 050 无关）。FEAT-049、050 保持 Draft，等用户审核（见"按需"一节）。
+**目前没有进行中的里程碑，按需从"未排期"挑。** 每个未排期条目都写了"回头做的时机"。**当前进行中：FEAT-052 行情数据源改用 Yahoo Finance**（P0，用户 2026-11-20 提出：CBOE 接口现在全部 403，真实使用阻塞；排在 049 / 050 之前）。FEAT-051 已 Verified。FEAT-049、050 保持 Draft，等用户审核（见"按需"一节）。
 
 ## M1 核心记账（MVP）
 
@@ -93,7 +93,7 @@ PM 维护。状态：Draft / Approved / Implemented / Verified / Failed
 
 ## M3 行情、未实现盈亏与 Greeks（已完成）
 
-**数据源（用户已批准，Q135–Q137）：** 期权与标的用 CBOE 延迟报价 JSON `https://cdn-api.cboe.com/api/global/delayed_quotes/options/{SYMBOL}.json`（无 key，按标的返回全部期权链，含 bid / ask / iv / delta / gamma / theta / vega / rho / theo 等；用户实测可用）；股价兜底用 Finnhub `quote?symbol=`（已有 `FINNHUB_API_KEY`，免费版可用；Finnhub 期权链免费版 403，不用于期权）。**风险：** CBOE 接口无官方文档、约 15 分钟延迟；用户已接受个人使用的风险（Q144）。
+**数据源（用户已批准，Q135–Q137）：** 期权与标的用 CBOE 延迟报价 JSON `https://cdn-api.cboe.com/api/global/delayed_quotes/options/{SYMBOL}.json`（无 key，按标的返回全部期权链，含 bid / ask / iv / delta / gamma / theta / vega / rho / theo 等；用户实测可用）；股价兜底用 Finnhub `quote?symbol=`（已有 `FINNHUB_API_KEY`，免费版可用；Finnhub 期权链免费版 403，不用于期权）。**风险：** CBOE 接口无官方文档、约 15 分钟延迟；用户已接受个人使用的风险（Q144）。**2026-11-20 起 CBOE 对所有请求返回 403，数据源改为 Yahoo Finance，见 FEAT-052（CBOE 代码保留、配置关闭，Q261）。**
 
 **建议实现顺序：** FEAT-016 → 017 → 018 → 019。
 
@@ -140,6 +140,7 @@ PM 维护。状态：Draft / Approved / Implemented / Verified / Failed
 | FEAT-049 | 使用 Google 账户登录（严格访问控制） | 用户提出用自己的 Gmail 登录，并要从手机经互联网访问、访问控制非常严格。后端完成 Google OAuth / OIDC 登录；硬性允许名单（配置在 git 之外）、只接受已验证邮箱、每个请求复查名单；默认拒绝（除登录页与回调外所有路径，含 `/api`、后端同源提供的前端、swagger / actuator）；cookie HttpOnly + Secure + SameSite=Lax、CSRF、空闲与绝对超时、退出时服务端失效；登录成功 / 失败 / 拒绝写日志（不含 token）；登录限流；安全响应头。测试专用登录只在 `e2e` profile 和后端测试中存在，现有测试改为先登录。本机即可完整使用和测试，对外地址可配置。不做数据隔离、不迁移。待定 Q242–Q249 | P1 | 无 | BE+FE | Draft | [FEAT-049](requirements/FEAT-049-google-sign-in.md) |
 | FEAT-050 | 从手机安全访问（部署与网络暴露） | 从 049 拆出。选定手机连到应用的方式（Q250：A 私有网络如 Tailscale，PM 推荐 / B 隧道 + 身份网关如 Cloudflare Access / C 公网 HTTPS，不推荐）；应用只监听本机、只对外提供正式构建；对外 profile 关闭 swagger / actuator / H2 控制台、对外地址必须 https；HTTPS 证书；真实客户端 IP；应用与数据位置、常驻运行、每日备份与恢复演练、部署文档。注册账户、安装客户端、DNS、OAuth 重定向 URI 由用户本人做，agent 不做。待定 Q250–Q254 | P1 | 049 | BE | Draft | [FEAT-050](requirements/FEAT-050-secure-phone-access.md) |
 | FEAT-051 | 平仓时指定批次 | 用户在券商 BTC 平掉了同一合约中**较晚**的一笔空头 call 批次，本系统只能平最早批次（Q21）。平仓对话框列出该合约仍持有的批次（开仓时间、张数、开仓净额、冻结、未实现盈亏），可多选任意整笔批次，默认 FIFO 最早一笔；张数 = 所选之和，仍不能部分平仓一笔批次。已实现盈亏、冻结释放、covered call 覆盖释放、剩余批次都跟随所选批次；平仓保存所选批次，补录 / 修改 / 删除重放用保存的批次，失效则拒绝；已有平仓数字不变。作废 / 指派 / 行权、股票卖出仍 FIFO。Q21 已修订、Q39 已取消（Q255）。无待定问题（Q255–Q260 已定） | P1 | 004, 005, 006, 039, 048 | BE+FE | Verified | [FEAT-051](requirements/FEAT-051-choose-lots-to-close.md) |
+| FEAT-052 | 行情数据源改用 Yahoo Finance（**当前，P0**） | CBOE 延迟报价接口现在全部 403，没有期权报价 / IV / Greeks，真实使用阻塞。改为 Yahoo Finance 非官方期权链 JSON（cookie + crumb 握手，每 标的 + 到期日 一次请求）：bid / ask / last / IV / 标的价；Yahoo 不给 Greeks → 后端按 Black-Scholes 计算（r 配置固定值默认 4.00%、q = 0）。CBOE 代码保留、配置关闭，Finnhub 继续兜底股价（Q261）；收盘后 0 bid/ask 不覆盖盘中最后有效报价（Q265）；接受非官方接口风险（Q266）；主会话先对一个标的试探一次（Q267）；交易日 10:00–16:00 每整点 + 16:20，顶部提示阈值 90 分钟（Q268 / Q270）。mark、过期标签、手动覆盖、未实现 / 批次盈亏、Greeks 汇总都不变；前端只改说明文字。无待定问题（Q261–Q271 已定） | P0 | 016, 017, 018, 019, 048 | BE+FE（FE 只改文字） | Verified | [FEAT-052](requirements/FEAT-052-yahoo-quotes.md) |
 
 ## 未排期（所有里程碑之后，最低优先级）
 
@@ -279,6 +280,10 @@ FEAT-010 改为持仓页到期过滤（用户决定，不做新页面）：Q80�
 #### 按需-4 挡住 FEAT-051 平仓时指定批次
 
 全部已定（Q255–Q260 按建议，见 decisions.md；Q21 被修订、Q39 被 Q255 取消），FEAT-051 没有待定问题。
+
+#### 按需-5 挡住 FEAT-052 行情数据源改用 Yahoo Finance
+
+全部已定（Q261–Q268 用户决定，其中 Q262–Q264 用户委托 PM；Q269–Q271 按建议；见 decisions.md；Q138、Q141 被 Q270 修订），FEAT-052 没有待定问题。
 
 ### M4 待以后再定（写到对应需求时再讨论）
 

@@ -66,4 +66,80 @@ class QuoteParsersTest {
         assertThat(parsers.parseFinnhub("{\"c\":61.05}").time()).isNull();
         assertThatThrownBy(() -> parsers.parseFinnhub("{\"c\":0,\"pc\":0,\"t\":0}")).hasMessage("no price");
     }
+
+    // ---------------------------------------------------------------- FEAT-052 Yahoo
+
+    static final String YAHOO = """
+            {"optionChain":{"error":null,"result":[{"underlyingSymbol":"QRTV",
+             "expirationDates":[1797552000,1802995200],"strikes":[45,50],
+             "quote":{"symbol":"QRTV","regularMarketPrice":50.00,"regularMarketTime":1795186800,
+                      "regularMarketPreviousClose":49.60,"bid":49.98,"ask":50.02,"marketState":"REGULAR"},
+             "options":[{"expirationDate":1802995200,
+               "calls":[{"contractSymbol":"QRTV270219C00050000","strike":50,"bid":4.00,"ask":4.20,"lastPrice":4.10,
+                         "impliedVolatility":1.0E-5,"volume":12.5,"openInterest":-3}],
+               "puts":[{"contractSymbol":"QRTV270219P00050000","bid":3.90,"ask":"4.10","lastPrice":3.95,
+                        "impliedVolatility":0.3000,"volume":20,"openInterest":510.0},
+                       {"contractSymbol":"bogus","bid":1},
+                       {"contractSymbol":"QRTV270219P00045000","bid":"x","ask":null}]}]}]}}""";
+
+    @Test
+    void yahoo_quoteContractsAndExpirations() throws Exception {
+        com.optionmgr.quote.domain.YahooChain c = parsers.parseYahoo(YAHOO);
+        assertThat(c.time()).isEqualTo(Instant.parse("2026-11-20T15:00:00Z"));
+        assertThat(c.price()).hasToString("50.00");
+        assertThat(c.bid()).hasToString("49.98");
+        assertThat(c.prevClose()).hasToString("49.60");
+        assertThat(c.expirationDates()).containsExactly(java.time.LocalDate.parse("2026-12-18"),
+                java.time.LocalDate.parse("2027-02-19"));
+        assertThat(c.options()).hasSize(3);
+        var call = c.options().get(0);
+        assertThat(call.code().code()).isEqualTo("QRTV270219C00050000");
+        assertThat(call.iv()).as("scientific notation").isEqualByComparingTo("0.00001");
+        assertThat(call.volume()).as("non-integer volume").isNull();
+        assertThat(call.openInterest()).as("negative OI").isNull();
+        var put = c.options().get(1);
+        assertThat(put.ask()).hasToString("4.10");
+        assertThat(put.iv()).hasToString("0.3000");
+        assertThat(put.openInterest()).isEqualTo(510L);
+        var bad = c.options().get(2);
+        assertThat(bad.bid()).isNull();
+        assertThat(bad.ask()).isNull();
+    }
+
+    @Test
+    void yahoo_invalidResponses() {
+        assertThatThrownBy(() -> parsers.parseYahoo("<html>")).hasMessage("not JSON");
+        assertThatThrownBy(() -> parsers.parseYahoo("{}")).hasMessage("missing optionChain object");
+        assertThatThrownBy(() -> parsers.parseYahoo("{\"optionChain\":{\"result\":[],\"error\":null}}"))
+                .hasMessage("empty optionChain.result");
+        assertThatThrownBy(() -> parsers.parseYahoo(
+                "{\"optionChain\":{\"result\":[{\"quote\":{}}],\"error\":{\"code\":\"Unauthorized\"}}}"))
+                .hasMessage("optionChain.error");
+        assertThatThrownBy(() -> parsers.parseYahoo("{\"optionChain\":{\"result\":[{\"options\":[]}]}}"))
+                .hasMessage("missing quote object");
+        assertThatThrownBy(() -> parsers.parseYahoo(
+                "{\"optionChain\":{\"result\":[{\"quote\":{\"regularMarketPrice\":5,\"regularMarketTime\":0}}]}}"))
+                .hasMessage("missing quote.regularMarketTime");
+    }
+
+    @Test
+    void yahoo_stockOnlyResponseWithoutOptions() throws Exception {
+        var c = parsers.parseYahoo("{\"optionChain\":{\"result\":[{\"quote\":{\"regularMarketPrice\":61.10,"
+                + "\"regularMarketTime\":1795186800}}]}}");
+        assertThat(c.price()).hasToString("61.10");
+        assertThat(c.options()).isEmpty();
+        assertThat(c.expirationDates()).isEmpty();
+    }
+
+    @Test
+    void yahoo_crumb() {
+        assertThat(QuoteParsers.yahooCrumb(" AbCdEfGhIjK\n")).contains("AbCdEfGhIjK");
+        assertThat(QuoteParsers.yahooCrumb("a/b.c")).contains("a/b.c");
+        assertThat(QuoteParsers.yahooCrumb("")).isEmpty();
+        assertThat(QuoteParsers.yahooCrumb("<html>")).isEmpty();
+        assertThat(QuoteParsers.yahooCrumb("{\"x\":1}")).isEmpty();
+        assertThat(QuoteParsers.yahooCrumb("two words")).isEmpty();
+        assertThat(QuoteParsers.yahooCrumb("x".repeat(65))).isEmpty();
+        assertThat(QuoteParsers.yahooCrumb(null)).isEmpty();
+    }
 }

@@ -39,7 +39,7 @@ public class OptionQuoteEntity extends OptionQuoteColumns {
 
     public OptionState toDomain() {
         return new OptionState(contract(), occCode, bid, ask, lastPrice, theo, iv, delta, gamma, theta, vega, rho,
-                volume, openInterest, quoteTime, fetchedAt, missingSince, manualMark, manualEnteredAt);
+                volume, openInterest, quoteTime, fetchedAt, missingSince, manualMark, manualEnteredAt, source());
     }
 
     public void update(OptionState s) {

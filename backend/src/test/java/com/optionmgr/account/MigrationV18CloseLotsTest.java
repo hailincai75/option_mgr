@@ -337,7 +337,7 @@ class MigrationV18CloseLotsTest {
 
     private List<Path> backups(String db) throws Exception {
         try (Stream<Path> files = Files.list(dir)) {
-            return files.filter(p -> p.getFileName().toString().startsWith(db + "-backup-before-V18-")).toList();
+            return files.filter(p -> p.getFileName().toString().startsWith(db + "-backup-before-V")).toList();
         }
     }
 
@@ -401,10 +401,10 @@ class MigrationV18CloseLotsTest {
             assertThat(q39.get("coveredLots").get(0).get("tradeId").asLong()).isEqualTo(ids.get("Q39_B"));
         }
 
-        // Q60: backup before V18 holds the V16 database
+        // Q60: backup before the pending migrations (V17..latest) holds the V16 database
         assertThat(backups("optionmgr")).hasSize(1);
         assertThat(backups("optionmgr").get(0).getFileName().toString())
-                .isEqualTo("optionmgr-backup-before-V18-20261120-150000Z.zip");
+                .isEqualTo("optionmgr-backup-before-V" + MigrationVersions.latest() + "-20261120-150000Z.zip");
     }
 
     @Test

@@ -16,3 +16,10 @@ optionmgr:
     fetch-enabled: false
     transport: http
     cboe-base-url: http://127.0.0.1:9
+    # FEAT-052: never the real Yahoo; CBOE by default so the FEAT-016..048 tests keep their fake CBOE data, r = 0
+    option-source: cboe
+    risk-free-rate-percent: 0.00
+    request-interval-millis: 0
+    yahoo:
+      base-url: http://127.0.0.1:9
+      cookie-url: http://127.0.0.1:9/

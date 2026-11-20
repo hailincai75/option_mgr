@@ -26,6 +26,8 @@ const STATUS: MarketDataStatus = {
   refreshAvailableAt: null,
   refreshAllowed: true,
   trackedSymbolCount: 2,
+  optionSource: 'YAHOO',
+  riskFreeRatePercent: '4.00',
 }
 
 function optionQuote(partial: Partial<OptionQuote>): OptionQuote {
@@ -99,6 +101,7 @@ describe('quote display texts', () => {
     }
     expect(isFinnhubPrice(base)).toBe(true)
     expect(isFinnhubPrice({ ...base, source: 'CBOE' })).toBe(false)
+    expect(isFinnhubPrice({ ...base, source: 'YAHOO' })).toBe(false)
     expect(isFinnhubPrice({ ...base, manual: true, price: '60.00' })).toBe(false)
     expect(isFinnhubPrice(undefined)).toBe(false)
   })
@@ -114,7 +117,9 @@ describe('refreshOutcome', () => {
   const result = (symbol: string, value: string) => ({
     symbol,
     result: value,
-    cboeResult: value === 'SUCCESS' ? 'SUCCESS' : 'HTTP_ERROR',
+    optionSource: 'YAHOO',
+    yahooResult: value === 'SUCCESS' ? 'SUCCESS' : 'HTTP_ERROR',
+    cboeResult: null,
     finnhubResult: null,
     underlyingPriceSource: null,
     failureDetail: null,

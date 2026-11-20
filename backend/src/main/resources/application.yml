@@ -48,9 +48,20 @@ optionmgr:
     env-files: [".env", "../.env"]
     fetch-enabled: true
   quotes:
-    # FEAT-016: CBOE delayed quotes (no key) + Finnhub quote fallback (key as for optionmgr.finnhub). Every 15 minutes
-    # 09:30-16:00 + 16:20 New York on trading days, and once at startup inside that window.
+    # FEAT-016 / FEAT-052: option quotes from Yahoo Finance (default) or CBOE (option-source), Finnhub price fallback (key
+    # as for optionmgr.finnhub). 10:00-16:00 on the hour + 16:20 New York on trading days (Q270), and once at startup
+    # inside 09:30-16:20.
     fetch-enabled: true
     transport: http
     cboe-base-url: https://cdn-api.cboe.com
     index-symbols: [SPX, SPXW, NDX, NDXP, RUT, RUTW, VIX, VIXW, XSP, DJX, OEX, XEO]
+    # FEAT-052 Q261: yahoo | cboe (the CBOE code is kept, off by default)
+    option-source: yahoo
+    # FEAT-052 Q263: annual risk-free rate in percent (0-20) for the Black-Scholes Greeks; used from the next quote write
+    risk-free-rate-percent: 4.00
+    # FEAT-052: pause between two Yahoo requests
+    request-interval-millis: 1000
+    yahoo:
+      base-url: https://query2.finance.yahoo.com
+      cookie-url: https://fc.yahoo.com/
+      user-agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"

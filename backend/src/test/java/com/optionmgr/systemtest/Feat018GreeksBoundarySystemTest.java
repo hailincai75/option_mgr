@@ -135,7 +135,7 @@ class Feat018GreeksBoundarySystemTest extends Feat018GreeksSystemTestBase {
         assertThat(shownGreeks(greeks("1", C_P3))).isEqualTo(NO_QUOTE_G);
 
         sources018();
-        tickAt("2026-11-23T10:15", "SCHEDULED");
+        tickAt("2026-11-23T11:00", "SCHEDULED");
         assertThat(shownGreeks(greeks("1", C_P1))).isEqualTo(P1_G);
         assertThat(shownGreeks(greeks("1", C_P3))).isEqualTo(P3_G);
     }
@@ -149,7 +149,7 @@ class Feat018GreeksBoundarySystemTest extends Feat018GreeksSystemTestBase {
                         option(OCC_C_P2, "bid", "0", "ask", "1.90", "theo", "1.86", "iv", "0.3320", "delta", "0.2850",
                                 "gamma", "0.0480", "theta", "-0.0390", "vega", "0.0650")))
                 .cboe("IXQZ", ixqz018("2026-11-23 10:00:00")).apply();
-        tickAt("2026-11-23T10:15", "SCHEDULED");
+        tickAt("2026-11-23T11:00", "SCHEDULED");
 
         JsonNode p1 = optRow("1", C_P1);
         assertThat(p1.get("optionQuote").get("mark").isNull()).isTrue();
@@ -167,7 +167,7 @@ class Feat018GreeksBoundarySystemTest extends Feat018GreeksSystemTestBase {
         scenarioPulled018();
         sources().cboe("QRTV", qrtv018("2026-11-23 10:00:00", p2Greeks()))
                 .cboe("IXQZ", ixqz018("2026-11-23 10:00:00")).apply();
-        tickAt("2026-11-23T10:15", "SCHEDULED");
+        tickAt("2026-11-23T11:00", "SCHEDULED");
         JsonNode p1 = optRow("1", C_P1);
         assertThat(p1.get("optionQuote").get("contractStatus").asText()).isEqualTo("MISSING_FROM_SOURCE");
         JsonNode g = greeksOf(p1);
@@ -203,7 +203,7 @@ class Feat018GreeksBoundarySystemTest extends Feat018GreeksSystemTestBase {
         p2.putNull("gamma");
         sources().cboe("QRTV", qrtv018("2026-11-23 10:00:00", p1, p2))
                 .cboe("IXQZ", ixqz018("2026-11-23 10:00:00")).apply();
-        tickAt("2026-11-23T10:15", "SCHEDULED");
+        tickAt("2026-11-23T11:00", "SCHEDULED");
 
         assertThat(shownGreeks(greeks("1", C_P1))).isEqualTo(okG("null", "30.21", "-0.3021", "-5.12", "0.0512",
                 "4.56", "-0.0456", "-7.11", "0.0711"));
@@ -220,7 +220,7 @@ class Feat018GreeksBoundarySystemTest extends Feat018GreeksSystemTestBase {
         p2.put("vega", "N/A");
         sources().cboe("QRTV", qrtv018("2026-11-23 10:00:00", p1Greeks(), p2))
                 .cboe("IXQZ", ixqz018("2026-11-23 10:00:00")).apply();
-        tickAt("2026-11-23T10:15", "SCHEDULED");
+        tickAt("2026-11-23T11:00", "SCHEDULED");
 
         JsonNode row = optRow("1", C_P2);
         assertThat(row.get("optionQuote").get("contractStatus").asText()).isEqualTo("QUOTED");
@@ -303,7 +303,7 @@ class Feat018GreeksBoundarySystemTest extends Feat018GreeksSystemTestBase {
 
         sources().cboe("QRTV", qrtv018("2026-11-23 10:00:00", p1Greeks(), p2Greeks()))
                 .cboe("IXQZ", ixqz018("2026-11-23 10:00:00")).apply();
-        tickAt("2026-11-23T10:15", "SCHEDULED");
+        tickAt("2026-11-23T11:00", "SCHEDULED");
         // Q148: P1 is in the successful chain with a non-null automatic mark (1.20 / 1.30 → 1.25) → manual replaced
         JsonNode row = optRow("1", C_P1);
         assertThat(row.get("optionQuote").get("manual").asBoolean()).as("manual mark replaced by the pull").isFalse();
@@ -390,7 +390,7 @@ class Feat018GreeksBoundarySystemTest extends Feat018GreeksSystemTestBase {
         sources().cboe("QRTV", qrtv018("2026-12-01 10:00:00",
                 greekOption("QRTV261203P00050000", "0.40", "0.50", "0.3100", "-0.2200", "0.0900", "-0.0700",
                         "0.0250"))).apply();
-        tickAt("2026-12-01T10:15", "SCHEDULED");
+        tickAt("2026-12-01T11:00", "SCHEDULED");
         assertThat(shownGreeks(greeks("1", "QRTV 2026-12-03 50 P"))).isEqualTo(okG("31.00", "22.00", "-0.2200",
                 "-9.00", "0.0900", "7.00", "-0.0700", "-2.50", "0.0250"));
     }

@@ -33,9 +33,9 @@ import { QueryError } from '../components/QueryError'
 import { MarketDataBar } from '../components/quote/MarketDataBar'
 import { StockPositionsCard } from '../components/stock/StockPositionsCard'
 import { UnrealizedSummaryBar } from '../components/unrealized/UnrealizedSummaryBar'
+import { GreeksNote } from '../components/greeks/GreeksNote'
 import { GreeksSummaryCard } from '../components/greeks/GreeksSummaryCard'
 import {
-  GREEKS_NOTE,
   GREEKS_TOGGLE_LABEL,
   readShowGreeks,
   writeShowGreeks,
@@ -192,11 +192,7 @@ export function PositionsPage() {
             />
             <Typography.Text>{GREEKS_TOGGLE_LABEL}</Typography.Text>
           </Space>
-          {showGreeks && (
-            <Typography.Text type="secondary" style={{ fontSize: 12 }} data-testid="positions-greeks-note">
-              {GREEKS_NOTE}
-            </Typography.Text>
-          )}
+          {showGreeks && <GreeksNote />}
         </Space>
         {/* FEAT-019 (Q175): per-symbol Greeks summary, only while 显示 Greeks is on (no request when off). */}
         {/* FEAT-047 (Q224 B): in 全部账户 mode the backend merges each symbol across accounts. */}

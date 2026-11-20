@@ -407,7 +407,7 @@ test.describe('FEAT-048 持仓批次的未实现盈亏', () => {
     await ui.expectLots(c3, 'option', [AC1_A, AC1_B])
   })
 
-  test('AC6 7P 批次两列 无报价、已过期 8P 批次两列 已到期，待处理（灰色）；10:15 起拉取失败（行情未更新）→ A、B 仍 −1.66 / +17.34', async ({ page }) => {
+  test('AC6 7P 批次两列 无报价、已过期 8P 批次两列 已到期，待处理（灰色）；11:00 起拉取失败（行情未更新）→ A、B 仍 −1.66 / +17.34', async ({ page }) => {
     const ids = await scenario(page, async (x) => {
       x.P7 = (await apiTrade({ action: 'STO', symbol: 'ZZQ', expiration: '2026-12-18', strike: '7', type: 'PUT', netAmount: '12.00', time: '2026-11-13T10:20' })).id
       x.P8X = (await apiTrade({ action: 'STO', symbol: 'ZZQ', expiration: '2026-11-13', strike: '8', type: 'PUT', netAmount: '15.00', time: '2026-11-12T10:30' })).id
@@ -427,10 +427,10 @@ test.describe('FEAT-048 持仓批次的未实现盈亏', () => {
     await ui.expectLots(x, 'option', [lbl(EXPIRED)])
     await expect(ui.lot(x, 'option', ids.P8X!).getByTestId('lot-cell-market-value')).toHaveAttribute('data-status', 'EXPIRED_PENDING')
 
-    // 10:15 on: the ZZQ pull fails; rows show 行情未更新 and keep the 10:00 mark
+    // 11:00 on: the ZZQ pull fails; rows show 行情未更新 and keep the 10:00 mark
     await setSources({ ZZQ: { httpStatus: 500, body: null } })
-    await tickAt('2026-11-16T10:15')
-    await fixNow(page, ny('2026-11-16T10:20'))
+    await tickAt('2026-11-16T11:00')
+    await fixNow(page, ny('2026-11-16T11:05'))
     await ui.open()
     await expect(ui.row(C9).getByTestId('position-mark-stale')).toHaveText('行情未更新（上次：11-16 10:00）')
     await ui.expectOptionRow(C9, `${M}40.00`, '+15.68', '+28.16%')
@@ -441,8 +441,8 @@ test.describe('FEAT-048 持仓批次的未实现盈亏', () => {
   test('AC7 现价变为 8.655 后切到乙账户：股票行 +1,731.00 / −9.00（−0.52%）；S3 +874.16 / −5.84（−0.66%）；S4 取余数 +856.84 / −3.16（−0.37%）', async ({ page }) => {
     const ids = await scenario(page)
     await setSources({ ZZQ: zzq(8.655, '2026-11-16 10:10:00') })
-    await tickAt('2026-11-16T10:15')
-    await fixNow(page, ny('2026-11-16T10:20'))
+    await tickAt('2026-11-16T11:00')
+    await fixNow(page, ny('2026-11-16T11:05'))
     const ui = new Ui(page)
     await ui.open()
     await ui.switchAccount(2, B_NAME)

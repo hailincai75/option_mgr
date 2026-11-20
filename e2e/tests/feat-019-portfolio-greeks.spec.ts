@@ -363,7 +363,7 @@ test.describe('FEAT-019 组合 Greeks 汇总', () => {
     await ui.expectPortfolio(PF_B)
   })
 
-  test('AC5 页面上把 QRTV 标的价手动设为 52.00 → A 的 QRTV +4,534.92（按手动标的价），全组合 +9,523.74；B +9,912.76；10:15 拉取失败仍不变；清除后恢复', async ({ page }) => {
+  test('AC5 页面上把 QRTV 标的价手动设为 52.00 → A 的 QRTV +4,534.92（按手动标的价），全组合 +9,523.74；B +9,912.76；11:00 拉取失败仍不变；清除后恢复', async ({ page }) => {
     const b = await scenarioPulled()
     await fixNow(page, ny('2026-11-23T10:05'))
     const ui = new Ui(page)
@@ -382,10 +382,10 @@ test.describe('FEAT-019 组合 Greeks 汇总', () => {
     await ui.expectRow('QRTV', qB)
     await ui.expectPortfolio({ ...PF_B, exposure: '+9,912.76' })
 
-    // 10:15 QRTV fetch fails → still the manual values
-    await setSources({ QRTV: { httpStatus: 500, body: null }, IXQZ: ixqz('2026-11-23 10:15:00') })
-    await tickAt('2026-11-23T10:15')
-    await fixNow(page, ny('2026-11-23T10:16'))
+    // 11:00 QRTV fetch fails → still the manual values
+    await setSources({ QRTV: { httpStatus: 500, body: null }, IXQZ: ixqz('2026-11-23 11:00:00') })
+    await tickAt('2026-11-23T11:00')
+    await fixNow(page, ny('2026-11-23T11:01'))
     await ui.open()
     await ui.showGreeks()
     await ui.expectRow('QRTV', qB)
@@ -396,14 +396,14 @@ test.describe('FEAT-019 组合 Greeks 汇总', () => {
     await ui.expectPortfolio(PF_B)
   })
 
-  test('AC6 10:15 P2 的 gamma、vega 为 null → QRTV Gamma −5.12、Vega −7.11，行下另注 Gamma、Vega：1 个持仓缺值，未计入；全组合 Vega −12.14，下方 1 个持仓无报价，未计入 + Vega：1 个持仓缺值，未计入', async ({ page }) => {
+  test('AC6 11:00 P2 的 gamma、vega 为 null → QRTV Gamma −5.12、Vega −7.11，行下另注 Gamma、Vega：1 个持仓缺值，未计入；全组合 Vega −12.14，下方 1 个持仓无报价，未计入 + Vega：1 个持仓缺值，未计入', async ({ page }) => {
     await scenarioPulled()
     await setSources({
       QRTV: qrtv('2026-11-23 10:00:00', [p1Opt(), greek('QRTV261218C00055000', 1.8, 1.9, 0.332, 0.285, null, -0.039, null)]),
       IXQZ: ixqz('2026-11-23 10:00:00'),
     })
-    await tickAt('2026-11-23T10:15')
-    await fixNow(page, ny('2026-11-23T10:16'))
+    await tickAt('2026-11-23T11:00')
+    await fixNow(page, ny('2026-11-23T11:01'))
     const ui = new Ui(page)
     await ui.open()
     await ui.showGreeks()

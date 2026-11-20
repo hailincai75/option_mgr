@@ -16,7 +16,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-/** FEAT-016 pure rules: Q139 mark, display, OCC matching, merge (rules 6-8), schedule (Q138), labels (Q141). */
+/** FEAT-016 pure rules: Q139 mark, display, OCC matching, merge (rules 6-8), schedule (Q270), labels (Q141, 90 minutes Q270). */
 class QuoteDomainTest {
 
     static BigDecimal d(String v) {
@@ -202,9 +202,12 @@ class QuoteDomainTest {
     @Nested
     class Schedule {
         @Test
-        void q138_slotsEvery15MinutesAndClose() {
+        void q270_hourly10To16AndClose() {
             assertThat(FetchSchedule.slotAt(LocalDateTime.parse("2026-11-23T09:15"))).isEmpty();
-            assertThat(FetchSchedule.slotAt(LocalDateTime.parse("2026-11-23T09:30"))).contains(RunTrigger.SCHEDULED);
+            assertThat(FetchSchedule.slotAt(LocalDateTime.parse("2026-11-23T09:30"))).isEmpty();
+            assertThat(FetchSchedule.slotAt(LocalDateTime.parse("2026-11-23T10:15"))).isEmpty();
+            assertThat(FetchSchedule.slotAt(LocalDateTime.parse("2026-11-23T11:00"))).contains(RunTrigger.SCHEDULED);
+            assertThat(FetchSchedule.slotAt(LocalDateTime.parse("2026-11-23T15:45"))).isEmpty();
             assertThat(FetchSchedule.slotAt(LocalDateTime.parse("2026-11-23T10:00:40"))).contains(RunTrigger.SCHEDULED);
             assertThat(FetchSchedule.slotAt(LocalDateTime.parse("2026-11-23T10:05"))).isEmpty();
             assertThat(FetchSchedule.slotAt(LocalDateTime.parse("2026-11-23T16:00"))).contains(RunTrigger.SCHEDULED);
@@ -222,9 +225,9 @@ class QuoteDomainTest {
         final Instant t1000 = ny("2026-11-23T10:00:00");
 
         @Test
-        void ac6_warningAfter30MinutesInSession() {
-            assertThat(QuoteLabels.warning(true, t1000, ny("2026-11-23T10:30:00"), true)).isEmpty();
-            assertThat(QuoteLabels.warning(true, t1000, ny("2026-11-23T10:31:00"), true))
+        void q270_warningAfter90MinutesInSession() {
+            assertThat(QuoteLabels.warning(true, t1000, ny("2026-11-23T11:30:00"), true)).isEmpty();
+            assertThat(QuoteLabels.warning(true, t1000, ny("2026-11-23T11:31:00"), true))
                     .contains("行情未更新（上次：2026-11-23 10:00 美东）");
             assertThat(QuoteLabels.rowStale(t1000)).isEqualTo("行情未更新（上次：11-23 10:00）");
             assertThat(QuoteLabels.missingFromSource(ny("2026-11-23T09:45:00")))
@@ -237,8 +240,8 @@ class QuoteDomainTest {
             Instant prevClose = ny("2026-11-23T16:20:00");
             assertThat(QuoteLabels.warning(true, prevClose, ny("2026-11-23T18:00:00"), true)).isEmpty();
             assertThat(QuoteLabels.warning(true, prevClose, ny("2026-11-24T09:20:00"), true)).isEmpty();
-            assertThat(QuoteLabels.warning(true, prevClose, ny("2026-11-24T09:59:00"), true)).isEmpty();
-            assertThat(QuoteLabels.warning(true, prevClose, ny("2026-11-24T10:01:00"), true)).isPresent();
+            assertThat(QuoteLabels.warning(true, prevClose, ny("2026-11-24T11:00:00"), true)).isEmpty();
+            assertThat(QuoteLabels.warning(true, prevClose, ny("2026-11-24T11:01:00"), true)).isPresent();
             assertThat(QuoteLabels.warning(true, prevClose, ny("2026-11-26T12:00:00"), false)).isEmpty();
         }
 

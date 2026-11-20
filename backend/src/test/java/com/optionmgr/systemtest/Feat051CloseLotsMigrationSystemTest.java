@@ -43,8 +43,9 @@ import org.springframework.web.context.WebApplicationContext;
  * <p>"Before the upgrade" is simulated on a temporary file database (JUnit temp dir — never backend/data): the
  * application writes the data through the API (FIFO-mode closes only, i.e. what the old version would have stored),
  * the test records every read, then removes what V17 / V18 created (drops {@code option_close_lot}, deletes the two
- * {@code flyway_schema_history} rows) so the database is exactly a V16 database with the same business rows. The next
- * start re-runs V17 + V18 (with the Q60 backup); every read must be identical and the backfilled table must hold the
+ * {@code flyway_schema_history} rows; since FEAT-052 also undoes V19's quote columns and forgets V19) so the database is
+ * exactly a V16 database with the same business rows. The next start re-runs V17 + V18 (+ V19) (with the Q60 backup);
+ * every read must be identical and the backfilled table must hold the
  * same rows as before. Complements backend-dev's migration test (target=16 with handcrafted old data).
  *
  * <p>Data (fictional ticker ZZQ / ZZR): 甲 (id 1) = FEAT-004 scenario A on ZZQ 2026-12-18 200 P (deposit 80,000.00;
@@ -231,12 +232,21 @@ class Feat051CloseLotsMigrationSystemTest {
                 "6 4 1", "6 5 1",
                 "9 7 2", "9 8 2",
                 "11 10 2");
-        assertThat(rows(url, "SELECT COUNT(*) FROM \"flyway_schema_history\" WHERE CAST(version AS INT) > 18"))
-                .as("V18 is the latest migration (adapt this test if a later one is added)").containsExactly("0");
+        assertThat(rows(url, "SELECT COUNT(*) FROM \"flyway_schema_history\" WHERE CAST(version AS INT) > 19"))
+                .as("V19 is the latest migration (adapt the V19 undo below if a later one is added)")
+                .containsExactly("0");
 
-        // back to a V16 database with the same business rows
-        exec(url, "DROP TABLE option_close_lot",
-                "DELETE FROM \"flyway_schema_history\" WHERE version IN ('17', '18')");
+        // back to a V16 database with the same business rows: undo V19 (FEAT-052 quote columns / constraint, no data
+        // of this test lives there) and V17 (option_close_lot; V18 is the Java backfill into it), then forget all three
+        exec(url, "ALTER TABLE option_quote DROP CONSTRAINT ck_option_quote_source",
+                "ALTER TABLE option_quote DROP COLUMN quote_source",
+                "ALTER TABLE option_quote_close DROP COLUMN quote_source",
+                "ALTER TABLE underlying_quote DROP COLUMN last_yahoo_result",
+                "ALTER TABLE underlying_quote DROP CONSTRAINT ck_underlying_quote_source",
+                "ALTER TABLE underlying_quote ADD CONSTRAINT ck_underlying_quote_source "
+                        + "CHECK (price_source IS NULL OR price_source IN ('CBOE', 'FINNHUB'))",
+                "DROP TABLE option_close_lot",
+                "DELETE FROM \"flyway_schema_history\" WHERE version IN ('17', '18', '19')");
         List<String> backupsBefore = backups("feat051db");
 
         try (ConfigurableApplicationContext c = start(url)) {
@@ -266,6 +276,6 @@ class Feat051CloseLotsMigrationSystemTest {
                 .isEqualTo(lotsBefore);
         assertThat(backups("feat051db")).as("Q60 backup before the pending migrations").hasSize(backupsBefore.size() + 1);
         assertThat(rows(url, "SELECT MAX(CAST(version AS INT)) FROM \"flyway_schema_history\" WHERE success"))
-                .containsExactly("18");
+                .as("V17, V18 and V19 re-applied").containsExactly("19");
     }
 }

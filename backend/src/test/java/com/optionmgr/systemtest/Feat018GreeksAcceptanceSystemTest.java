@@ -100,14 +100,14 @@ class Feat018GreeksAcceptanceSystemTest extends Feat018GreeksSystemTestBase {
     }
 
     @Test
-    @DisplayName("AC6 10:15 成功拉到新值 → 36.00 / 33.00 / -5.30 / 4.70 / -7.20；10:30 起 QRTV 失败（行情未更新（上次：11-23 10:15））→ 仍为 10:15 的值")
+    @DisplayName("AC6 11:00（Q270 整点）成功拉到新值 → 36.00 / 33.00 / -5.30 / 4.70 / -7.20；12:00 起 QRTV 失败（行情未更新（上次：11-23 11:00））→ 仍为 11:00 的值")
     void ac6NewValuesThenFetchFailureKeepsThem() {
         scenarioPulled018();
         sources().cboe("QRTV", qrtv018("2026-11-23 10:00:00",
                         greekOption(OCC_C_P1, "1.25", "1.35", "0.3600", "-0.3300", "0.0530", "-0.0470", "0.0720"),
                         p2Greeks()))
                 .cboe("IXQZ", ixqz018("2026-11-23 10:00:00")).apply();
-        tickAt("2026-11-23T10:15", "SCHEDULED");
+        tickAt("2026-11-23T11:00", "SCHEDULED");
 
         String p1New = okG("36.00", "33.00", "-0.3300", "-5.30", "0.0530", "4.70", "-0.0470", "-7.20", "0.0720");
         JsonNode g = greeks("1", C_P1);
@@ -115,12 +115,12 @@ class Feat018GreeksAcceptanceSystemTest extends Feat018GreeksSystemTestBase {
         assertThat(text(g.get("quoteTime"))).isEqualTo("2026-11-23T15:00:00Z");
         assertThat(text(g.get("quoteTimeLocal"))).isEqualTo("2026-11-23T10:00:00");
 
-        sources().cboe("QRTV", httpError(500)).cboe("IXQZ", ixqz018("2026-11-23 10:15:00")).apply();
-        tickAt("2026-11-23T10:30", "SCHEDULED");
+        sources().cboe("QRTV", httpError(500)).cboe("IXQZ", ixqz018("2026-11-23 11:00:00")).apply();
+        tickAt("2026-11-23T12:00", "SCHEDULED");
 
         JsonNode row = optRow("1", C_P1);
         assertThat(row.get("optionQuote").get("fetchFailed").asBoolean()).isTrue();
-        assertThat(text(row.get("optionQuote").get("staleLabel"))).isEqualTo("行情未更新（上次：11-23 10:15）");
+        assertThat(text(row.get("optionQuote").get("staleLabel"))).isEqualTo("行情未更新（上次：11-23 11:00）");
         g = greeksOf(row);
         assertThat(shownGreeks(g)).as("Q141 kept after the failure").isEqualTo(p1New);
         assertThat(text(g.get("quoteTimeLocal"))).isEqualTo("2026-11-23T10:00:00");
@@ -159,13 +159,13 @@ class Feat018GreeksAcceptanceSystemTest extends Feat018GreeksSystemTestBase {
     }
 
     @Test
-    @DisplayName("AC8 10:15 P2 的 gamma、vega 为 null → Gamma、Vega 每张值和持仓值 null（页面 —），IV / Delta / Theta 正常")
+    @DisplayName("AC8 11:00 P2 的 gamma、vega 为 null → Gamma、Vega 每张值和持仓值 null（页面 —），IV / Delta / Theta 正常")
     void ac8SingleFieldMissing() {
         scenarioPulled018();
         sources().cboe("QRTV", qrtv018("2026-11-23 10:00:00", p1Greeks(),
                         greekOption(OCC_C_P2, "1.80", "1.90", "0.3320", "0.2850", null, "-0.0390", null)))
                 .cboe("IXQZ", ixqz018("2026-11-23 10:00:00")).apply();
-        tickAt("2026-11-23T10:15", "SCHEDULED");
+        tickAt("2026-11-23T11:00", "SCHEDULED");
 
         JsonNode raw = storedContract("QRTV", "2026-12-18", "55", "CALL");
         assertThat(raw.get("gamma").isNull()).as("success replaces the whole quote incl. null").isTrue();

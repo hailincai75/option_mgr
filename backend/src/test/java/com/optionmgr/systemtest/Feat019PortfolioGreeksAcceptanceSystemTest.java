@@ -146,7 +146,7 @@ class Feat019PortfolioGreeksAcceptanceSystemTest extends Feat019PortfolioGreeksS
     }
 
     @Test
-    @DisplayName("AC5 10:05 QRTV 手动 52.00 → A 4534.92（按手动标的价）全组合 9523.74；B 9912.76；Greeks 不变；10:15 拉取失败仍不变；清除后恢复 AC1–4")
+    @DisplayName("AC5 10:05 QRTV 手动 52.00 → A 4534.92（按手动标的价）全组合 9523.74；B 9912.76；Greeks 不变；11:00 拉取失败仍不变；清除后恢复 AC1–4")
     void ac5ManualUnderlyingPrice() {
         scenarioPulled019();
         String beforeA = all(greeksSummary("1"));
@@ -166,9 +166,9 @@ class Feat019PortfolioGreeksAcceptanceSystemTest extends Feat019PortfolioGreeksS
         assertThat(row(group(b, "QRTV"))).isEqualTo(qB);
         assertThat(pf(b)).isEqualTo("9912.76 13.68 -21.33 | null | null | null");
 
-        // 10:15 QRTV fails → the manual price is kept (and the values with it)
-        sources().cboe("QRTV", httpError(500)).cboe("IXQZ", ixqz018("2026-11-23 10:15:00")).apply();
-        tickAt("2026-11-23T10:15", "SCHEDULED");
+        // 11:00 QRTV fails → the manual price is kept (and the values with it)
+        sources().cboe("QRTV", httpError(500)).cboe("IXQZ", ixqz018("2026-11-23 11:00:00")).apply();
+        tickAt("2026-11-23T11:00", "SCHEDULED");
         assertThat(optRow("1", C_P1).get("underlyingQuote").get("fetchFailed").asBoolean()).isTrue();
         a = greeksSummary("1");
         assertThat(row(group(a, "QRTV"))).isEqualTo(qA);
@@ -182,13 +182,13 @@ class Feat019PortfolioGreeksAcceptanceSystemTest extends Feat019PortfolioGreeksS
     }
 
     @Test
-    @DisplayName("AC6 10:15 P2 的 gamma、vega 为 null → QRTV Gamma -5.12、Vega -7.11，另注 Gamma、Vega：1 个持仓缺值，未计入；Delta / Theta / 敞口同 AC1；全组合 Vega -12.14、Theta -0.77，下方另有 Vega：1 个持仓缺值，未计入")
+    @DisplayName("AC6 11:00 P2 的 gamma、vega 为 null → QRTV Gamma -5.12、Vega -7.11，另注 Gamma、Vega：1 个持仓缺值，未计入；Delta / Theta / 敞口同 AC1；全组合 Vega -12.14、Theta -0.77，下方另有 Vega：1 个持仓缺值，未计入")
     void ac6MissingFieldsOfOneRow() {
         scenarioPulled019();
         sources().cboe("QRTV", qrtv018("2026-11-23 10:00:00", p1Greeks(),
                         greekOption(OCC_C_P2, "1.80", "1.90", "0.3320", "0.2850", null, "-0.0390", null)))
                 .cboe("IXQZ", ixqz018("2026-11-23 10:00:00")).apply();
-        tickAt("2026-11-23T10:15", "SCHEDULED");
+        tickAt("2026-11-23T11:00", "SCHEDULED");
         assertThat(greeks("1", C_P2).get("gammaPosition").isNull()).isTrue();
 
         JsonNode s = greeksSummary("1");

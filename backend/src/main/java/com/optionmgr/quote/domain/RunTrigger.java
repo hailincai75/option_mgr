@@ -1,8 +1,8 @@
 package com.optionmgr.quote.domain;
 
-/** FEAT-016: what started a fetch run. */
+/** FEAT-016 / FEAT-052: what started a fetch run. */
 public enum RunTrigger {
-    /** Every 15 minutes 09:30-16:00 New York on trading days (and at startup inside the window). */
+    /** 10:00-16:00 New York on the hour on trading days (Q270), and at startup inside the window (Q147). */
     SCHEDULED,
     /** 16:20 New York on trading days; also stores the close snapshot (Q142). */
     CLOSE,

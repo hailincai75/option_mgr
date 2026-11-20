@@ -302,7 +302,7 @@ test.describe('FEAT-017 未实现盈亏与市值', () => {
     await ui.expectSummary('total', `${MINUS}125.00`, `${MINUS}5.00`)
   })
 
-  test('AC6 P6 mark 0.125 → +12.50 / −3.15（−20.13%），合计 172.50 / +58.60、6,282.50 / +288.60；10:15 theo 0.03 → +3.00 / −12.65（−80.83%），163.00 / +49.10、6,273.00 / +279.10', async ({ page }) => {
+  test('AC6 P6 mark 0.125 → +12.50 / −3.15（−20.13%），合计 172.50 / +58.60、6,282.50 / +288.60；11:00 theo 0.03 → +3.00 / −12.65（−80.83%），163.00 / +49.10、6,273.00 / +279.10', async ({ page }) => {
     await scenario()
     await apiTrade({ action: 'BTO', symbol: 'QRTV', expiration: '2026-12-18', strike: '60', type: 'CALL', netAmount: '15.65', time: '2026-11-20T10:25' })
     await setSources({ QRTV: qrtvOk('2026-11-23 09:45:00', [option('QRTV261218C00060000', { bid: 0.1, ask: 0.15, theo: 0.12 })]), IXQZ: ixqzOk() })
@@ -319,8 +319,8 @@ test.describe('FEAT-017 未实现盈亏与市值', () => {
       QRTV: qrtvOk('2026-11-23 10:00:00', [option('QRTV261218C00060000', { bid: 0, ask: 0.05, theo: 0.03 })]),
       IXQZ: ixqzOk('2026-11-23 10:00:00'),
     })
-    await tickAt('2026-11-23T10:15')
-    await fixNow(page, ny('2026-11-23T10:16'))
+    await tickAt('2026-11-23T11:00')
+    await fixNow(page, ny('2026-11-23T11:01'))
     await ui.open()
     await expect(ui.row(P6).getByTestId('position-mark')).toHaveText('0.03')
     await ui.expectOption(P6, '+3.00', `${MINUS}12.65`, `${MINUS}80.83%`)
@@ -328,11 +328,11 @@ test.describe('FEAT-017 未实现盈亏与市值', () => {
     await ui.expectSummary('total', '+6,273.00', '+279.10')
   })
 
-  test('AC7 10:15 起 QRTV 拉取失败 → 行上 行情未更新（上次：11-23 10:00），P1 / P2 仍 −6.30 / +68.70，计入合计', async ({ page }) => {
+  test('AC7 11:00 起 QRTV 拉取失败 → 行上 行情未更新（上次：11-23 10:00），P1 / P2 仍 −6.30 / +68.70，计入合计', async ({ page }) => {
     await scenarioPulled()
     await setSources({ QRTV: { httpStatus: 500, body: null }, IXQZ: ixqzOk('2026-11-23 10:00:00') })
-    await tickAt('2026-11-23T10:15')
-    await fixNow(page, ny('2026-11-23T10:20'))
+    await tickAt('2026-11-23T11:00')
+    await fixNow(page, ny('2026-11-23T11:05'))
     const ui = new Ui(page)
     await ui.open()
     await expect(ui.row(P1).getByTestId('position-mark-stale')).toHaveText('行情未更新（上次：11-23 10:00）')

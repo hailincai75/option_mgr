@@ -152,7 +152,7 @@ class Feat016AutoQuotesAcceptanceSystemTest extends Feat016QuoteSystemTestBase {
         accountId = "1";
         clearRequests();
 
-        JsonNode t = tickAt("2026-11-23T10:15", "SCHEDULED");
+        JsonNode t = tickAt("2026-11-23T11:00", "SCHEDULED");
         assertThat(requests()).containsExactly("CBOE IXQZ");
         assertThat(results(t)).containsExactly("IXQZ SUCCESS SUCCESS null CBOE");
         assertThat(t.get("status").get("trackedSymbolCount").asInt()).isEqualTo(1);
@@ -183,7 +183,7 @@ class Feat016AutoQuotesAcceptanceSystemTest extends Feat016QuoteSystemTestBase {
         sources().cboe("QRTV", qrtvOk())
                 .cboe("IXQZ", ok(cboeBody("IXQZ", "61.10", "2026-11-23 10:00:00",
                         List.of(option(OCC_P2, "bid", "0", "ask", "0.05"))))).apply();
-        tickAt("2026-11-23T10:15", "SCHEDULED");
+        tickAt("2026-11-23T11:00", "SCHEDULED");
         p2 = optionQuote(accountB, P2);
         assertThat(shown(p2)).isEqualTo("0.00/0.05 null 2026-11-23T10:00:00 QUOTED");
         assertThat(p2.get("automaticMark").isNull()).isTrue();
@@ -230,7 +230,7 @@ class Feat016AutoQuotesAcceptanceSystemTest extends Feat016QuoteSystemTestBase {
     // ============================================================================================== AC 5
 
     @Test
-    @DisplayName("AC5 P4 链中从无 → 无报价；P1 10:15 从链中消失 → 仍 1.25，标注 数据源已无该合约（最后报价：11-23 09:45）")
+    @DisplayName("AC5 P4 链中从无 → 无报价；P1 11:00（Q270 下一次整点）从链中消失 → 仍 1.25，标注 数据源已无该合约（最后报价：11-23 09:45）")
     void ac5MissingFromSource() {
         scenario();
         open("STO", "QRTV", "2026-12-18", "47.5", "PUT", "100.00", "2026-11-20T10:20");
@@ -241,7 +241,7 @@ class Feat016AutoQuotesAcceptanceSystemTest extends Feat016QuoteSystemTestBase {
         sources().cboe("QRTV", ok(cboeBody("QRTV", "52.50", "2026-11-23 10:00:00", List.of(
                         option("QRTV261218P00055000", "bid", "3.10", "ask", "3.30")))))
                 .cboe("IXQZ", ixqzOk()).apply();
-        JsonNode t = tickAt("2026-11-23T10:15", "SCHEDULED");
+        JsonNode t = tickAt("2026-11-23T11:00", "SCHEDULED");
         assertThat(results(t)).contains("QRTV SUCCESS SUCCESS null CBOE");
 
         JsonNode p4 = optionQuote("1", P4);
@@ -249,27 +249,27 @@ class Feat016AutoQuotesAcceptanceSystemTest extends Feat016QuoteSystemTestBase {
         assertThat(p4.get("contractStatusLabel").isNull()).isTrue();
         assertThat(p4.get("fetchFailed").asBoolean()).isFalse();
         assertThat(p4.get("staleLabel").isNull()).isTrue();
-        assertThat(p4.get("lastSuccessAtLocal").asText()).isEqualTo("2026-11-23T10:15:00");
+        assertThat(p4.get("lastSuccessAtLocal").asText()).isEqualTo("2026-11-23T11:00:00");
 
         JsonNode p1 = optionQuote("1", P1);
         assertThat(shown(p1)).isEqualTo("1.20/1.30 1.25 2026-11-23T09:45:00 MISSING_FROM_SOURCE");
         assertThat(p1.get("contractStatusLabel").asText()).isEqualTo("数据源已无该合约（最后报价：11-23 09:45）");
         assertThat(p1.get("fetchFailed").asBoolean()).isFalse();
         assertThat(p1.get("staleLabel").isNull()).isTrue();
-        assertThat(p1.get("lastSuccessAtLocal").asText()).isEqualTo("2026-11-23T10:15:00");
+        assertThat(p1.get("lastSuccessAtLocal").asText()).isEqualTo("2026-11-23T11:00:00");
         assertThat(optionQuote(accountB, P3)).isEqualTo(p1);
 
         JsonNode u = underlyingQuote("1", P1);
         assertThat(u.get("price").asText()).isEqualTo("52.50");
         assertThat(u.get("quoteTimeLocal").asText()).isEqualTo("2026-11-23T10:00:00");
         assertThat(storedContract("QRTV", "2026-12-18", "50", "PUT").get("missingSince").asText())
-                .isEqualTo("2026-11-23T15:15:00Z");
+                .isEqualTo("2026-11-23T16:00:00Z");
     }
 
     // ============================================================================================== AC 6
 
     @Test
-    @DisplayName("AC6a 10:15 起 IXQZ 的 CBOE 和 Finnhub 都失败、QRTV 正常：IXQZ 行 行情未更新（上次：11-23 10:00），P2 仍 2.20、现价仍 61.10，无顶部提示")
+    @DisplayName("AC6a 11:00 起（Q270） IXQZ 的 CBOE 和 Finnhub 都失败、QRTV 正常：IXQZ 行 行情未更新（上次：11-23 10:00），P2 仍 2.20、现价仍 61.10，无顶部提示")
     void ac6OneSymbolFails() {
         scenario();
         scenarioSources();
@@ -277,12 +277,12 @@ class Feat016AutoQuotesAcceptanceSystemTest extends Feat016QuoteSystemTestBase {
 
         sources().cboe("QRTV", ok(cboeBody("QRTV", "52.40", "2026-11-23 10:00:00", List.of(p1Option()))))
                 .cboe("IXQZ", unreachable()).finnhub("IXQZ", httpError(500)).apply();
-        JsonNode t = tickAt("2026-11-23T10:15", "SCHEDULED");
+        JsonNode t = tickAt("2026-11-23T11:00", "SCHEDULED");
         assertThat(results(t)).containsExactly("IXQZ FAILED NETWORK_ERROR HTTP_ERROR null",
                 "QRTV SUCCESS SUCCESS null CBOE");
         assertThat(t.get("results").get(0).get("failureDetail").asText()).isNotBlank();
 
-        setNow("2026-11-23T10:20");
+        setNow("2026-11-23T11:05");
         String label = "行情未更新（上次：11-23 10:00）";
         JsonNode p2 = optionQuote(accountB, P2);
         assertThat(shown(p2)).isEqualTo("2.10/2.30 2.20 2026-11-23T09:45:00 QUOTED");
@@ -298,7 +298,7 @@ class Feat016AutoQuotesAcceptanceSystemTest extends Feat016QuoteSystemTestBase {
         JsonNode p1 = optionQuote("1", P1);
         assertThat(p1.get("fetchFailed").asBoolean()).isFalse();
         assertThat(p1.get("staleLabel").isNull()).isTrue();
-        assertThat(p1.get("lastSuccessAtLocal").asText()).isEqualTo("2026-11-23T10:15:00");
+        assertThat(p1.get("lastSuccessAtLocal").asText()).isEqualTo("2026-11-23T11:00:00");
 
         JsonNode s = status();
         assertThat(s.get("stale").asBoolean()).isFalse();
@@ -306,25 +306,27 @@ class Feat016AutoQuotesAcceptanceSystemTest extends Feat016QuoteSystemTestBase {
     }
 
     @Test
-    @DisplayName("AC6b 10:15、10:30 两个标的全部失败：10:30 无提示，10:31 顶部 行情未更新（上次：2026-11-23 10:00 美东），值全部保留；10:45 成功后提示消失")
+    @DisplayName("AC6b（Q270 90 分钟）11:00 两个标的全部失败：11:30 无提示，11:31 顶部 行情未更新（上次：2026-11-23 10:00 美东），值全部保留；12:00 成功后提示消失")
     void ac6AllFailTopWarning() {
         scenario();
         scenarioSources();
         tickAt("2026-11-23T10:00", "SCHEDULED");
 
         sources().apply(); // everything unreachable (CBOE and Finnhub)
-        JsonNode t = tickAt("2026-11-23T10:15", "SCHEDULED");
+        JsonNode t = tickAt("2026-11-23T11:00", "SCHEDULED");
         assertThat(results(t)).containsExactly("IXQZ FAILED NETWORK_ERROR NETWORK_ERROR null",
                 "QRTV FAILED NETWORK_ERROR NETWORK_ERROR null");
-        tickAt("2026-11-23T10:30", "SCHEDULED");
 
         JsonNode s = status();
-        assertThat(s.get("stale").asBoolean()).as("10:30: exactly 30 minutes, not more").isFalse();
+        assertThat(s.get("stale").asBoolean()).as("11:00: 60 minutes, under the 90-minute threshold").isFalse();
         assertThat(s.get("lastSuccessAtLocal").asText()).isEqualTo("2026-11-23T10:00:00");
-        assertThat(s.get("lastAttemptAtLocal").asText()).isEqualTo("2026-11-23T10:30:00");
-        assertThat(s.get("lastAttemptAt").asText()).isEqualTo("2026-11-23T15:30:00Z");
+        assertThat(s.get("lastAttemptAtLocal").asText()).isEqualTo("2026-11-23T11:00:00");
+        assertThat(s.get("lastAttemptAt").asText()).isEqualTo("2026-11-23T16:00:00Z");
 
-        setNow("2026-11-23T10:31");
+        setNow("2026-11-23T11:30");
+        assertThat(status().get("stale").asBoolean()).as("11:30: exactly 90 minutes, not more").isFalse();
+
+        setNow("2026-11-23T11:31");
         s = status();
         assertThat(s.get("stale").asBoolean()).isTrue();
         assertThat(s.get("warning").asText()).isEqualTo("行情未更新（上次：2026-11-23 10:00 美东）");
@@ -339,7 +341,7 @@ class Feat016AutoQuotesAcceptanceSystemTest extends Feat016QuoteSystemTestBase {
         assertThat(stockQuote(accountB, "IXQZ").get("price").asText()).isEqualTo("61.10");
 
         scenarioSources();
-        tickAt("2026-11-23T10:45", "SCHEDULED");
+        tickAt("2026-11-23T12:00", "SCHEDULED");
         s = status();
         assertThat(s.get("stale").asBoolean()).isFalse();
         assertThat(s.get("warning").isNull()).isTrue();
@@ -350,7 +352,7 @@ class Feat016AutoQuotesAcceptanceSystemTest extends Feat016QuoteSystemTestBase {
     // ============================================================================================== AC 7
 
     @Test
-    @DisplayName("AC7 16:20 拉取另存 11-23 收盘快照；之后到次日 09:30 前不再定时拉取、不提示；次日 09:30 照常")
+    @DisplayName("AC7 16:20 拉取另存 11-23 收盘快照；之后到次日 10:00 前（Q270，含 09:30 / 09:45）不再定时拉取、不提示；次日 10:00 照常")
     void ac7CloseSnapshot() {
         scenario();
         scenarioSources();
@@ -379,15 +381,16 @@ class Feat016AutoQuotesAcceptanceSystemTest extends Feat016QuoteSystemTestBase {
 
         clearRequests();
         for (String at : List.of("2026-11-23T16:21", "2026-11-23T16:30", "2026-11-23T16:45", "2026-11-23T17:00",
-                "2026-11-23T20:00", "2026-11-24T00:00", "2026-11-24T09:00", "2026-11-24T09:15")) {
+                "2026-11-23T20:00", "2026-11-24T00:00", "2026-11-24T09:00", "2026-11-24T09:15", "2026-11-24T09:30",
+                "2026-11-24T09:45")) {
             tickSkipped(at, "NOT_A_SLOT");
             assertThat(status().get("stale").asBoolean()).as("no top warning at %s", at).isFalse();
         }
-        setNow("2026-11-24T09:29");
+        setNow("2026-11-24T09:59");
         assertThat(status().get("stale").asBoolean()).isFalse();
-        assertThat(requests()).as("no pull between 16:20 and the next 09:30").isEmpty();
+        assertThat(requests()).as("no pull between 16:20 and the next 10:00").isEmpty();
 
-        tickAt("2026-11-24T09:30", "SCHEDULED");
+        tickAt("2026-11-24T10:00", "SCHEDULED");
         assertThat(requests()).containsExactlyInAnyOrder("CBOE QRTV", "CBOE IXQZ");
         assertThat(stored().get("closeSnapshots")).hasSize(1);
     }
@@ -399,7 +402,7 @@ class Feat016AutoQuotesAcceptanceSystemTest extends Feat016QuoteSystemTestBase {
         scenarioSources();
         tickAt("2026-11-25T16:20", "CLOSE");
         clearRequests();
-        for (String hm : List.of("09:30", "09:45", "10:00", "12:15", "15:45", "16:00", "16:20")) {
+        for (String hm : List.of("10:00", "11:00", "12:00", "15:00", "16:00", "16:20")) {
             tickSkipped("2026-11-26T" + hm, "NON_TRADING_DAY");
         }
         setNow("2026-11-26T12:00");
@@ -412,7 +415,7 @@ class Feat016AutoQuotesAcceptanceSystemTest extends Feat016QuoteSystemTestBase {
     // ============================================================================================== AC 8
 
     @Test
-    @DisplayName("AC8 10:05 手动 P1 Mark 1.40、QRTV 标的价 52.00（手动 11-23 10:05，B 的 P3 同样）；10:15 QRTV 失败仍 1.40；10:30 成功恢复 1.25、52.40")
+    @DisplayName("AC8 10:05 手动 P1 Mark 1.40、QRTV 标的价 52.00（手动 11-23 10:05，B 的 P3 同样）；11:00 QRTV 失败仍 1.40；12:00 成功恢复 1.25、52.40")
     void ac8ManualOverride() {
         scenario();
         scenarioSources();
@@ -436,13 +439,13 @@ class Feat016AutoQuotesAcceptanceSystemTest extends Feat016QuoteSystemTestBase {
         assertThat(optionQuote(accountB, P3)).isEqualTo(optionQuote("1", P1));
 
         sources().cboe("IXQZ", ixqzOk()).apply(); // QRTV: CBOE and Finnhub unreachable
-        JsonNode t = tickAt("2026-11-23T10:15", "SCHEDULED");
+        JsonNode t = tickAt("2026-11-23T11:00", "SCHEDULED");
         assertThat(results(t)).contains("QRTV FAILED NETWORK_ERROR NETWORK_ERROR null");
         assertManual("1", P1);
         assertManual(accountB, P3);
 
         scenarioSources();
-        tickAt("2026-11-23T10:30", "SCHEDULED");
+        tickAt("2026-11-23T12:00", "SCHEDULED");
         for (String[] row : new String[][]{{"1", P1}, {accountB, P3}}) {
             JsonNode q = optionQuote(row[0], row[1]);
             assertThat(q.get("mark").asText()).isEqualTo("1.25");

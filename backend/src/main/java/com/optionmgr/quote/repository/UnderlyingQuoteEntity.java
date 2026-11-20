@@ -52,6 +52,8 @@ public class UnderlyingQuoteEntity {
     private BigDecimal manualPrice;
     @Column(name = "manual_entered_at")
     private Instant manualEnteredAt;
+    @Column(name = "last_yahoo_result", length = 20)
+    private String lastYahooResult;
 
     protected UnderlyingQuoteEntity() {
     }
@@ -68,7 +70,7 @@ public class UnderlyingQuoteEntity {
         return new UnderlyingState(symbol, price, bid, ask, prevClose,
                 priceSource == null ? null : PriceSource.valueOf(priceSource), quoteTime, lastPriceSuccessAt,
                 lastChainSuccessAt, lastAttemptAt, lastPriceFailed, lastChainFailed, result(lastCboeResult),
-                result(lastFinnhubResult), lastFailureDetail, manualPrice, manualEnteredAt);
+                result(lastFinnhubResult), lastFailureDetail, manualPrice, manualEnteredAt, result(lastYahooResult));
     }
 
     public void update(UnderlyingState s) {
@@ -89,6 +91,7 @@ public class UnderlyingQuoteEntity {
         lastFailureDetail = d != null && d.length() > 500 ? d.substring(0, 500) : d;
         manualPrice = QuotePrices.forStorage(s.manualPrice(), 6);
         manualEnteredAt = s.manualEnteredAt();
+        lastYahooResult = s.lastYahooResult() == null ? null : s.lastYahooResult().name();
     }
 
     private static SourceResult result(String s) {

@@ -1,8 +1,9 @@
 import type { OptionGreeks } from '../../api/types'
 import {
   GREEKS_COLUMNS,
-  GREEKS_NOTE,
+  GREEKS_NOTE_CBOE,
   greeksDisplay,
+  greeksNote,
   readShowGreeks,
   SHOW_GREEKS_STORAGE_KEY,
   writeShowGreeks,
@@ -11,6 +12,7 @@ import {
 const EMPTY: OptionGreeks = {
   status: 'OK',
   label: null,
+  source: null,
   ivPercent: null,
   deltaPerContract: null,
   deltaPosition: null,
@@ -90,6 +92,13 @@ describe('greeksDisplay (FEAT-018)', () => {
     expect(greeksDisplay({ ...P1, manualMarkNote: note })).toMatchObject({ manualMarkNote: note })
   })
 
+  it('passes the Yahoo manual-mark note through verbatim (FEAT-052)', () => {
+    const note = 'Greeks 按 Yahoo 报价计算（11-20 10:00），未随手动 Mark 调整'
+    expect(greeksDisplay({ ...P1, source: 'YAHOO', manualMarkNote: note })).toMatchObject({
+      manualMarkNote: note,
+    })
+  })
+
   it('shows the backend label when the status is not OK, ignoring any values', () => {
     expect(greeksDisplay({ ...P1, status: 'NO_QUOTE', label: '无报价' })).toEqual({
       kind: 'label',
@@ -120,9 +129,30 @@ describe('Greeks texts (FEAT-018)', () => {
     ])
     const theta = GREEKS_COLUMNS.find((column) => column.key === 'theta')
     expect(theta?.hint).toContain('持仓值 = 每天大约赚 / 亏多少美元')
-    expect(GREEKS_NOTE).toBe(
+    expect(GREEKS_NOTE_CBOE).toBe(
       'IV / Greeks 来自 CBOE 延迟报价，持仓值 = 每张 × 张数 × 100 × 方向（空头取反），仅供参考',
     )
+  })
+})
+
+describe('greeksNote (FEAT-052)', () => {
+  const yahoo = (rate: string) =>
+    `IV 来自 Yahoo Finance 延迟报价，Greeks 由系统按 Black-Scholes 计算（无风险利率 ${rate}），与券商数值可能略有差异；持仓值 = 每张 × 张数 × 100 × 方向（空头取反），仅供参考`
+
+  it('uses the Yahoo text with the backend rate verbatim', () => {
+    expect(greeksNote({ optionSource: 'YAHOO', riskFreeRatePercent: '0.00' })).toBe(yahoo('0.00%'))
+    expect(greeksNote({ optionSource: 'YAHOO', riskFreeRatePercent: '4.125' })).toBe(
+      yahoo('4.125%'),
+    )
+  })
+
+  it('keeps the FEAT-018 text for the CBOE source', () => {
+    expect(greeksNote({ optionSource: 'CBOE', riskFreeRatePercent: '4.00' })).toBe(GREEKS_NOTE_CBOE)
+  })
+
+  it('falls back to the Yahoo text with "—" while the status is unknown', () => {
+    expect(greeksNote(undefined)).toBe(yahoo('—'))
+    expect(greeksNote({ optionSource: 'YAHOO', riskFreeRatePercent: '' })).toBe(yahoo('—'))
   })
 })
 

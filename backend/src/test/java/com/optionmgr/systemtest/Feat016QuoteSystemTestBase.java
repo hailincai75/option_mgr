@@ -86,9 +86,10 @@ abstract class Feat016QuoteSystemTestBase {
             "lastSuccessAt", "lastSuccessAtLocal", "staleLabel");
     static final List<String> STATUS_FIELDS = List.of("stale", "warning", "lastSuccessAt", "lastSuccessAtLocal",
             "lastAttemptAt", "lastAttemptAtLocal", "lastRefreshAt", "lastRefreshAtLocal", "refreshAvailableAt",
-            "refreshAllowed", "trackedSymbolCount");
-    static final List<String> RESULT_FIELDS = List.of("symbol", "result", "cboeResult", "finnhubResult",
-            "underlyingPriceSource", "failureDetail");
+            "refreshAllowed", "trackedSymbolCount", "optionSource", "riskFreeRatePercent");
+    /** FEAT-052 added {@code optionSource} / {@code yahooResult} ({@code cboeResult} is null under Yahoo). */
+    static final List<String> RESULT_FIELDS = List.of("symbol", "result", "optionSource", "yahooResult",
+            "cboeResult", "finnhubResult", "underlyingPriceSource", "failureDetail");
 
     @Autowired
     TestRestTemplate http;
@@ -534,6 +535,11 @@ abstract class Feat016QuoteSystemTestBase {
         assertThat(s.get("refreshAllowed").isBoolean()).isTrue();
         assertThat(s.get("trackedSymbolCount").isInt()).isTrue();
         assertThat(s.get("warning").isNull()).as("warning null iff not stale").isEqualTo(!s.get("stale").asBoolean());
+        // FEAT-052: current option source + configured risk-free rate (string, at least 2 decimals)
+        assertThat(s.get("optionSource").asText()).isIn("YAHOO", "CBOE");
+        assertThat(s.get("riskFreeRatePercent").isTextual()).as("riskFreeRatePercent is a string").isTrue();
+        assertThat(new BigDecimal(s.get("riskFreeRatePercent").asText()).scale())
+                .as("riskFreeRatePercent at least 2 decimals").isGreaterThanOrEqualTo(2);
     }
 
     void assertResultsShape(JsonNode results) {
@@ -542,6 +548,13 @@ abstract class Feat016QuoteSystemTestBase {
         for (JsonNode r : results) {
             assertThat(fieldNames(r)).containsExactlyInAnyOrderElementsOf(RESULT_FIELDS);
             symbols.add(r.get("symbol").asText());
+            // FEAT-052: exactly one of cboeResult / yahooResult is set, per the run's option source
+            String source = r.get("optionSource").asText();
+            assertThat(source).isIn("YAHOO", "CBOE");
+            assertThat(r.get("cboeResult").isNull()).as("cboeResult null iff YAHOO: %s", r)
+                    .isEqualTo(source.equals("YAHOO"));
+            assertThat(r.get("yahooResult").isNull()).as("yahooResult null iff CBOE: %s", r)
+                    .isEqualTo(source.equals("CBOE"));
         }
         assertThat(symbols).as("results sorted by symbol").isSorted();
     }

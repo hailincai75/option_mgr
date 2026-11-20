@@ -10,10 +10,14 @@ import com.optionmgr.quote.domain.CboeChain;
 import com.optionmgr.quote.domain.CboeOption;
 import com.optionmgr.quote.domain.FinnhubQuote;
 import com.optionmgr.quote.domain.OccCode;
+import com.optionmgr.quote.domain.YahooChain;
+import com.optionmgr.quote.domain.YahooOption;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -81,6 +85,89 @@ public final class QuoteParsers {
         return new FinnhubQuote(c, dec(root, "pc"), t == null || t <= 0 ? null : Instant.ofEpochSecond(t));
     }
 
+    /**
+     * FEAT-052 Yahoo {@code /v7/finance/options}: {@code optionChain.result} a non-empty array,
+     * {@code optionChain.error} null or missing, {@code result[0].quote} an object with a positive integer
+     * {@code regularMarketTime} (Unix seconds) - otherwise invalid. Contracts come from {@code options[0].calls} and
+     * {@code puts}; a malformed single field is missing, an unparseable {@code contractSymbol} skips the entry.
+     */
+    public YahooChain parseYahoo(String body) throws InvalidResponseException {
+        JsonNode root = tree(body);
+        JsonNode chain = root.get("optionChain");
+        if (chain == null || !chain.isObject()) {
+            throw new InvalidResponseException("missing optionChain object");
+        }
+        JsonNode error = chain.get("error");
+        if (error != null && !error.isNull()) {
+            throw new InvalidResponseException("optionChain.error");
+        }
+        JsonNode result = chain.get("result");
+        if (result == null || !result.isArray() || result.isEmpty() || !result.get(0).isObject()) {
+            throw new InvalidResponseException("empty optionChain.result");
+        }
+        JsonNode r0 = result.get(0);
+        JsonNode quote = r0.get("quote");
+        if (quote == null || !quote.isObject()) {
+            throw new InvalidResponseException("missing quote object");
+        }
+        Long time = nonNegativeWhole(quote, "regularMarketTime");
+        if (time == null || time <= 0) {
+            throw new InvalidResponseException("missing quote.regularMarketTime");
+        }
+        List<LocalDate> dates = new ArrayList<>();
+        JsonNode exp = r0.get("expirationDates");
+        if (exp != null && exp.isArray()) {
+            for (JsonNode e : exp) {
+                BigDecimal d = e.isNumber() ? e.decimalValue() : null;
+                Long s = integral(d);
+                if (s != null) {
+                    dates.add(LocalDate.ofInstant(Instant.ofEpochSecond(s), ZoneOffset.UTC));
+                }
+            }
+        }
+        List<YahooOption> parsed = new ArrayList<>();
+        JsonNode options = r0.get("options");
+        if (options != null && options.isArray() && !options.isEmpty() && options.get(0).isObject()) {
+            for (String side : List.of("calls", "puts")) {
+                JsonNode list = options.get(0).get(side);
+                if (list == null || !list.isArray()) {
+                    continue;
+                }
+                for (JsonNode o : list) {
+                    if (!o.isObject() || o.get("contractSymbol") == null || !o.get("contractSymbol").isTextual()) {
+                        continue;
+                    }
+                    OccCode.parse(o.get("contractSymbol").asText()).ifPresent(c -> parsed.add(new YahooOption(c,
+                            dec(o, "bid"), dec(o, "ask"), dec(o, "lastPrice"), dec(o, "impliedVolatility"),
+                            nonNegativeWhole(o, "volume"), nonNegativeWhole(o, "openInterest"))));
+                }
+            }
+        }
+        return new YahooChain(Instant.ofEpochSecond(time), dec(quote, "regularMarketPrice"), dec(quote, "bid"),
+                dec(quote, "ask"), dec(quote, "regularMarketPreviousClose"), dates, parsed);
+    }
+
+    /**
+     * FEAT-052 getcrumb body: after stripping, 1-64 visible characters without {@code <}, <code>{</code> or white
+     * space; otherwise empty (not a crumb, e.g. an HTML or JSON error page).
+     */
+    public static Optional<String> yahooCrumb(String body) {
+        if (body == null) {
+            return Optional.empty();
+        }
+        String c = body.strip();
+        if (c.isEmpty() || c.length() > 64) {
+            return Optional.empty();
+        }
+        for (int i = 0; i < c.length(); i++) {
+            char ch = c.charAt(i);
+            if (ch <= 0x20 || ch >= 0x7f || ch == '<' || ch == '{') {
+                return Optional.empty();
+            }
+        }
+        return Optional.of(c);
+    }
+
     private JsonNode tree(String body) throws InvalidResponseException {
         if (body == null || body.isBlank()) {
             throw new InvalidResponseException("empty body");
@@ -135,6 +222,23 @@ public final class QuoteParsers {
             }
         }
         return null;
+    }
+
+    /** FEAT-052: an integer &ge; 0, else null (non-integer or negative = missing). */
+    private static Long nonNegativeWhole(JsonNode parent, String field) {
+        Long v = integral(dec(parent, field));
+        return v == null || v < 0 ? null : v;
+    }
+
+    private static Long integral(BigDecimal d) {
+        if (d == null) {
+            return null;
+        }
+        try {
+            return d.stripTrailingZeros().longValueExact();
+        } catch (ArithmeticException e) {
+            return null;
+        }
     }
 
     private static Long whole(JsonNode parent, String field) {

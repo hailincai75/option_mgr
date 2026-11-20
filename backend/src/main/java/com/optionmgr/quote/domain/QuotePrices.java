@@ -22,13 +22,41 @@ public final class QuotePrices {
      */
     public static Mark mark(BigDecimal bid, BigDecimal ask, BigDecimal theo) {
         if (positive(bid) && positive(ask)) {
-            BigDecimal sum = bid.add(ask);
-            return new Mark(sum.divide(TWO, Math.max(sum.scale(), 0) + 1, RoundingMode.UNNECESSARY), MarkBasis.MID);
+            return new Mark(mid(bid, ask), MarkBasis.MID);
         }
         if (positive(theo)) {
             return new Mark(theo, MarkBasis.THEO);
         }
         return Mark.NONE;
+    }
+
+    /**
+     * FEAT-052: the automatic mark of a stored quote by its source. CBOE: {@link #mark(BigDecimal, BigDecimal,
+     * BigDecimal)} (Q139). Yahoo (Q271): a valid quote (ask &gt; 0, bid &ge; 0, ask &ge; bid) -&gt; (bid + ask) / 2;
+     * otherwise {@code last} &gt; 0 -&gt; last ({@link MarkBasis#LAST}); otherwise none.
+     */
+    public static Mark mark(QuoteSource source, BigDecimal bid, BigDecimal ask, BigDecimal last, BigDecimal theo) {
+        if (source != QuoteSource.YAHOO) {
+            return mark(bid, ask, theo);
+        }
+        if (validYahoo(bid, ask)) {
+            return new Mark(mid(bid, ask), MarkBasis.MID);
+        }
+        if (positive(last)) {
+            return new Mark(last, MarkBasis.LAST);
+        }
+        return Mark.NONE;
+    }
+
+    /** FEAT-052 Q271: a valid Yahoo quote: ask &gt; 0, bid &ge; 0, ask &ge; bid (both present). */
+    public static boolean validYahoo(BigDecimal bid, BigDecimal ask) {
+        return bid != null && ask != null && ask.signum() > 0 && bid.signum() >= 0 && ask.compareTo(bid) >= 0;
+    }
+
+    /** Exact (bid + ask) / 2: at most one more decimal than the inputs ({@code 0 / 0.05} -&gt; 0.025). */
+    static BigDecimal mid(BigDecimal bid, BigDecimal ask) {
+        BigDecimal sum = bid.add(ask);
+        return sum.divide(TWO, Math.max(sum.scale(), 0) + 1, RoundingMode.UNNECESSARY);
     }
 
     public static boolean positive(BigDecimal v) {

@@ -2,6 +2,7 @@ package com.optionmgr.quote.repository;
 
 import com.optionmgr.quote.domain.OptionState;
 import com.optionmgr.quote.domain.QuotePrices;
+import com.optionmgr.quote.domain.QuoteSource;
 import com.optionmgr.trade.domain.ContractKey;
 import com.optionmgr.trade.domain.OptionType;
 import jakarta.persistence.Column;
@@ -50,6 +51,9 @@ public abstract class OptionQuoteColumns {
     protected Long openInterest;
     @Column(name = "quote_time")
     protected Instant quoteTime;
+    // FEAT-052 (V19): CBOE / YAHOO, null exactly when never quoted
+    @Column(name = "quote_source", length = 10)
+    protected String quoteSource;
 
     protected void setContract(ContractKey c) {
         symbol = c.symbol();
@@ -77,6 +81,7 @@ public abstract class OptionQuoteColumns {
         volume = s.volume();
         openInterest = s.openInterest();
         quoteTime = s.quoteTime();
+        quoteSource = s.source() == null ? null : s.source().name();
     }
 
     public String getOccCode() {
@@ -133,5 +138,13 @@ public abstract class OptionQuoteColumns {
 
     public Instant getQuoteTime() {
         return quoteTime;
+    }
+
+    public String getQuoteSource() {
+        return quoteSource;
+    }
+
+    protected QuoteSource source() {
+        return quoteSource == null ? null : QuoteSource.valueOf(quoteSource);
     }
 }

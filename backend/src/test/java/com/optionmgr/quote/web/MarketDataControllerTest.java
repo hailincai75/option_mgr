@@ -41,7 +41,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
- * FEAT-016 acceptance criteria (backend) through the HTTP API and database, with the in-memory fake sources (never
+ * FEAT-016 acceptance criteria (backend; FEAT-052 Q270 run times and 90-minute warning) through the HTTP API and database, with the in-memory fake sources (never
  * the real CBOE / Finnhub) and a movable clock. Scenario (requirement): 2026-11-23 (Monday); account A (id 1) STO 1
  * QRTV 2026-12-18 50P (P1); account B: 100 IXQZ, STO 1 IXQZ 2026-12-18 60C (P2), STO 1 QRTV 2026-12-18 50P (P3).
  * Fictional tickers.
@@ -241,7 +241,7 @@ class MarketDataControllerTest {
         close(1, "QRTV", "2026-12-18", "50", "PUT");
         close(accountB, "QRTV", "2026-12-18", "50", "PUT");
         fake.clearRequests();
-        run("2026-11-23T10:15:00");
+        run("2026-11-23T11:00:00");
         assertThat(requested()).containsExactly("CBOE IXQZ");
     }
 
@@ -257,7 +257,7 @@ class MarketDataControllerTest {
         cboe.put("IXQZ", Reply.of(200, chain("IXQZ", "61.10", "2026-11-23 09:45:00",
                 option("IXQZ261218C00060000", "0", "0.05", null))));
         apply();
-        run("2026-11-23T10:15:00");
+        run("2026-11-23T11:00:00");
         JsonNode q = position(accountB, P2).get("optionQuote");
         assertThat(q.get("mark").isNull()).isTrue();
         assertThat(q.get("bid").asText()).isEqualTo("0.00");
@@ -292,7 +292,7 @@ class MarketDataControllerTest {
         cboe.put("QRTV", Reply.of(200, chain("QRTV", "52.50", "2026-11-23 10:00:00",
                 option("QRTV261218P00055000", "3.10", "3.30", null))));
         apply();
-        run("2026-11-23T10:15:00");
+        run("2026-11-23T11:00:00");
         JsonNode p4 = position(1, P4).get("optionQuote");
         assertThat(p4.get("contractStatus").asText()).isEqualTo("NEVER_QUOTED");
         assertThat(p4.get("mark").isNull()).isTrue();
@@ -309,7 +309,7 @@ class MarketDataControllerTest {
         cboe.put("IXQZ", Reply.unreachableReply());
         finnhub.put("IXQZ", Reply.of(502, ""));
         apply();
-        run("2026-11-23T10:15:00");
+        run("2026-11-23T11:00:00");
         JsonNode p2 = position(accountB, P2);
         assertThat(p2.at("/optionQuote/staleLabel").asText()).isEqualTo("行情未更新（上次：11-23 10:00）");
         assertThat(p2.at("/optionQuote/mark").asText()).isEqualTo("2.20");
@@ -319,33 +319,32 @@ class MarketDataControllerTest {
         assertThat(stock.get("price").asText()).isEqualTo("61.10");
         assertThat(stock.get("staleLabel").asText()).isEqualTo("行情未更新（上次：11-23 10:00）");
         assertThat(position(1, P1).at("/optionQuote/staleLabel").isNull()).isTrue();
-        at("2026-11-23T10:44:00");
-        assertThat(ok(get("/api/market-data/status")).get("stale").asBoolean()).as("QRTV succeeded at 10:15").isFalse();
+        at("2026-11-23T12:30:00");
+        assertThat(ok(get("/api/market-data/status")).get("stale").asBoolean()).as("QRTV succeeded at 11:00 (Q270: 90 min)").isFalse();
     }
 
     @Test
-    void ac6_allSymbolsFailing_warnsAfter30Minutes_untilNextSuccess() throws Exception {
+    void ac6_allSymbolsFailing_warnsAfter90Minutes_untilNextSuccess() throws Exception {
         run("2026-11-23T10:00:00");
         cboe.put("IXQZ", Reply.unreachableReply());
         cboe.put("QRTV", Reply.of(500, ""));
         apply();
-        run("2026-11-23T10:15:00");
-        run("2026-11-23T10:30:00");
-        at("2026-11-23T10:30:00");
+        run("2026-11-23T11:00:00");
+        at("2026-11-23T11:30:00");
         assertThat(ok(get("/api/market-data/status")).get("stale").asBoolean()).isFalse();
-        at("2026-11-23T10:31:00");
+        at("2026-11-23T11:31:00");
         JsonNode status = ok(get("/api/market-data/status"));
         assertThat(status.get("stale").asBoolean()).isTrue();
         assertThat(status.get("warning").asText()).isEqualTo("行情未更新（上次：2026-11-23 10:00 美东）");
         assertThat(status.get("lastSuccessAtLocal").asText()).isEqualTo("2026-11-23T10:00:00");
-        assertThat(status.get("lastAttemptAtLocal").asText()).isEqualTo("2026-11-23T10:30:00");
+        assertThat(status.get("lastAttemptAtLocal").asText()).isEqualTo("2026-11-23T11:00:00");
         assertThat(status.get("trackedSymbolCount").asInt()).isEqualTo(2);
         assertThat(position(1, P1).at("/optionQuote/mark").asText()).isEqualTo("1.25");
 
         cboe.put("QRTV", Reply.of(200, chain("QRTV", "52.40", "2026-11-23 10:30:00",
                 option("QRTV261218P00050000", "1.20", "1.30", "1.24"))));
         apply();
-        run("2026-11-23T10:45:00");
+        run("2026-11-23T12:00:00");
         assertThat(ok(get("/api/market-data/status")).get("warning").isNull()).isTrue();
     }
 
@@ -360,7 +359,8 @@ class MarketDataControllerTest {
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM option_quote_close WHERE snapshot_date = DATE '2026-11-23'",
                 Integer.class)).isEqualTo(2);
         fake.clearRequests();
-        for (String t : List.of("2026-11-23T16:25:00", "2026-11-23T20:00:00", "2026-11-24T09:15:00")) {
+        for (String t : List.of("2026-11-23T16:25:00", "2026-11-23T20:00:00", "2026-11-24T09:15:00",
+                "2026-11-24T09:30:00", "2026-11-24T10:15:00")) {
             at(t);
             assertThat(fetches.tick().skipReason()).isEqualTo("NOT_A_SLOT");
             assertThat(ok(get("/api/market-data/status")).get("stale").asBoolean()).as(t).isFalse();
@@ -393,13 +393,13 @@ class MarketDataControllerTest {
         }
         cboe.put("QRTV", Reply.of(500, ""));
         apply();
-        run("2026-11-23T10:15:00");
+        run("2026-11-23T11:00:00");
         assertThat(position(1, P1).at("/optionQuote/mark").asText()).isEqualTo("1.40");
         assertThat(position(1, P1).at("/underlyingQuote/price").asText()).isEqualTo("52.00");
         cboe.put("QRTV", Reply.of(200, chain("QRTV", "52.40", "2026-11-23 10:15:00",
                 option("QRTV261218P00050000", "1.20", "1.30", "1.24"))));
         apply();
-        run("2026-11-23T10:30:00");
+        run("2026-11-23T12:00:00");
         JsonNode p = position(accountB, P1);
         assertThat(p.at("/optionQuote/mark").asText()).isEqualTo("1.25");
         assertThat(p.at("/optionQuote/manual").asBoolean()).isFalse();

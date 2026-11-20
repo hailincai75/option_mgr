@@ -1,11 +1,14 @@
 package com.optionmgr.testsupport.web;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.optionmgr.common.error.ApiException;
 import com.optionmgr.common.error.ErrorCode;
 import com.optionmgr.common.error.ErrorResponse;
+import com.optionmgr.quote.domain.QuotePrices;
+import com.optionmgr.quote.domain.QuoteSource;
 import com.optionmgr.quote.domain.RunTrigger;
 import com.optionmgr.quote.repository.OptionQuoteCloseEntity;
 import com.optionmgr.quote.repository.OptionQuoteCloseRepository;
@@ -18,7 +21,10 @@ import com.optionmgr.quote.repository.UnderlyingQuoteRepository;
 import com.optionmgr.quote.domain.UnderlyingState;
 import com.optionmgr.quote.service.InMemoryQuoteTransport;
 import com.optionmgr.quote.service.QuoteFetchService;
+import com.optionmgr.quote.service.QuoteProperties;
 import com.optionmgr.quote.service.QuoteQueryService;
+import com.optionmgr.quote.service.QuoteSettings;
+import com.optionmgr.quote.service.YahooSession;
 import com.optionmgr.quote.service.QuoteViews;
 import com.optionmgr.quote.web.MarketDataController;
 import com.optionmgr.testsupport.E2eProfile;
@@ -27,6 +33,7 @@ import com.optionmgr.trade.domain.OptionType;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -65,10 +72,16 @@ public class MarketDataTestSupportController {
     private final OptionQuoteCloseRepository optionCloses;
     private final ObjectMapper mapper;
 
+    private final QuoteSettings settings;
+    private final YahooSession session;
+
     public MarketDataTestSupportController(ObjectProvider<InMemoryQuoteTransport> transport, QuoteFetchService fetches,
                                            QuoteQueryService queries, UnderlyingQuoteRepository underlyings,
                                            OptionQuoteRepository options, UnderlyingQuoteCloseRepository underlyingCloses,
-                                           OptionQuoteCloseRepository optionCloses, ObjectMapper mapper) {
+                                           OptionQuoteCloseRepository optionCloses, ObjectMapper mapper,
+                                           QuoteSettings settings, YahooSession session) {
+        this.settings = settings;
+        this.session = session;
         this.transport = transport;
         this.fetches = fetches;
         this.queries = queries;
@@ -84,7 +97,7 @@ public class MarketDataTestSupportController {
     }
 
     public record SourcesRequest(Boolean finnhubKeyPresent, Map<String, ReplyRequest> cboe,
-                                 Map<String, ReplyRequest> finnhub) {
+                                 Map<String, ReplyRequest> finnhub, YahooRequest yahoo) {
     }
 
     public record RequestsResponse(List<InMemoryQuoteTransport.Request> requests) {
@@ -97,14 +110,14 @@ public class MarketDataTestSupportController {
     public record StoredUnderlying(String symbol, String price, String bid, String ask, String prevClose, String source,
                                    Instant quoteTime, Instant lastPriceSuccessAt, Instant lastChainSuccessAt,
                                    Instant lastAttemptAt, String lastCboeResult, String lastFinnhubResult,
-                                   String manualPrice, Instant manualEnteredAt) {
+                                   String manualPrice, Instant manualEnteredAt, String lastYahooResult) {
     }
 
     public record StoredContract(String symbol, LocalDate expirationDate, String strike, OptionType optionType,
                                  String occCode, String bid, String ask, String last, String theo, String iv,
                                  String delta, String gamma, String theta, String vega, String rho, Long volume,
                                  Long openInterest, Instant quoteTime, Instant fetchedAt, Instant missingSince,
-                                 String manualMark, Instant manualEnteredAt) {
+                                 String manualMark, Instant manualEnteredAt, String source) {
     }
 
     public record CloseUnderlying(String symbol, String price, String bid, String ask, String prevClose, String source,
@@ -114,7 +127,7 @@ public class MarketDataTestSupportController {
     public record CloseContract(String symbol, LocalDate expirationDate, String strike, OptionType optionType,
                                 String occCode, String bid, String ask, String last, String theo, String iv,
                                 String delta, String gamma, String theta, String vega, String rho, Long volume,
-                                Long openInterest, Instant quoteTime, Instant capturedAt) {
+                                Long openInterest, Instant quoteTime, Instant capturedAt, String source) {
     }
 
     public record CloseSnapshot(LocalDate date, List<CloseUnderlying> underlyings, List<CloseContract> contracts) {
@@ -124,12 +137,57 @@ public class MarketDataTestSupportController {
                                  List<CloseSnapshot> closeSnapshots) {
     }
 
+    /** FEAT-052: fake Yahoo; each reply value is one reply object or an array of them (a sequence). */
+    public record YahooRequest(JsonNode handshake, Map<String, YahooSymbolRequest> symbols) {
+    }
+
+    public record YahooSymbolRequest(Map<String, JsonNode> byDate, @JsonProperty("default") JsonNode fallback) {
+    }
+
+    /** FEAT-052: null = the configured value. A non-numeric rate cannot be bound (400 BAD_REQUEST). */
+    public record SettingsRequest(String optionSource, BigDecimal riskFreeRatePercent) {
+    }
+
+    public record SettingsResponse(QuoteSource optionSource, BigDecimal riskFreeRatePercent) {
+    }
+
     @PutMapping("/sources")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void sources(@RequestBody SourcesRequest req) {
         InMemoryQuoteTransport t = fake();
         t.configure(new InMemoryQuoteTransport.Sources(req.finnhubKeyPresent() == null || req.finnhubKeyPresent(),
-                replies("cboe", req.cboe()), replies("finnhub", req.finnhub())));
+                replies("cboe", req.cboe()), replies("finnhub", req.finnhub()), yahoo(req.yahoo())));
+        // FEAT-052: the next run handshakes again
+        session.clear();
+    }
+
+    /** FEAT-052: the option source and risk-free rate, as if configured and restarted. */
+    @PutMapping("/settings")
+    public SettingsResponse settings(@RequestBody(required = false) SettingsRequest req) {
+        List<ErrorResponse.FieldError> errors = new ArrayList<>();
+        QuoteSource source = null;
+        BigDecimal rate = null;
+        if (req != null && req.optionSource() != null) {
+            try {
+                source = QuoteSource.parse(req.optionSource());
+            } catch (IllegalArgumentException e) {
+                errors.add(new ErrorResponse.FieldError("optionSource", "数据源只能是 YAHOO 或 CBOE"));
+            }
+        }
+        if (req != null && req.riskFreeRatePercent() != null) {
+            try {
+                rate = req.riskFreeRatePercent();
+                QuoteProperties.checkRate(rate);
+            } catch (IllegalArgumentException e) {
+                rate = null;
+                errors.add(new ErrorResponse.FieldError("riskFreeRatePercent", "无风险利率须为 0 到 20 之间的数字"));
+            }
+        }
+        if (!errors.isEmpty()) {
+            throw new ApiException(ErrorCode.VALIDATION_ERROR, "Request validation failed", errors);
+        }
+        QuoteSettings.Values v = settings.set(source, rate);
+        return new SettingsResponse(v.optionSource(), QuotePrices.display(v.riskFreeRatePercent()));
     }
 
     @GetMapping("/requests")
@@ -158,7 +216,7 @@ public class MarketDataTestSupportController {
             return new StoredUnderlying(s.symbol(), str(s.price()), str(s.bid()), str(s.ask()), str(s.prevClose()),
                     s.source() == null ? null : s.source().name(), s.quoteTime(), s.lastPriceSuccessAt(),
                     s.lastChainSuccessAt(), s.lastAttemptAt(), name(s.lastCboeResult()), name(s.lastFinnhubResult()),
-                    str(s.manualPrice()), s.manualEnteredAt());
+                    str(s.manualPrice()), s.manualEnteredAt(), name(s.lastYahooResult()));
         }).sorted(Comparator.comparing(StoredUnderlying::symbol)).toList();
         List<StoredContract> cs = options.findAll().stream().sorted(byContract())
                 .map(MarketDataTestSupportController::stored).toList();
@@ -175,7 +233,7 @@ public class MarketDataTestSupportController {
                     k.expirationDate(), ContractKey.strikeText(k.strike()), k.optionType(), e.getOccCode(),
                     str(e.getBid()), str(e.getAsk()), str(e.getLastPrice()), str(e.getTheo()), str(e.getIv()),
                     str(e.getDelta()), str(e.getGamma()), str(e.getTheta()), str(e.getVega()), str(e.getRho()),
-                    e.getVolume(), e.getOpenInterest(), e.getQuoteTime(), e.getCapturedAt()));
+                    e.getVolume(), e.getOpenInterest(), e.getQuoteTime(), e.getCapturedAt(), e.getQuoteSource()));
         }
         TreeSet<LocalDate> dates = new TreeSet<>(cu.keySet());
         dates.addAll(cc.keySet());
@@ -191,7 +249,7 @@ public class MarketDataTestSupportController {
                 e.getOccCode(), str(e.getBid()), str(e.getAsk()), str(e.getLastPrice()), str(e.getTheo()),
                 str(e.getIv()), str(e.getDelta()), str(e.getGamma()), str(e.getTheta()), str(e.getVega()),
                 str(e.getRho()), e.getVolume(), e.getOpenInterest(), e.getQuoteTime(), e.getFetchedAt(),
-                e.getMissingSince(), str(e.getManualMark()), e.getManualEnteredAt());
+                e.getMissingSince(), str(e.getManualMark()), e.getManualEnteredAt(), e.getQuoteSource());
     }
 
     private static <T extends OptionQuoteColumns> Comparator<T> byContract() {
@@ -215,20 +273,87 @@ public class MarketDataTestSupportController {
             return out;
         }
         for (Map.Entry<String, ReplyRequest> e : in.entrySet()) {
-            ReplyRequest r = e.getValue();
-            if (r == null || Boolean.TRUE.equals(r.unreachable())) {
-                out.put(e.getKey(), InMemoryQuoteTransport.Reply.unreachableReply());
-                continue;
-            }
-            if (r.httpStatus() == null) {
-                throw new ApiException(ErrorCode.VALIDATION_ERROR, "Request validation failed",
-                        List.of(new ErrorResponse.FieldError(field + "." + e.getKey() + ".httpStatus",
-                                "httpStatus 或 unreachable 必填")));
-            }
-            out.put(e.getKey(), InMemoryQuoteTransport.Reply.of(r.httpStatus(),
-                    r.rawBody() != null ? r.rawBody() : bodyText(r.body())));
+            out.put(e.getKey(), reply(field + "." + e.getKey(), e.getValue()));
         }
         return out;
+    }
+
+    private InMemoryQuoteTransport.Reply reply(String field, ReplyRequest r) {
+        if (r == null || Boolean.TRUE.equals(r.unreachable())) {
+            return InMemoryQuoteTransport.Reply.unreachableReply();
+        }
+        if (r.httpStatus() == null) {
+            throw new ApiException(ErrorCode.VALIDATION_ERROR, "Request validation failed",
+                    List.of(new ErrorResponse.FieldError(field + ".httpStatus", "httpStatus 或 unreachable 必填")));
+        }
+        return InMemoryQuoteTransport.Reply.of(r.httpStatus(), r.rawBody() != null ? r.rawBody() : bodyText(r.body()));
+    }
+
+    /** FEAT-052: one reply object or an array of them; null / missing = not configured. */
+    private List<InMemoryQuoteTransport.Reply> sequence(String field, JsonNode node) {
+        if (node == null || node.isNull() || node.isMissingNode()) {
+            return null;
+        }
+        List<JsonNode> items = new ArrayList<>();
+        if (node.isArray()) {
+            node.forEach(items::add);
+        } else {
+            items.add(node);
+        }
+        List<InMemoryQuoteTransport.Reply> out = new ArrayList<>();
+        for (int i = 0; i < items.size(); i++) {
+            String f = node.isArray() ? field + "[" + i + "]" : field;
+            if (!items.get(i).isObject()) {
+                throw new ApiException(ErrorCode.VALIDATION_ERROR, "Request validation failed",
+                        List.of(new ErrorResponse.FieldError(f, "回复必须是对象或对象数组")));
+            }
+            ReplyRequest r;
+            try {
+                r = mapper.treeToValue(items.get(i), ReplyRequest.class);
+            } catch (JsonProcessingException | IllegalArgumentException e) {
+                throw new ApiException(ErrorCode.VALIDATION_ERROR, "Request validation failed",
+                        List.of(new ErrorResponse.FieldError(f, "回复格式不正确")));
+            }
+            out.add(reply(f, r));
+        }
+        return out;
+    }
+
+    private InMemoryQuoteTransport.Yahoo yahoo(YahooRequest req) {
+        if (req == null) {
+            return InMemoryQuoteTransport.Yahoo.EMPTY;
+        }
+        Map<String, InMemoryQuoteTransport.YahooSymbol> symbols = new HashMap<>();
+        if (req.symbols() != null) {
+            for (Map.Entry<String, YahooSymbolRequest> e : req.symbols().entrySet()) {
+                String field = "yahoo.symbols." + e.getKey();
+                YahooSymbolRequest s = e.getValue();
+                if (s == null) {
+                    continue;
+                }
+                Map<LocalDate, List<InMemoryQuoteTransport.Reply>> byDate = new HashMap<>();
+                if (s.byDate() != null) {
+                    for (Map.Entry<String, JsonNode> d : s.byDate().entrySet()) {
+                        LocalDate date;
+                        try {
+                            date = LocalDate.parse(d.getKey());
+                        } catch (DateTimeParseException ex) {
+                            throw new ApiException(ErrorCode.VALIDATION_ERROR, "Request validation failed",
+                                    List.of(new ErrorResponse.FieldError(field + ".byDate." + d.getKey(),
+                                            "日期格式为 YYYY-MM-DD")));
+                        }
+                        List<InMemoryQuoteTransport.Reply> seq = sequence(field + ".byDate." + d.getKey(),
+                                d.getValue());
+                        if (seq != null) {
+                            byDate.put(date, seq);
+                        }
+                    }
+                }
+                symbols.put(e.getKey(), new InMemoryQuoteTransport.YahooSymbol(byDate,
+                        sequence(field + ".default", s.fallback())));
+            }
+        }
+        return new InMemoryQuoteTransport.Yahoo(sequence("yahoo.handshake", req.handshake()), symbols);
     }
 
     private String bodyText(JsonNode body) {

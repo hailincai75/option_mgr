@@ -1,5 +1,7 @@
 # FEAT-018 单合约 Greeks（只读，实时计算，不存库）
 
+> **FEAT-052 修订**：数据源为 Yahoo（默认）时，`option_quote` 中的 IV 来自 Yahoo，Delta / Gamma / Theta / Vega 由后端在**拉取时**按 Black-Scholes 计算并存储（单位与下文"CBOE 单位"相同：每股、多头视角，theta 每日历天，vega 每 1 个百分点；r 为配置值，q = 0）；本节的读取方式、状态判定、取整都不变，查询时不重算。`greeks` 新增 `source`（`YAHOO` / `CBOE` / `null`）；`manualMarkNote` 对 Yahoo 报价为 `Greeks 按 Yahoo 报价计算（MM-DD HH:mm），未随手动 Mark 调整`，CBOE 旧报价保持原文。表格上方说明按 `GET /api/market-data/status` 的 `optionSource` / `riskFreeRatePercent` 选择（Yahoo 新文字含 `Black-Scholes` 与 `无风险利率 <r>%`）。下文"成功拉取整体替换（含 `null`）"对 Yahoo 改为：只有有效报价（或从未有过有效报价时的 `lastPrice` 兜底）才替换，收盘后 0 报价保留原值（Q265）。见 [FEAT-052.md](FEAT-052.md)。
+
 口径全部已定：Q163–Q173（以及引用的 Q137 / Q141 / Q143 / Q149 / Q150 / Q152 / Q156 / Q161）。行情字段沿用 [FEAT-016.md](FEAT-016.md)，未实现盈亏沿用 [FEAT-017.md](FEAT-017.md)，本节只写**新增**的部分。示例标的均为虚构（QRTV、IXQZ），数字与需求验收一致（今天 2026-11-23 星期一，10:00 拉取成功，报价时间 09:45，multiplier 100）。
 
 **兼容性一览**

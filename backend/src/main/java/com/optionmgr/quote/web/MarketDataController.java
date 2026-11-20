@@ -4,6 +4,7 @@ import com.optionmgr.common.error.ApiException;
 import com.optionmgr.common.error.ErrorCode;
 import com.optionmgr.common.error.ErrorResponse;
 import com.optionmgr.quote.domain.PriceSource;
+import com.optionmgr.quote.domain.QuoteSource;
 import com.optionmgr.quote.domain.SourceResult;
 import com.optionmgr.quote.domain.SymbolResult;
 import com.optionmgr.quote.service.QuoteFetchService;
@@ -46,7 +47,9 @@ public class MarketDataController {
         this.overrides = overrides;
     }
 
-    public record SymbolResultResponse(String symbol, SymbolResult result, SourceResult cboeResult,
+    /** FEAT-052: {@code optionSource}, {@code yahooResult} (null for CBOE); {@code cboeResult} null for Yahoo. */
+    public record SymbolResultResponse(String symbol, SymbolResult result, QuoteSource optionSource,
+                                       SourceResult yahooResult, SourceResult cboeResult,
                                        SourceResult finnhubResult, PriceSource underlyingPriceSource,
                                        String failureDetail) {
     }
@@ -74,8 +77,8 @@ public class MarketDataController {
     }
 
     public static List<SymbolResultResponse> results(List<QuoteFetchService.SymbolOutcome> outcomes) {
-        return outcomes.stream().map(o -> new SymbolResultResponse(o.symbol(), o.result(), o.cboeResult(),
-                o.finnhubResult(), o.underlyingPriceSource(), o.failureDetail())).toList();
+        return outcomes.stream().map(o -> new SymbolResultResponse(o.symbol(), o.result(), o.optionSource(),
+                o.yahooResult(), o.cboeResult(), o.finnhubResult(), o.underlyingPriceSource(), o.failureDetail())).toList();
     }
 
     @PutMapping("/overrides/underlyings/{symbol}")

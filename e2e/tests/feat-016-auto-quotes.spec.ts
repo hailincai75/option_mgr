@@ -234,8 +234,8 @@ test.describe('FEAT-016 自动行情', () => {
         IXQZ: cboe('IXQZ', 61.1, '2026-11-23 10:00:00', [option(OCC_P2, { bid: 0, ask: 0.05 })]),
       },
     })
-    await tickAt('2026-11-23T10:15')
-    await fixNow(page, ny('2026-11-23T10:20'))
+    await tickAt('2026-11-23T11:00')
+    await fixNow(page, ny('2026-11-23T11:05'))
     const ui = new Ui(page)
 
     await ui.open()
@@ -277,13 +277,13 @@ test.describe('FEAT-016 自动行情', () => {
     await expect(ui.warning).toHaveCount(0)
   })
 
-  test('AC6 IXQZ 失败：IXQZ 行 行情未更新（上次：11-23 10:00）、P2 仍 2.20、现价仍 61.10、无顶部提示；之后全部失败超过 30 分钟顶部提示，成功后消失', async ({ page }) => {
+  test('AC6 IXQZ 失败：IXQZ 行 行情未更新（上次：11-23 10:00）、P2 仍 2.20、现价仍 61.10、无顶部提示；之后全部失败超过 90 分钟（Q270）顶部提示，成功后消失', async ({ page }) => {
     const b = await scenario()
     await scenarioSources()
     await tickAt('2026-11-23T10:00')
     await setSources({ cboe: { QRTV: qrtvOk() } })
-    await tickAt('2026-11-23T10:15')
-    await fixNow(page, ny('2026-11-23T10:20'))
+    await tickAt('2026-11-23T11:00')
+    await fixNow(page, ny('2026-11-23T11:05'))
     const ui = new Ui(page)
     await ui.open()
     await ui.switchAccount(b, ACCOUNT_B)
@@ -296,30 +296,29 @@ test.describe('FEAT-016 自动行情', () => {
     await expect(ui.stale(P3)).toHaveCount(0)
     await expect(ui.warning).toHaveCount(0)
 
-    // the last successful run was 10:15 (QRTV); now everything fails at 10:30 and 10:45 (AC's exact 10:00 / 10:31
-    // timeline is covered by the backend system test ac6AllFailTopWarning)
+    // the last successful run was 11:00 (QRTV); now everything fails at 12:00 (Q270 hourly slots; the exact 10:00 / 11:31
+    // timeline is covered by the backend system test ac6AllFailTopWarning); 90-minute threshold
     await setSources({})
-    await tickAt('2026-11-23T10:30')
-    await tickAt('2026-11-23T10:45')
-    await fixNow(page, ny('2026-11-23T10:45'))
+    await tickAt('2026-11-23T12:00')
+    await fixNow(page, ny('2026-11-23T12:30'))
     await ui.open()
     await expect(ui.cell(P2, 'mark')).toHaveText('2.20')
     await expect(ui.warning).toHaveCount(0)
-    await fixNow(page, ny('2026-11-23T10:46'))
+    await fixNow(page, ny('2026-11-23T12:31'))
     await ui.open()
-    await expect(ui.warning).toHaveText('行情未更新（上次：2026-11-23 10:15 美东）')
+    await expect(ui.warning).toHaveText('行情未更新（上次：2026-11-23 11:00 美东）')
     await expect(ui.cell(P2, 'mark')).toHaveText('2.20')
     await expect(ui.cell(P3, 'mark')).toHaveText('1.25')
 
     await scenarioSources()
-    await tickAt('2026-11-23T11:00')
-    await fixNow(page, ny('2026-11-23T11:01'))
+    await tickAt('2026-11-23T13:00')
+    await fixNow(page, ny('2026-11-23T13:01'))
     await ui.open()
     await expect(ui.warning).toHaveCount(0)
     await expect(ui.stale(P2)).toHaveCount(0)
   })
 
-  test('AC8 手动设置 P1 Mark 1.40、QRTV 标的价 52.00 → 各带 手动 11-23 10:05，B 的 P3 也是 1.40；10:15 QRTV 失败仍 1.40；10:30 成功恢复 1.25、52.40；可清除', async ({ page }) => {
+  test('AC8 手动设置 P1 Mark 1.40、QRTV 标的价 52.00 → 各带 手动 11-23 10:05，B 的 P3 也是 1.40；11:00 QRTV 失败仍 1.40；12:00 成功恢复 1.25、52.40；可清除', async ({ page }) => {
     const b = await scenario()
     await scenarioSources()
     await tickAt('2026-11-23T10:00')
@@ -340,15 +339,15 @@ test.describe('FEAT-016 自动行情', () => {
     await expect(ui.cell(P3, 'underlying-price')).toHaveText('52.00')
 
     await setSources({ cboe: { IXQZ: ixqzOk() } })
-    await tickAt('2026-11-23T10:15')
-    await fixNow(page, ny('2026-11-23T10:16'))
+    await tickAt('2026-11-23T11:00')
+    await fixNow(page, ny('2026-11-23T11:01'))
     await ui.open()
     await expect(ui.cell(P3, 'mark')).toHaveText('1.40')
     await expect(ui.row(P3).getByTestId('position-mark-manual')).toBeVisible()
 
     await scenarioSources()
-    await tickAt('2026-11-23T10:30')
-    await fixNow(page, ny('2026-11-23T10:31'))
+    await tickAt('2026-11-23T12:00')
+    await fixNow(page, ny('2026-11-23T12:01'))
     await ui.open()
     await expect(ui.cell(P3, 'mark')).toHaveText('1.25')
     await expect(ui.cell(P3, 'underlying-price')).toHaveText('52.40')

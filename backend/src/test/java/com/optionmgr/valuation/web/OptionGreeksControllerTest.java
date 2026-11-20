@@ -186,16 +186,16 @@ class OptionGreeksControllerTest {
                 greeks("0.3600", "-0.3300", "0.0530", "-0.0470", "0.0720")));
         qrtvTimestamp = "2026-11-23 10:00:00";
         apply();
-        run("2026-11-23T10:15:00");
+        run("2026-11-23T11:00:00");
         assertOk(greeksOf(1, P1), "36.00", "-0.3300", "33.00", "0.0530", "-5.30", "-0.0470", "4.70", "0.0720",
                 "-7.20");
 
         Map<String, Reply> failing = new LinkedHashMap<>();
         failing.put("QRTV", Reply.of(500, "boom"));
         fake.configure(new InMemoryQuoteTransport.Sources(true, failing, new LinkedHashMap<>()));
-        run("2026-11-23T10:30:00");
+        run("2026-11-23T12:00:00");
         JsonNode p1 = position(1, P1);
-        assertThat(p1.at("/optionQuote/staleLabel").asText()).isEqualTo("行情未更新（上次：11-23 10:15）");
+        assertThat(p1.at("/optionQuote/staleLabel").asText()).isEqualTo("行情未更新（上次：11-23 11:00）");
         assertOk(p1.get("greeks"), "36.00", "-0.3300", "33.00", "0.0530", "-5.30", "-0.0470", "4.70", "0.0720",
                 "-7.20");
     }
@@ -231,7 +231,7 @@ class OptionGreeksControllerTest {
         qrtv.put("55C", option("QRTV261218C00055000", "1.80", "1.90",
                 greeks("0.3320", "0.2850", "null", "-0.0390", "null")));
         apply();
-        run("2026-11-23T10:15:00");
+        run("2026-11-23T11:00:00");
         JsonNode p2 = greeksOf(1, P2);
         assertThat(p2.get("status").asText()).isEqualTo("OK");
         assertThat(p2.get("ivPercent").asText()).isEqualTo("33.20");

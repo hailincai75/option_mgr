@@ -333,26 +333,26 @@ test.describe('FEAT-018 单合约 Greeks', () => {
     await ui.expectGreeks(P5, G_P5)
   })
 
-  test('AC6 10:15 拉到新值 → P1 36.00% / +33.00 / −5.30 / +4.70 / −7.20；10:30 起 QRTV 失败（行情未更新（上次：11-23 10:15））→ 仍显示 10:15 的值', async ({ page }) => {
+  test('AC6 11:00 拉到新值 → P1 36.00% / +33.00 / −5.30 / +4.70 / −7.20；12:00 起 QRTV 失败（行情未更新（上次：11-23 11:00））→ 仍显示 11:00 的值', async ({ page }) => {
     await scenarioPulled()
     await setSources({
       QRTV: qrtv('2026-11-23 10:00:00', [greek('QRTV261218P00050000', 1.25, 1.35, 0.36, -0.33, 0.053, -0.047, 0.072), p2Opt()]),
       IXQZ: ixqz('2026-11-23 10:00:00'),
     })
-    await tickAt('2026-11-23T10:15')
-    await fixNow(page, ny('2026-11-23T10:16'))
+    await tickAt('2026-11-23T11:00')
+    await fixNow(page, ny('2026-11-23T11:01'))
     const ui = new Ui(page)
     await ui.open()
     await ui.showGreeks()
     const p1New: G = { iv: '36.00', delta: ['33.00', '-0.3300'], gamma: ['-5.30', '0.0530'], theta: ['4.70', '-0.0470'], vega: ['-7.20', '0.0720'] }
     await ui.expectGreeks(P1, p1New)
 
-    await setSources({ QRTV: { httpStatus: 500, body: null }, IXQZ: ixqz('2026-11-23 10:15:00') })
-    await tickAt('2026-11-23T10:30')
-    await fixNow(page, ny('2026-11-23T10:31'))
+    await setSources({ QRTV: { httpStatus: 500, body: null }, IXQZ: ixqz('2026-11-23 11:00:00') })
+    await tickAt('2026-11-23T12:00')
+    await fixNow(page, ny('2026-11-23T12:01'))
     await ui.open()
     await ui.showGreeks()
-    await expect(ui.row(P1).getByTestId('position-mark-stale')).toHaveText('行情未更新（上次：11-23 10:15）')
+    await expect(ui.row(P1).getByTestId('position-mark-stale')).toHaveText('行情未更新（上次：11-23 11:00）')
     await ui.expectGreeks(P1, p1New)
   })
 
@@ -381,14 +381,14 @@ test.describe('FEAT-018 单合约 Greeks', () => {
     await expect(ui.row(P4).getByTestId('position-greeks-manual-note')).toHaveCount(0)
   })
 
-  test('AC8 10:15 P2 的 gamma、vega 为 null → Gamma、Vega 两列显示 —，IV / Delta / Theta 正常', async ({ page }) => {
+  test('AC8 11:00 P2 的 gamma、vega 为 null → Gamma、Vega 两列显示 —，IV / Delta / Theta 正常', async ({ page }) => {
     await scenarioPulled()
     await setSources({
       QRTV: qrtv('2026-11-23 10:00:00', [p1Opt(), greek('QRTV261218C00055000', 1.8, 1.9, 0.332, 0.285, null, -0.039, null)]),
       IXQZ: ixqz('2026-11-23 10:00:00'),
     })
-    await tickAt('2026-11-23T10:15')
-    await fixNow(page, ny('2026-11-23T10:16'))
+    await tickAt('2026-11-23T11:00')
+    await fixNow(page, ny('2026-11-23T11:01'))
     const ui = new Ui(page)
     await ui.open()
     await ui.showGreeks()

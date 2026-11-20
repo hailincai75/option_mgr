@@ -124,7 +124,7 @@ class Feat019PortfolioGreeksBoundarySystemTest extends Feat019PortfolioGreeksSys
                         greekOption(OCC_C_P1, "1.20", "1.30", "0.3512", null, "0.0512", "-0.0456", null),
                         greekOption(OCC_C_P2, "1.80", "1.90", "0.3320", "0.2850", null, "-0.0390", null)))
                 .cboe("IXQZ", ixqz018("2026-11-23 10:00:00")).apply();
-        tickAt("2026-11-23T10:15", "SCHEDULED");
+        tickAt("2026-11-23T11:00", "SCHEDULED");
 
         JsonNode s = greeksSummary("1");
         JsonNode q = group(s, "QRTV");

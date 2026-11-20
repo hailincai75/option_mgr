@@ -42,7 +42,8 @@ public final class QuoteViews {
     public record Status(boolean stale, String warning, Instant lastSuccessAt, String lastSuccessAtLocal,
                          Instant lastAttemptAt, String lastAttemptAtLocal, Instant lastRefreshAt,
                          String lastRefreshAtLocal, Instant refreshAvailableAt, boolean refreshAllowed,
-                         int trackedSymbolCount) {
+                         int trackedSymbolCount, com.optionmgr.quote.domain.QuoteSource optionSource,
+                         BigDecimal riskFreeRatePercent) {
     }
 
     /** All stored quotes at one moment, for building the position rows of one response. */
@@ -90,9 +91,7 @@ public final class QuoteViews {
         }
         if (expired && o != null && o.quoted() && o.missingSince() == null) {
             // Q150: no longer fetched after expiration - MISSING_FROM_SOURCE with the last quote kept (Q151 label)
-            o = new OptionState(o.contract(), o.occCode(), o.bid(), o.ask(), o.last(), o.theo(), o.iv(), o.delta(),
-                    o.gamma(), o.theta(), o.vega(), o.rho(), o.volume(), o.openInterest(), o.quoteTime(), o.fetchedAt(),
-                    o.quoteTime(), o.manualMark(), o.manualEnteredAt());
+            o = o.withMissingSince(o.quoteTime());
         }
         boolean chainFailed = !index && !expired && underlying != null && underlying.chainFailed();
         Instant lastSuccess = index || underlying == null ? null : underlying.lastChainSuccessAt();
@@ -105,7 +104,7 @@ public final class QuoteViews {
         BigDecimal mark = o.manual() ? o.manualMark() : auto.value();
         ContractStatus status = o.status();
         return new OptionQuote(QuotePrices.display(o.bid()), QuotePrices.display(o.ask()), QuotePrices.display(mark),
-                QuotePrices.display(auto.value()), auto.basis(), o.quoted() ? "CBOE" : null, o.quoteTime(),
+                QuotePrices.display(auto.value()), auto.basis(), o.source() == null ? null : o.source().name(), o.quoteTime(),
                 local(o.quoteTime()), status,
                 status != ContractStatus.MISSING_FROM_SOURCE ? null
                         // Q151: an expired contract (no longer fetched, Q150) says so instead of "数据源已无该合约"

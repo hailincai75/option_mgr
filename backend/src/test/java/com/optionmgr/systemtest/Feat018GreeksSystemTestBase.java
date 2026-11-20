@@ -36,8 +36,8 @@ abstract class Feat018GreeksSystemTestBase extends Feat017UnrealizedSystemTestBa
     static final String C_P7 = "QRTV 2026-11-23 52 P";
     static final String OCC_C_P7 = "QRTV261123P00052000";
 
-    /** Exact field set of {@code positions[].greeks} (no Rho, Q167). */
-    static final List<String> GREEKS_FIELDS = List.of("status", "label", "ivPercent",
+    /** Exact field set of {@code positions[].greeks} (no Rho, Q167; {@code source} added by FEAT-052). */
+    static final List<String> GREEKS_FIELDS = List.of("status", "label", "source", "ivPercent",
             "deltaPerContract", "deltaPosition", "gammaPerContract", "gammaPosition",
             "thetaPerContract", "thetaPosition", "vegaPerContract", "vegaPosition",
             "quoteTime", "quoteTimeLocal", "manualMarkNote");
@@ -46,6 +46,11 @@ abstract class Feat018GreeksSystemTestBase extends Feat017UnrealizedSystemTestBa
 
     static String manualNote(String mmddHHmm) {
         return "Greeks 按 CBOE 报价（" + mmddHHmm + "），未随手动 Mark 调整";
+    }
+
+    /** FEAT-052: the manual-mark note of Greeks computed from a Yahoo quote. */
+    static String yahooManualNote(String mmddHHmm) {
+        return "Greeks 按 Yahoo 报价计算（" + mmddHHmm + "），未随手动 Mark 调整";
     }
 
     // =========================================================================================== fake chain
@@ -155,6 +160,12 @@ abstract class Feat018GreeksSystemTestBase extends Feat017UnrealizedSystemTestBa
                 assertThat(g.get(k + "Position").isNull()).as("%s %sPosition null when %s", label, k, st).isTrue();
             }
             assertThat(g.get("manualMarkNote").isNull()).as("%s manualMarkNote null when %s", label, st).isTrue();
+            if (st.equals("NO_QUOTE")) {
+                assertThat(g.get("source").isNull()).as("%s greeks.source null when never quoted", label).isTrue();
+            } else {
+                assertThat(text(g.get("source"))).as("%s greeks.source when %s (stored source)", label, st)
+                        .isIn("YAHOO", "CBOE", null);
+            }
         } else {
             if (!g.get("ivPercent").isNull()) {
                 assertThat(g.get("ivPercent").isTextual()).as("ivPercent is a string").isTrue();
@@ -180,9 +191,14 @@ abstract class Feat018GreeksSystemTestBase extends Feat017UnrealizedSystemTestBa
             }
             JsonNode oq = row.get("optionQuote");
             boolean manual = oq.get("manual").asBoolean();
+            // FEAT-052: greeks.source = source of the stored quote the Greeks belong to
+            assertThat(text(g.get("source"))).as("greeks.source of %s", label).isIn("YAHOO", "CBOE");
+            assertThat(text(g.get("source"))).as("greeks.source = optionQuote.source of %s", label)
+                    .isEqualTo(text(oq.get("source")));
             if (manual) {
+                String at = mmddHHmm(text(g.get("quoteTimeLocal")));
                 assertThat(text(g.get("manualMarkNote"))).as("manual mark note of %s", label)
-                        .isEqualTo(manualNote(mmddHHmm(text(g.get("quoteTimeLocal")))));
+                        .isEqualTo("YAHOO".equals(text(g.get("source"))) ? yahooManualNote(at) : manualNote(at));
             } else {
                 assertThat(g.get("manualMarkNote").isNull()).as("no manual note of %s", label).isTrue();
             }

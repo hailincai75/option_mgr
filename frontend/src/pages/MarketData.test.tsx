@@ -162,6 +162,8 @@ const STATUS_OK: MarketDataStatus = {
   refreshAvailableAt: null,
   refreshAllowed: true,
   trackedSymbolCount: 2,
+  optionSource: 'CBOE',
+  riskFreeRatePercent: '4.00',
 }
 
 interface Request {
@@ -298,6 +300,38 @@ describe('positions page quotes (FEAT-016)', () => {
     expect(await screen.findByText('来源 Finnhub')).toBeInTheDocument()
   })
 
+  it('shows Yahoo quotes like CBOE ones: LAST mark as is, no source hover (FEAT-052)', async () => {
+    const yahoo = position({
+      symbol: 'QRTV',
+      strike: '45',
+      optionType: 'PUT',
+      underlyingQuote: underlying({ ...QRTV_QUOTE, price: '50.30', automaticPrice: '50.30', source: 'YAHOO' }),
+      optionQuote: optionQuote({
+        ...P1_QUOTE,
+        bid: '0.00',
+        ask: '0.00',
+        mark: '1.10',
+        automaticMark: '1.10',
+        markBasis: 'LAST',
+        source: 'YAHOO',
+        quoteTimeLocal: '2026-11-20T16:00:00',
+      }),
+    })
+    startFakeServer({ positions: [yahoo], status: { ...STATUS_OK, optionSource: 'YAHOO' } })
+    await renderPage()
+
+    const row = rowOf('QRTV 2026-12-18 45 P')
+    expect(cellText(row, 'position-mark')).toBe('1.10')
+    expect(cellText(row, 'position-bid-ask')).toBe('0.00 / 0.00')
+    expect(cellText(row, 'position-quote-time')).toBe('11-20 16:00')
+    const price = within(row).getByTestId('position-underlying-price')
+    expect(price).toHaveTextContent('50.30')
+    expect(price).toHaveAttribute('data-source', 'YAHOO')
+    await userEvent.hover(price)
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(screen.queryByText(/^来源/)).toBeNull()
+  })
+
   it('shows the source-missing and stale labels verbatim (acceptance 5 / 6)', async () => {
     const missing = position({
       symbol: 'QRTV',
@@ -423,6 +457,8 @@ describe('market data top bar (FEAT-016)', () => {
           {
             symbol: 'QRTV',
             result: 'SUCCESS',
+            optionSource: 'CBOE',
+            yahooResult: null,
             cboeResult: 'SUCCESS',
             finnhubResult: null,
             underlyingPriceSource: 'CBOE',

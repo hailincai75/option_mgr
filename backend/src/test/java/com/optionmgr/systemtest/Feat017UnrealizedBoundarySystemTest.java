@@ -131,11 +131,11 @@ class Feat017UnrealizedBoundarySystemTest extends Feat017UnrealizedSystemTestBas
     @DisplayName("bid 0 且无 theo → mark null → NO_QUOTE；未过期合约从链中消失（数据源已无该合约）→ 用最后报价照算")
     void bidZeroNoTheoAndMissingFromSource() {
         scenarioPulled();
-        // 10:15: P2 bid 0 / ask 0.05 without theo; P1 gone from the chain
+        // 11:00: P2 bid 0 / ask 0.05 without theo; P1 gone from the chain
         sources().cboe("QRTV", ok(cboeBody("QRTV", "52.40", "2026-11-23 10:00:00",
                         List.of(option(OCC_C_P2, "bid", "0", "ask", "0.05")))))
                 .cboe("IXQZ", ixqz017("2026-11-23 10:00:00")).apply();
-        tickAt("2026-11-23T10:15", "SCHEDULED");
+        tickAt("2026-11-23T11:00", "SCHEDULED");
 
         JsonNode p2 = optRow("1", C_P2);
         assertThat(p2.get("optionQuote").get("mark").isNull()).isTrue();
@@ -277,7 +277,7 @@ class Feat017UnrealizedBoundarySystemTest extends Feat017UnrealizedSystemTestBas
                         option(OCC_C_P1, "bid", "1.00", "ask", "1.10"),
                         option(OCC_C_P2, "bid", "1.80", "ask", "1.90")))))
                 .cboe("IXQZ", ixqz017("2026-11-23 10:00:00")).apply();
-        tickAt("2026-11-23T10:15", "SCHEDULED");
+        tickAt("2026-11-23T11:00", "SCHEDULED");
         assertThat(val(optRow("1", C_P1))).isEqualTo(okVal("-105.00", "13.70", "11.54"));
         assertThat(grp(summary("1").get("option"))).isEqualTo("180.00 81.75 3/1/0");
         assertThat(val(optRow(accountB, C_P5))).isEqualTo(okVal("-105.00", "15.00", "12.50"));

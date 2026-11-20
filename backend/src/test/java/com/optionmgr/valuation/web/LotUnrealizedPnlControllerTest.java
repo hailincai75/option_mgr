@@ -252,7 +252,7 @@ class LotUnrealizedPnlControllerTest {
 
         cboe.put("ZZQ", Reply.of(500, "boom"));
         fake.configure(new InMemoryQuoteTransport.Sources(true, cboe, new HashMap<>()));
-        run("2026-11-16T10:15:00");
+        run("2026-11-16T11:00:00");
         JsonNode c = position("1", 1, C);
         assertThat(c.at("/optionQuote/fetchFailed").asBoolean()).isTrue();
         assertThat(c.at("/optionQuote/mark").asText()).isEqualTo("0.20");
