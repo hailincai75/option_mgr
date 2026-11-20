@@ -1,3 +1,4 @@
+import { chooseFifoLots } from '../support/closeLots'
 import type { Locator, Page } from '@playwright/test'
 import { BACKEND_URL, setApiAccount } from '../support/backend'
 import { fixNow, nyInstant, setBackendNow } from '../support/clock'
@@ -381,7 +382,7 @@ test.describe('FEAT-017 未实现盈亏与市值', () => {
     await ui.row(P2).getByTestId('position-close').click()
     const modal = ui.id('close-trade-modal')
     await expect(modal.getByRole('dialog')).toBeVisible()
-    await modal.getByTestId('close-trade-contracts-2').check()
+    await chooseFifoLots(modal, 2)
     await modal.getByTestId('close-trade-net-amount').fill('368.70')
     await modal.getByTestId('close-trade-time').fill('2026-11-23T10:03')
     await modal.getByTestId('close-trade-submit').click()

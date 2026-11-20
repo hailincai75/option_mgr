@@ -71,6 +71,7 @@ class OptionTradeCloseControllerTest {
     }
 
     void emptyDatabase() {
+        jdbc.update("DELETE FROM option_close_lot");
         jdbc.update("DELETE FROM option_trade");
         jdbc.update("DELETE FROM cash_ledger_entry");
         jdbc.update("DELETE FROM cash_transfer");
@@ -388,10 +389,10 @@ class OptionTradeCloseControllerTest {
         assertThat(ints(p.get("allowedCloseContracts"))).containsExactly(1);
     }
 
-    // ---------------------------------------------------------------- AC 10 (Q39)
+    // ---------------------------------------------------------------- AC 10 (Q39 cancelled by FEAT-051 / Q255)
 
     @Test
-    void ac10_backfilledCloseRematchesOrIsRejected() throws Exception {
+    void ac10_backfilledCloseKeepsLaterSelectionOrIsRejected() throws Exception {
         deposit("80000.00", "2026-10-26T10:00");
         long a = open("STO", "AAPL", "2026-12-18", "200", "PUT", 1, 100, "349.35", "2026-11-03T10:30");
         long b = open("STO", "AAPL", "2026-12-18", "200", "PUT", 1, 100, "360.00", "2026-11-04T11:00");
@@ -399,55 +400,72 @@ class OptionTradeCloseControllerTest {
         assertThat(later.get("realizedPnl").asText()).isEqualTo("249.35");
         assertSummary("80609.35", "20000.00", "60609.35");
 
+        String taken = "补录后，2026-11-06 10:00 BTC 1 张 AAPL 2026-12-18 200 P 选中的批次 2026-11-03 10:30 STO 1 张 "
+                + "已被更早的平仓平掉";
+        // position first: after a FIFO 2-contract back-fill the later close finds no position
         assertThat(closeRejected(aaplPut("BTC", 2, "200.00", "2026-11-05T10:00"), "NO_POSITION_TO_CLOSE"))
                 .isEqualTo("补录后该合约（AAPL 2026-12-18 200 P）在 2026-11-06 10:00 的 BTC 1 张将没有持仓可平");
+        assertThat(closeRejected(aaplPut("BTC", 1, "120.00", "2026-11-05T10:00"), "CLOSE_LOTS_INVALID"))
+                .isEqualTo(taken);
 
-        JsonNode backfill = closeOk(aaplPut("BTC", 1, "120.00", "2026-11-05T10:00"));
-        assertThat(backfill.get("realizedPnl").asText()).isEqualTo("229.35");
-        assertThat(backfill.get("coveredLots").get(0).get("tradeId").asLong()).isEqualTo(a);
+        JsonNode backfill = closeOk(with(aaplPut("BTC", 1, "120.00", "2026-11-05T10:00"),
+                n -> n.putArray("lotTradeIds").add(b)));
+        assertThat(backfill.get("realizedPnl").asText()).isEqualTo("240.00");
+        assertThat(backfill.get("coveredLots").get(0).get("tradeId").asLong()).isEqualTo(b);
 
         JsonNode reread = getJson("/api/option-trades/" + later.get("id").asLong());
-        assertThat(reread.get("realizedPnl").asText()).isEqualTo("260.00");
-        assertThat(reread.get("coveredLots").get(0).get("tradeId").asLong()).isEqualTo(b);
+        assertThat(reread.get("realizedPnl").asText()).isEqualTo("249.35");
+        assertThat(reread.get("coveredLots").get(0).get("tradeId").asLong()).isEqualTo(a);
         assertSummary("80489.35", "0.00", "80489.35");
         assertThat(position(positions(), "AAPL 2026-12-18 200 P")).isNull();
     }
 
     @Test
-    void q39_rematchCorrectsLaterReleasedFrozen() throws Exception {
+    void storedSelectionKeepsLaterReleasedFrozen() throws Exception {
         // strike 12.345, multiplier 1: lot A (2) freezes 24.69, B and C (1 each) 12.35 (Q28)
         deposit("1000.00", "2026-10-26T10:00");
         open("STO", "F", "2026-12-18", "12.345", "PUT", 2, 1, "1.00", "2026-11-02T10:00");
-        open("STO", "F", "2026-12-18", "12.345", "PUT", 1, 1, "0.50", "2026-11-03T10:00");
-        open("STO", "F", "2026-12-18", "12.345", "PUT", 1, 1, "0.50", "2026-11-04T10:00");
+        long b = open("STO", "F", "2026-12-18", "12.345", "PUT", 1, 1, "0.50", "2026-11-03T10:00");
+        long c = open("STO", "F", "2026-12-18", "12.345", "PUT", 1, 1, "0.50", "2026-11-04T10:00");
         ObjectNode close2 = closeBody("BTC", "F", "2026-12-18", "12.345", "PUT", 2, "0.20", "2026-11-06T10:00");
         JsonNode later = closeOk(close2);
         assertThat(later.get("frozenChange").asText()).isEqualTo("-24.69");
         assertSummary("1001.80", "24.70", "977.10");
 
-        closeOk(with(close2, n -> n.put("tradedAtLocal", "2026-11-05T10:00")));
+        // Q39 would have re-matched the later close to B + C (-24.70); now it keeps A, the back-fill selects B + C
+        closeRejected(with(close2, n -> n.put("tradedAtLocal", "2026-11-05T10:00")), "CLOSE_LOTS_INVALID");
+        JsonNode backfill = closeOk(with(close2, n -> {
+            n.put("tradedAtLocal", "2026-11-05T10:00");
+            n.putArray("lotTradeIds").add(c).add(b);
+        }));
+        assertThat(backfill.get("frozenChange").asText()).isEqualTo("-24.70");
         JsonNode reread = getJson("/api/option-trades/" + later.get("id").asLong());
-        assertThat(reread.get("frozenChange").asText()).isEqualTo("-24.70");
-        assertThat(reread.get("coveredLots")).hasSize(2);
+        assertThat(reread.get("frozenChange").asText()).isEqualTo("-24.69");
+        assertThat(reread.get("coveredLots")).hasSize(1);
         assertSummary("1001.60", "0.00", "1001.60");
         assertThat(positions().get("frozenTotal").asText()).isEqualTo("0.00");
     }
 
     @Test
-    void backfilledOpenMustNotBreakLaterWholeLotClose() throws Exception {
+    void backfilledOpenBeforeALaterCloseBecomesARemainingLot() throws Exception {
         scenarioA();
-        closeOk(aaplPut("BTC", 2, "241.30", "2026-11-05T10:00"));
-        // an earlier 1-contract lot would make the existing 2-contract close cover 1 + ... -> not whole lots
-        JsonNode err = send("/api/option-trades", with(json.createObjectNode(), n -> {
+        long close = closeOk(aaplPut("BTC", 2, "241.30", "2026-11-05T10:00")).get("id").asLong();
+        // FEAT-051: the close keeps L1; the earlier back-filled lot stays open (used to be CLOSE_NOT_WHOLE_LOTS)
+        long l0 = send("/api/option-trades", with(json.createObjectNode(), n -> {
             n.setAll(contract("AAPL", "2026-12-18", "200", "PUT"));
             n.put("action", "STO");
             n.put("contracts", 1);
             n.put("netAmount", "100.00");
             n.put("tradedAtLocal", "2026-11-02T10:00");
-        }), 422);
-        assertThat(err.get("code").asText()).isEqualTo("CLOSE_NOT_WHOLE_LOTS");
-        assertThat(err.get("message").asText()).isEqualTo("补录后该合约（AAPL 2026-12-18 200 P）在 2026-11-05 10:00 "
-                + "的 BTC 2 张将不是整笔开仓（最早一笔是 1 张，可平 1 张、3 张或 4 张）");
+        }), 201).get("id").asLong();
+        JsonNode reread = getJson("/api/option-trades/" + close);
+        assertThat(reread.get("realizedPnl").asText()).isEqualTo("457.40");
+        assertThat(reread.get("coveredLots").get(0).get("tradeId").asLong()).isEqualTo(l1);
+        JsonNode p = position(positions(), "AAPL 2026-12-18 200 P");
+        assertThat(p.get("contracts").asInt()).isEqualTo(2);
+        assertThat(p.get("lots").get(0).get("tradeId").asLong()).isEqualTo(l0);
+        assertThat(p.get("lots").get(1).get("tradeId").asLong()).isEqualTo(l2);
+        assertSummary("80917.40", "40000.00", "40917.40");
     }
 
     // ---------------------------------------------------------------- AC 11

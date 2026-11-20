@@ -1,3 +1,4 @@
+import { chooseLotsByIndex, lotSelection } from '../support/closeLots'
 import type { Locator, Page } from '@playwright/test'
 import { apiLedger, apiTransfer, CashPage, expect, MINUS, nyLocal, test } from '../support/fixtures'
 import { apiTrade } from '../support/trade'
@@ -152,7 +153,11 @@ test.describe('FEAT-005 修改 / 删除 / 审计', () => {
     expect(await page.evaluate(() => (window as unknown as { __noReload?: boolean }).__noReload)).toBe(true)
   })
 
-  test('AC3 修改平仓：显示只读 multiplier；张数 1 被拒（原文、输入保留、不写审计）；改 3 张成功、持仓清空', async ({ page }) => {
+  // FEAT-051 (Q256): a close's edit form has no contracts input any more; contracts follow the ticked lots. Old: typing
+  // 1 张 → CLOSE_NOT_WHOLE_LOTS, typing 3 张 → success. New: the lot list (L1 ticked, L2 not); ticking L2 as well
+  // closes 3 张 (frozen −60,000.00) and the audit shows 被平批次 / 张数 / 冻结变动. "1 张" can no longer be entered; the
+  // "rejection keeps the input, no audit" part moved to the CASH_INSUFFICIENT test below.
+  test('AC3 修改平仓（FEAT-051）：只读 multiplier、没有张数输入、批次列表默认勾 L1；加勾 L2 → 3 张、持仓清空、审计含被平批次', async ({ page }) => {
     await scenarioA()
     const ui = new Ui(page)
     await ui.openTrades()
@@ -160,22 +165,48 @@ test.describe('FEAT-005 修改 / 删除 / 审计', () => {
     await expect(d.getByTestId('trade-edit-action')).toHaveText('BTC（买入平仓）')
     await expect(d.getByTestId('trade-edit-multiplier-readonly')).toHaveText('100')
     await expect(d.getByTestId('trade-edit-multiplier')).toHaveCount(0)
+    await expect(d.getByTestId('trade-edit-contracts')).toHaveCount(0)
     await expect(d.getByTestId('trade-edit-net-amount-label')).toHaveText('实付总额（含手续费）')
-    await d.getByTestId('trade-edit-contracts').fill('1')
-    await d.getByTestId('trade-edit-note').fill('试试')
-    await d.getByTestId('trade-edit-submit').click()
-    await expect(d.getByTestId('trade-edit-error')).toHaveText('必须一次平掉整笔开仓：最早一笔是 2 张，可平 2 张或 3 张')
-    await expect(d.getByTestId('trade-edit-error')).toHaveAttribute('data-error-code', 'CLOSE_NOT_WHOLE_LOTS')
-    await expect(d.getByTestId('trade-edit-contracts')).toHaveValue('1')
-    await expect(d.getByTestId('trade-edit-note')).toHaveValue('试试')
-    expect(await auditCount()).toBe(0)
-    await d.getByTestId('trade-edit-contracts').fill('3')
-    await d.getByTestId('trade-edit-note').fill('')
+    await expect(d.getByTestId('trade-edit-lot-row')).toHaveCount(2)
+    expect(await lotSelection(d, 'trade-edit')).toEqual([true, false])
+    await expect(d.getByTestId('trade-edit-lots-total')).toHaveText('平仓张数：2')
+
+    await chooseLotsByIndex(d, [1, 2], 'trade-edit')
+    await expect(d.getByTestId('trade-edit-lots-total')).toHaveText('平仓张数：3')
     await d.getByTestId('trade-edit-submit').click()
     await expect(ui.dialog('trade-edit-modal')).toBeHidden()
     await expect(ui.tradeRow(3).getByTestId('trade-cell-frozen')).toHaveText(`${MINUS}60,000.00`)
+    await expect(ui.tradeRow(3).getByTestId('trade-cell-contracts')).toHaveText('3')
     await page.getByTestId('nav-positions').click()
     await expect(page.getByTestId('positions-count')).toHaveText('共 0 个持仓')
+    await page.getByTestId('nav-audit').click()
+    const [first] = await ui.auditRows()
+    expect(first).toMatchObject({
+      op: '修改',
+      object: '期权交易 #3',
+      changes: [
+        '被平批次：2026-11-03 10:30 2 张 → 2026-11-03 10:30 2 张、2026-11-04 11:00 1 张',
+        '张数：2 → 3',
+        `冻结变动：${MINUS}40,000.00 → ${MINUS}60,000.00`,
+      ],
+    })
+  })
+
+  test('FEAT-051 修改平仓被后端拒绝（CASH_INSUFFICIENT）：原文显示、勾选与输入保留、不写审计', async ({ page }) => {
+    await scenarioA()
+    // leave 60,817.40 − 60,000 = 817.40 available after 11-06 so that releasing L2 instead of L1 is short of cash
+    await apiTransfer('WITHDRAWAL', '60000.00', '2026-11-06T10:00')
+    const ui = new Ui(page)
+    await ui.openTrades()
+    const d = await ui.openEdit(3)
+    await chooseLotsByIndex(d, [2], 'trade-edit')
+    await d.getByTestId('trade-edit-note').fill('保留')
+    await d.getByTestId('trade-edit-submit').click()
+    await expect(d.getByTestId('trade-edit-error')).toHaveAttribute('data-error-code', 'CASH_INSUFFICIENT')
+    await expect(d.getByTestId('trade-edit-error')).not.toHaveText('')
+    expect(await lotSelection(d, 'trade-edit')).toEqual([false, true])
+    await expect(d.getByTestId('trade-edit-note')).toHaveValue('保留')
+    expect(await auditCount()).toBe(0)
   })
 
   test('AC4+AC5 修改开仓张数/时间被拒原文；未来时间为字段错误', async ({ page }) => {
@@ -185,25 +216,35 @@ test.describe('FEAT-005 修改 / 删除 / 审计', () => {
     const d = await ui.openEdit(1)
     await d.getByTestId('trade-edit-contracts').fill('3')
     await d.getByTestId('trade-edit-submit').click()
+    // FEAT-051 (Q255): old CLOSE_NOT_WHOLE_LOTS "…将不是整笔开仓（最早一笔是 3 张…）" → CLOSE_LOTS_INVALID
     await expect(d.getByTestId('trade-edit-error')).toHaveText(
-      '修改后该合约（AAPL 2026-12-18 200 P）在 2026-11-05 10:00 的 BTC 2 张将不是整笔开仓（最早一笔是 3 张，可平 3 张或 4 张）',
+      '修改后，2026-11-05 10:00 BTC 2 张 AAPL 2026-12-18 200 P 选中的批次 2026-11-03 10:30 STO 3 张 张数与平仓不一致（所选批次共 3 张，平仓 2 张）',
     )
+    await expect(d.getByTestId('trade-edit-error')).toHaveAttribute('data-error-code', 'CLOSE_LOTS_INVALID')
     await d.getByTestId('trade-edit-contracts').fill('2')
     await d.getByTestId('trade-edit-time').fill('2026-11-06T10:00')
     await d.getByTestId('trade-edit-submit').click()
-    await expect(d.getByTestId('trade-edit-error')).toHaveText('修改后该合约（AAPL 2026-12-18 200 P）在 2026-11-05 10:00 的 BTC 2 张将超过当时持仓 1 张')
+    // FEAT-051: old CLOSE_EXCEEDS_POSITION "…将超过当时持仓 1 张" → CLOSE_LOTS_INVALID (L1 not yet open at the close)
+    await expect(d.getByTestId('trade-edit-error')).toHaveText(
+      '修改后，2026-11-05 10:00 BTC 2 张 AAPL 2026-12-18 200 P 选中的批次 2026-11-06 10:00 STO 2 张 在该平仓成交时还未开仓',
+    )
     await d.getByTestId('trade-edit-time').fill(nyLocal(new Date(Date.now() + 3600_000)))
     await d.getByTestId('trade-edit-submit').click()
     await expect(ui.fieldError(d, 'trade-edit-time')).toHaveText('成交时间不能晚于当前时间')
     await d.getByTestId('trade-edit-cancel').click()
 
-    // AC4 success: L1 2 → 1
+    // AC4 L1 2 → 1: old = success (C1 re-matched to L1 + L2, 80,817.40 / 0.00 / 80,817.40); FEAT-051: rejected, C1
+    // keeps L1 (2 张) so the count no longer matches; nothing changes
     const d2 = await ui.openEdit(1)
     await d2.getByTestId('trade-edit-contracts').fill('1')
     await d2.getByTestId('trade-edit-submit').click()
-    await expect(ui.dialog('trade-edit-modal')).toBeHidden()
+    await expect(d2.getByTestId('trade-edit-error')).toHaveText(
+      '修改后，2026-11-05 10:00 BTC 2 张 AAPL 2026-12-18 200 P 选中的批次 2026-11-03 10:30 STO 1 张 张数与平仓不一致（所选批次共 1 张，平仓 2 张）',
+    )
+    await d2.getByTestId('trade-edit-cancel').click()
+    expect(await auditCount()).toBe(0)
     await page.getByTestId('nav-cash').click()
-    await new CashPage(page).expectSummary('80,817.40', '0.00', '80,817.40')
+    await new CashPage(page).expectSummary('80,817.40', '20,000.00', '60,817.40')
   })
 
   test('AC6 删除：L1 被拒原文且对话框保留；L2 删除成功，列表/持仓/流水/审计更新', async ({ page }) => {
@@ -214,9 +255,11 @@ test.describe('FEAT-005 修改 / 删除 / 审计', () => {
     await expect(d.getByTestId('trade-delete-summary')).toHaveText('STO 2 张 AAPL 2026-12-18 200 P，2026-11-03 10:30，+698.70')
     await expect(d.getByText('删除后不可恢复，会写入审计记录').first()).toBeVisible()
     await d.getByTestId('trade-delete-confirm').click()
+    // FEAT-051: old "（删除后那笔平仓将超过当时持仓 1 张）" CLOSE_EXCEEDS_POSITION → "（所选批次 …）" CLOSE_LOTS_INVALID
     await expect(d.getByTestId('trade-delete-error')).toHaveText(
-      '该开仓被 2026-11-05 10:00 的 BTC 2 张平掉（删除后那笔平仓将超过当时持仓 1 张），请先修改或删除那笔平仓',
+      '该开仓被 2026-11-05 10:00 的 BTC 2 张平掉（所选批次 2026-11-03 10:30 STO 2 张），请先修改或删除那笔平仓',
     )
+    await expect(d.getByTestId('trade-delete-error')).toHaveAttribute('data-error-code', 'CLOSE_LOTS_INVALID')
     await expect(d).toBeVisible()
     await d.getByTestId('trade-delete-cancel').click()
     await expect(ui.dialog('trade-delete-modal')).toBeHidden()
@@ -338,7 +381,11 @@ test.describe('FEAT-005 修改 / 删除 / 审计', () => {
     await expect(del).toBeVisible()
   })
 
-  test('AC10 连带变化：改 F1 张数 1 → 2，审计页同一行显示两条改动和"交易 #3 BTC 冻结变动 −24.70 → −24.69"', async ({ page }) => {
+  // FEAT-051 (Q255): old = F1 1 → 2 succeeded, FC re-matched to F1 alone and its frozen change was corrected
+  // −24.70 → −24.69 (side effect "交易 #3 BTC 冻结变动 …" in the same audit row). New: FC keeps F1 + F2, so changing
+  // F1's contracts is rejected (CLOSE_LOTS_INVALID), nothing changes, no audit; editing only F1's net is allowed and
+  // has no BTC side effect.
+  test('AC10（FEAT-051）：改 F1 张数 1 → 2 → CLOSE_LOTS_INVALID（指出 FC 与批次）、什么都不变；只改 F1 净额成功且没有连带变化', async ({ page }) => {
     await apiTransfer('DEPOSIT', '100.00', '2026-10-26T10:00')
     for (const time of ['2026-11-02T10:00', '2026-11-03T10:00']) {
       await apiTrade({ action: 'STO', symbol: 'F', strike: '12.345', type: 'PUT', netAmount: '0.50', time, multiplier: 1 })
@@ -350,18 +397,27 @@ test.describe('FEAT-005 修改 / 删除 / 审计', () => {
     await expect(d.getByTestId('trade-edit-multiplier')).toHaveValue('1')
     await d.getByTestId('trade-edit-contracts').fill('2')
     await d.getByTestId('trade-edit-submit').click()
+    await expect(d.getByTestId('trade-edit-error')).toHaveAttribute('data-error-code', 'CLOSE_LOTS_INVALID')
+    // which of the two chosen lots the message names is not fixed by the contract for a multi-lot close
+    await expect(d.getByTestId('trade-edit-error')).toContainText('修改后，2026-11-05 10:00 BTC 2 张 F 2026-12-18 12.345 P 选中的批次 ')
+    await expect(d.getByTestId('trade-edit-error')).toContainText('张数与平仓不一致（所选批次共 3 张，平仓 2 张）')
+    await expect(d.getByTestId('trade-edit-contracts')).toHaveValue('2')
+    expect(await auditCount()).toBe(0)
+    await d.getByTestId('trade-edit-contracts').fill('1')
+    await d.getByTestId('trade-edit-net-amount').fill('0.60')
+    await d.getByTestId('trade-edit-submit').click()
     await expect(ui.dialog('trade-edit-modal')).toBeHidden()
-    await expect(ui.tradeRow(3).getByTestId('trade-cell-frozen')).toHaveText(`${MINUS}24.69`)
+    await expect(ui.tradeRow(3).getByTestId('trade-cell-frozen')).toHaveText(`${MINUS}24.70`)
     await page.getByTestId('nav-cash').click()
-    await new CashPage(page).expectSummary('100.80', '12.35', '88.45')
+    await new CashPage(page).expectSummary('100.90', '0.00', '100.90')
     await page.getByTestId('nav-audit').click()
     expect(await ui.auditRows()).toEqual([
       {
         op: '修改',
         object: '期权交易 #1',
         summary: expect.stringContaining('F 2026-12-18 12.345 P') as unknown as string,
-        changes: ['张数：1 → 2', '冻结变动：+12.35 → +24.69'],
-        side: [`交易 #3 BTC 冻结变动 ${MINUS}24.70 → ${MINUS}24.69`],
+        changes: ['净额：0.50 → 0.60'],
+        side: [],
       },
     ])
   })

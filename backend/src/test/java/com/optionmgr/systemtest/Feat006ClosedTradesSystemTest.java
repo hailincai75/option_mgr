@@ -266,7 +266,7 @@ class Feat006ClosedTradesSystemTest extends OptionTradeSystemTestBase {
     // ------------------------------------------------------------------ AC 5 (re-matching)
 
     @Test
-    @DisplayName("AC5 补录 Y → X +260.00 / Y +229.35；改 L2 净额 → X +265.00；删 Y → X +249.35")
+    @DisplayName("AC5（FEAT-051 / Q255）补录 Y（FIFO → L1）被拒；Y 选 L2 → X +249.35（仍 L1）/ Y +240.00；改 L2 净额 → Y +245.00；删 Y → X +249.35")
     void ac5_rematching() {
         deposit("80000.00", "2026-10-26T10:00");
         open("L1", "STO", 1, "AAPL", "2026-12-18", "200", "PUT", "349.35", "2026-11-03T10:30", 100);
@@ -275,13 +275,33 @@ class Feat006ClosedTradesSystemTest extends OptionTradeSystemTestBase {
         assertThat(labelsOf("", 1, "249.35")).containsExactly("X");
         assertThat(lots(closed("").get("items").get(0)).get(0)).startsWith("L1 ");
 
-        close("Y", "BTC", 1, "AAPL", "2026-12-18", "200", "PUT", "120.00", "2026-11-05T10:00", null);
+        // old: the FIFO backfill succeeded and X was re-matched to L2 (X +260.00, Y +229.35, later X +265.00)
+        ObjectNode fifo = json.createObjectNode();
+        fifo.put("symbol", "AAPL");
+        fifo.put("expirationDate", "2026-12-18");
+        fifo.put("strike", "200");
+        fifo.put("optionType", "PUT");
+        fifo.put("action", "BTC");
+        fifo.put("contracts", 1);
+        fifo.put("netAmount", "120.00");
+        fifo.put("tradedAtLocal", "2026-11-05T10:00");
+        Resp rejected = postRaw("/api/option-trades/closes", fifo.toString(), MediaType.APPLICATION_JSON);
+        assertErrorShape(rejected, 422, "CLOSE_LOTS_INVALID", "/api/option-trades/closes");
+        assertThat(rejected.body().get("message").asText())
+                .isEqualTo("补录后，2026-11-06 10:00 BTC 1 张 AAPL 2026-12-18 200 P 选中的批次 2026-11-03 10:30 STO 1 张 已被更早的平仓平掉");
+
+        fifo.remove("contracts");
+        fifo.putArray("lotTradeIds").add(ids.get("L2"));
+        Resp y = postRaw("/api/option-trades/closes", fifo.toString(), MediaType.APPLICATION_JSON);
+        assertThat(y.status()).as("%s", y.body()).isEqualTo(201);
+        labels.put(y.body().get("id").asLong(), "Y");
+        ids.put("Y", y.body().get("id").asLong());
         assertThat(labelsOf("", 2, "489.35")).containsExactly("X", "Y");
         JsonNode items = closed("").get("items");
-        assertThat(items.get(0).get("realizedPnl").asText()).isEqualTo("260.00");
-        assertThat(lots(items.get(0)).get(0)).startsWith("L2 ");
-        assertThat(items.get(1).get("realizedPnl").asText()).isEqualTo("229.35");
-        assertThat(lots(items.get(1)).get(0)).startsWith("L1 ");
+        assertThat(items.get(0).get("realizedPnl").asText()).isEqualTo("249.35");
+        assertThat(lots(items.get(0)).get(0)).startsWith("L1 ");
+        assertThat(items.get(1).get("realizedPnl").asText()).isEqualTo("240.00");
+        assertThat(lots(items.get(1)).get(0)).startsWith("L2 ");
 
         ObjectNode edit = json.createObjectNode();
         edit.put("contracts", 1);
@@ -291,7 +311,9 @@ class Feat006ClosedTradesSystemTest extends OptionTradeSystemTestBase {
         Resp put = exchange(HttpMethod.PUT, TRADES + "/" + ids.get("L2"), edit.toString(), MediaType.APPLICATION_JSON);
         assertThat(put.status()).isEqualTo(200);
         assertThat(labelsOf("", 2, "494.35")).containsExactly("X", "Y");
-        assertThat(closed("").get("items").get(0).get("realizedPnl").asText()).isEqualTo("265.00");
+        // old: X +265.00 (X had been re-matched to L2); now Y (which chose L2) changes, X stays +249.35
+        assertThat(closed("").get("items").get(0).get("realizedPnl").asText()).isEqualTo("249.35");
+        assertThat(closed("").get("items").get(1).get("realizedPnl").asText()).isEqualTo("245.00");
 
         Resp del = exchange(HttpMethod.DELETE, TRADES + "/" + ids.get("Y"), null, MediaType.APPLICATION_JSON);
         assertThat(del.status()).isEqualTo(204);

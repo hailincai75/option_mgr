@@ -398,8 +398,24 @@ class Feat004CloseTradeSystemTest extends OptionTradeSystemTestBase {
 
     // ------------------------------------------------------------------ AC 10 (Q39) and backfills
 
+    /** FEAT-051: same close body plus lotTradeIds (chosen-lots mode). */
+    ObjectNode withLots(ObjectNode close, long... lots) {
+        close.remove("contracts");
+        com.fasterxml.jackson.databind.node.ArrayNode arr = close.putArray("lotTradeIds");
+        for (long l : lots) {
+            arr.add(l);
+        }
+        return close;
+    }
+
+    /*
+     * FEAT-051 (Q255 cancels Q39): the four tests below changed their expected results — closes keep the lots they
+     * were saved with; a backfill / edit that would take a later close's lot is rejected with CLOSE_LOTS_INVALID
+     * instead of re-matching. Old expectations are kept in the comments.
+     */
+
     @Test
-    @DisplayName("AC10 补录 BTC 2 张让之后的平仓没有持仓 → 拒绝；补录 BTC 1 张成功，之后那笔改平 L2、盈亏 +260.00")
+    @DisplayName("AC10（FEAT-051 / Q255）补录 BTC 2 张让之后的平仓没有持仓 → 拒绝（不变）；补录 BTC 1 张（FIFO 选到之后那笔的 a）→ CLOSE_LOTS_INVALID；改选 b 补录 +240.00，之后那笔仍是 a +249.35")
     void ac10_backdatedCloseRematch() {
         deposit("80000.00", "2026-10-26T10:00");
         long a = open("STO", 1, "AAPL", "2026-12-18", "200", "PUT", "349.35", "2026-11-03T10:30", 100);
@@ -409,52 +425,63 @@ class Feat004CloseTradeSystemTest extends OptionTradeSystemTestBase {
         assertThat(later.get("realizedPnl").asText()).isEqualTo("249.35");
         assertSummary("80609.35", "20000.00", "60609.35");
 
+        // unchanged: the later close has no position left at all → checked first (contract replay step 1)
         assertThat(rejectedClose(aaplClose("BTC", 2, "200.00", "2026-11-05T10:00"), "NO_POSITION_TO_CLOSE"))
                 .isEqualTo("补录后该合约（AAPL 2026-12-18 200 P）在 2026-11-06 10:00 的 BTC 1 张将没有持仓可平");
 
-        JsonNode back = okClose(aaplClose("BTC", 1, "120.00", "2026-11-05T10:00"));
-        assertThat(covered(back)).containsExactly(a + " STO 1 349.35 20000.00");
-        assertThat(back.get("realizedPnl").asText()).isEqualTo("229.35");
+        // old: 201, back = a (+229.35), later re-matched to b (+260.00)
+        assertThat(rejectedClose(aaplClose("BTC", 1, "120.00", "2026-11-05T10:00"), "CLOSE_LOTS_INVALID"))
+                .isEqualTo("补录后，2026-11-06 10:00 BTC 1 张 AAPL 2026-12-18 200 P 选中的批次 2026-11-03 10:30 STO 1 张 已被更早的平仓平掉");
+
+        JsonNode back = okClose(withLots(aaplClose("BTC", 1, "120.00", "2026-11-05T10:00"), b));
+        assertThat(covered(back)).containsExactly(b + " STO 1 360.00 20000.00");
+        assertThat(back.get("realizedPnl").asText()).isEqualTo("240.00");
         JsonNode re = getTrade(later.get("id").asLong());
-        assertThat(covered(re)).containsExactly(b + " STO 1 360.00 20000.00");
-        assertThat(re.get("realizedPnl").asText()).isEqualTo("260.00");
+        assertThat(covered(re)).containsExactly(a + " STO 1 349.35 20000.00");
+        assertThat(re.get("realizedPnl").asText()).isEqualTo("249.35");
         assertSummary("80489.35", "0.00", "80489.35");
         assertThat(position("AAPL 2026-12-18 200 P")).isNull();
-        // list shows the re-matched values as well
         for (JsonNode item : get("/api/option-trades?action=BTC").body().get("items")) {
             assertThat(item).isEqualTo(getTrade(item.get("id").asLong()));
         }
     }
 
     @Test
-    @DisplayName("Q39 补录使之后平仓超过持仓 → CLOSE_EXCEEDS_POSITION")
+    @DisplayName("（FEAT-051 / Q255）补录 BTC 2 张（FIFO → L1）而之后的 BTC 3 张已选 L1 + L2 → CLOSE_LOTS_INVALID（原为 CLOSE_EXCEEDS_POSITION）")
     void backfillMakesLaterCloseExceed() {
         scenarioA();
         okClose(aaplClose("BTC", 3, "400.00", "2026-11-06T10:00"));
-        assertThat(rejectedClose(aaplClose("BTC", 2, "100.00", "2026-11-05T10:00"), "CLOSE_EXCEEDS_POSITION"))
-                .isEqualTo("补录后该合约（AAPL 2026-12-18 200 P）在 2026-11-06 10:00 的 BTC 3 张将超过当时持仓 1 张");
+        // old: CLOSE_EXCEEDS_POSITION "补录后该合约（AAPL 2026-12-18 200 P）在 2026-11-06 10:00 的 BTC 3 张将超过当时持仓 1 张"
+        assertThat(rejectedClose(aaplClose("BTC", 2, "100.00", "2026-11-05T10:00"), "CLOSE_LOTS_INVALID"))
+                .isEqualTo("补录后，2026-11-06 10:00 BTC 3 张 AAPL 2026-12-18 200 P 选中的批次 2026-11-03 10:30 STO 2 张 已被更早的平仓平掉");
     }
 
     @Test
-    @DisplayName("Q27 补录较早开仓使之后的平仓不再是整笔批次 → CLOSE_NOT_WHOLE_LOTS（开仓接口）")
+    @DisplayName("（FEAT-051 / Q255）补录较早开仓不再改变之后平仓的批次 → 允许（原为 CLOSE_NOT_WHOLE_LOTS）：平仓仍为 L1 +457.40，新开仓成为剩余批次")
     void backdatedOpenBreaksLaterClose() {
         scenarioA();
-        okClose(aaplClose("BTC", 2, "241.30", "2026-11-05T10:00"));
-        State before = state();
-        Resp r = postTrade(trade("STO", 1, "AAPL", "2026-12-18", "200", "PUT", "100.00", "2026-11-02T10:00", 100));
-        assertErrorShape(r, 422, "CLOSE_NOT_WHOLE_LOTS", TRADES);
-        assertThat(r.body().get("message").asText())
-                .isEqualTo("补录后该合约（AAPL 2026-12-18 200 P）在 2026-11-05 10:00 的 BTC 2 张将不是整笔开仓（最早一笔是 1 张，可平 1 张、3 张或 4 张）");
-        assertThat(state()).isEqualTo(before);
+        JsonNode c = okClose(aaplClose("BTC", 2, "241.30", "2026-11-05T10:00"));
+        // old: 422 CLOSE_NOT_WHOLE_LOTS "补录后该合约（AAPL 2026-12-18 200 P）在 2026-11-05 10:00 的 BTC 2 张将不是整笔开仓（最早一笔是 1 张，可平 1 张、3 张或 4 张）"
+        long early = open("STO", 1, "AAPL", "2026-12-18", "200", "PUT", "100.00", "2026-11-02T10:00", 100);
+        JsonNode same = getTrade(c.get("id").asLong());
+        assertThat(covered(same)).containsExactly(l1 + " STO 2 698.70 40000.00");
+        assertThat(same.get("realizedPnl").asText()).isEqualTo("457.40");
+        assertThat(same.get("frozenChange").asText()).isEqualTo("-40000.00");
+        JsonNode p = position("AAPL 2026-12-18 200 P");
+        assertThat(p.get("contracts").asInt()).isEqualTo(2);
+        List<Long> lotIds = new ArrayList<>();
+        p.get("lots").forEach(l -> lotIds.add(l.get("tradeId").asLong()));
+        assertThat(lotIds).containsExactly(early, l2);
+        assertSummary("80917.40", "40000.00", "40917.40");
         // an opposite-direction backfill before the first lot conflicts with the later STO (FEAT-001 rule)
-        Resp conflict = postTrade(trade("BTO", 1, "AAPL", "2026-12-18", "200", "PUT", "1.00", "2026-11-02T10:00", 100));
+        Resp conflict = postTrade(trade("BTO", 1, "AAPL", "2026-12-18", "200", "PUT", "1.00", "2026-11-02T09:00", 100));
         assertErrorShape(conflict, 422, "POSITION_DIRECTION_CONFLICT", TRADES);
         // a backdated open after the close is fine
         open("STO", 1, "AAPL", "2026-12-18", "200", "PUT", "100.00", "2026-11-05T11:00", 100);
     }
 
     @Test
-    @DisplayName("Q28 + Q39：补录平仓使之后那笔改平 2 张批次，释放额 24.70 → 24.69 原地改正，冻结合计一致")
+    @DisplayName("（FEAT-051 / Q255）Q28：补录 BTC 2 张（FIFO → a + b）而之后那笔已选 a + b → CLOSE_LOTS_INVALID；改选 c 补录释放 24.69，之后那笔仍释放 24.70、流水不再被改正，冻结合计一致")
     void frozenCorrectionOnRematch() {
         deposit("1000.00", "2026-10-26T10:00");
         long a = open("STO", 1, "F", "2026-12-18", "12.345", "PUT", "0.50", "2026-11-03T10:00", 1);
@@ -468,14 +495,22 @@ class Feat004CloseTradeSystemTest extends OptionTradeSystemTestBase {
         assertThat(later.get("realizedPnl").asText()).isEqualTo("0.90");
         assertSummary("1001.40", "24.69", "976.71");
 
-        JsonNode back = okClose(close("BTC", 2, "F", "2026-12-18", "12.345", "PUT", "0.10", "2026-11-06T10:00"));
-        assertThat(back.get("frozenChange").asText()).isEqualTo("-24.70");
+        // old: 201 (back took a + b), later re-matched to c with frozenChange corrected in place −24.70 → −24.69
+        assertThat(rejectedClose(close("BTC", 2, "F", "2026-12-18", "12.345", "PUT", "0.10", "2026-11-06T10:00"),
+                "CLOSE_LOTS_INVALID"))
+                .isEqualTo("补录后，2026-11-07 10:00 BTC 2 张 F 2026-12-18 12.345 P 选中的批次 2026-11-03 10:00 STO 1 张 已被更早的平仓平掉");
+
+        JsonNode back = okClose(withLots(close("BTC", 2, "F", "2026-12-18", "12.345", "PUT", "0.10",
+                "2026-11-06T10:00"), c));
+        assertThat(back.get("frozenChange").asText()).isEqualTo("-24.69");
+        assertThat(covered(back)).containsExactly(c + " STO 2 0.50 24.69");
+        assertThat(back.get("realizedPnl").asText()).isEqualTo("0.40");
         JsonNode re = getTrade(later.get("id").asLong());
-        assertThat(covered(re)).containsExactly(c + " STO 2 0.50 24.69");
-        assertThat(re.get("frozenChange").asText()).isEqualTo("-24.69");
-        assertThat(re.get("realizedPnl").asText()).isEqualTo("0.40");
+        assertThat(covered(re)).containsExactly(a + " STO 1 0.50 12.35", b + " STO 1 0.50 12.35");
+        assertThat(re.get("frozenChange").asText()).isEqualTo("-24.70");
+        assertThat(re.get("realizedPnl").asText()).isEqualTo("0.90");
         assertThat(ledgerRowFor("OPTION_CLOSE", later.get("id").asLong()).get("frozenChange").asText())
-                .isEqualTo("-24.69");
+                .isEqualTo("-24.70");
         assertThat(ledgerRowFor("OPTION_CLOSE", later.get("id").asLong()).get("amount").asText()).isEqualTo("-0.10");
         assertSummary("1001.30", "0.00", "1001.30");
         assertThat(positions().get("positionCount").asInt()).isZero();

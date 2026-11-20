@@ -1,5 +1,6 @@
 import { ApiError, apiRequest } from './client'
 import type {
+  CloseLotChoicesResponse,
   CreateAssignmentRequest,
   CreateCloseTradeRequest,
   CreateExerciseRequest,
@@ -176,6 +177,31 @@ export function updateOptionTrade(
     method: 'PUT',
     body: request,
   })
+}
+
+/**
+ * FEAT-051: query key of a close's selectable lots. Under `optionTradeQueryKeys.all`, so any trade
+ * change (which invalidates `["option-trades"]`) refreshes it.
+ */
+export function closeLotChoicesQueryKey(id: number, tradedAtLocal: string | null) {
+  return ['option-trades', id, 'close-lot-choices', tradedAtLocal] as const
+}
+
+/**
+ * `GET /api/option-trades/{id}/close-lot-choices[?tradedAtLocal=]` → 200 (FEAT-051, Q256): the lots
+ * the close can choose at its (current or given) trade time; `selected` marks its current choice.
+ */
+export function getCloseLotChoices(
+  id: number,
+  tradedAtLocal: string | null,
+  signal?: AbortSignal,
+): Promise<CloseLotChoicesResponse> {
+  const query =
+    tradedAtLocal === null ? '' : `?${new URLSearchParams({ tradedAtLocal }).toString()}`
+  return apiRequest<CloseLotChoicesResponse>(
+    `/api/option-trades/${String(id)}/close-lot-choices${query}`,
+    { signal },
+  )
 }
 
 /** `DELETE /api/option-trades/{id}` → 204 (FEAT-005). */

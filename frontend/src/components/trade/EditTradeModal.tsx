@@ -1,8 +1,13 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Alert, App, Button, Descriptions, Form, Input, Modal, Space, Typography } from 'antd'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Alert, App, Button, Descriptions, Form, Input, Modal, Space, Spin, Typography } from 'antd'
 import { useState } from 'react'
-import { updateOptionTrade } from '../../api/optionTrades'
+import {
+  closeLotChoicesQueryKey,
+  getCloseLotChoices,
+  updateOptionTrade,
+} from '../../api/optionTrades'
 import type { OptionTrade } from '../../api/types'
+import { CloseLotPicker, type CloseLotOption } from './CloseLotPicker'
 import {
   normalizeDecimal,
   NOTE_MAX_LENGTH,
@@ -38,6 +43,14 @@ const FIELD_NAMES: readonly (keyof EditTradeValues)[] = [
   'note',
 ]
 
+const CLOSE_FIELD_NAMES: readonly (keyof EditTradeValues)[] = ['netAmount', 'tradedAtLocal', 'note']
+
+/** FEAT-051 hint above the lot list of a close being edited. */
+const EDIT_LOTS_HINT = '选择要整笔平掉的开仓批次（默认勾选这笔平仓当前的被平批次）'
+
+/** A complete `datetime-local` value; only these are sent as the lot-choices time. */
+const LOCAL_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/
+
 /** "2026-11-04T11:00:00" → "2026-11-04T11:00" (seconds kept when not zero). */
 function toInputValue(local: string): string {
   return local.length === 19 && local.endsWith(':00') ? local.slice(0, 16) : local
@@ -49,9 +62,11 @@ interface EditTradeModalProps {
 }
 
 /**
- * 修改交易 dialog (FEAT-005, Q43). Editable: contracts, net amount, trade time, note and — for
- * opens only — multiplier. Contract and direction are read-only (delete and re-enter instead).
- * `PUT /api/option-trades/{id}` replaces all editable fields, so every field is always sent.
+ * 修改交易 dialog (FEAT-005, Q43). Editable: net amount, trade time, note; opens also contracts and
+ * multiplier; closes (FEAT-051, Q256) their chosen lots instead of contracts (from
+ * `GET /api/option-trades/{id}/close-lot-choices`, refetched for a changed trade time; sent as
+ * `lotTradeIds`, contracts omitted). Contract and direction are read-only (delete and re-enter
+ * instead). `PUT /api/option-trades/{id}` replaces all editable fields, so every field is always sent.
  */
 export function EditTradeModal({ trade, onDone }: EditTradeModalProps) {
   const [form] = Form.useForm<EditTradeValues>()
@@ -60,15 +75,61 @@ export function EditTradeModal({ trade, onDone }: EditTradeModalProps) {
   const [submitError, setSubmitError] = useState<SubmitError | null>(null)
   const closing = isClosingAction(trade.action)
 
+  const initialTime = toInputValue(trade.tradedAtLocal)
+
+  // FEAT-051 (Q256): a close picks its lots from the backend's choices at the form's trade time.
+  const watchedTime: unknown = Form.useWatch('tradedAtLocal', form)
+  const choicesTime =
+    closing &&
+    typeof watchedTime === 'string' &&
+    watchedTime !== initialTime &&
+    LOCAL_DATE_TIME.test(watchedTime)
+      ? watchedTime
+      : null
+  const choicesQuery = useQuery({
+    queryKey: closeLotChoicesQueryKey(trade.id, choicesTime),
+    queryFn: ({ signal }) => getCloseLotChoices(trade.id, choicesTime, signal),
+    enabled: closing,
+    placeholderData: keepPreviousData,
+  })
+  // null = not touched yet → the close's current lots (`selected`) are ticked.
+  const [pickedIds, setPickedIds] = useState<number[] | null>(null)
+  const choices = choicesQuery.data?.lots ?? []
+  const lotOptions: CloseLotOption[] = choices.map((lot) => ({
+    tradeId: lot.tradeId,
+    action: lot.action,
+    tradedAt: lot.tradedAt,
+    contracts: lot.contracts,
+    netAmount: lot.netAmount,
+    frozen: lot.frozen,
+    unrealized: null,
+    closeDefault: false,
+  }))
+  // A lot no longer selectable at the new time drops out of the selection.
+  const lotTradeIds = (
+    pickedIds ?? choices.filter((lot) => lot.selected).map((lot) => lot.tradeId)
+  ).filter((id) => choices.some((lot) => lot.tradeId === id))
+  const lotsReady = !closing || (choicesQuery.data !== undefined && lotTradeIds.length > 0)
+
   const mutation = useMutation({
     mutationFn: (values: EditTradeValues) =>
-      updateOptionTrade(trade.id, {
-        contracts: Number(values.contracts.trim()),
-        netAmount: normalizeDecimal(values.netAmount),
-        tradedAtLocal: values.tradedAtLocal,
-        ...(closing ? {} : { multiplier: Number(values.multiplier.trim()) }),
-        note: values.note.trim() === '' ? null : values.note,
-      }),
+      updateOptionTrade(
+        trade.id,
+        closing
+          ? {
+              lotTradeIds,
+              netAmount: normalizeDecimal(values.netAmount),
+              tradedAtLocal: values.tradedAtLocal,
+              note: values.note.trim() === '' ? null : values.note,
+            }
+          : {
+              contracts: Number(values.contracts.trim()),
+              netAmount: normalizeDecimal(values.netAmount),
+              tradedAtLocal: values.tradedAtLocal,
+              multiplier: Number(values.multiplier.trim()),
+              note: values.note.trim() === '' ? null : values.note,
+            },
+      ),
     onSuccess: async () => {
       void message.success('交易已修改')
       await refreshAfterChange(queryClient)
@@ -76,7 +137,8 @@ export function EditTradeModal({ trade, onDone }: EditTradeModalProps) {
     },
     onError: (error) => {
       setSubmitError(
-        applySubmitError(FIELD_NAMES, error, (fields) => {
+        // Closes have no contracts / multiplier inputs: their details stay in the error message.
+        applySubmitError(closing ? CLOSE_FIELD_NAMES : FIELD_NAMES, error, (fields) => {
           form.setFields(fields)
         }),
       )
@@ -114,19 +176,49 @@ export function EditTradeModal({ trade, onDone }: EditTradeModalProps) {
           initialValues={{
             contracts: String(trade.contracts),
             netAmount: trade.netAmount,
-            tradedAtLocal: toInputValue(trade.tradedAtLocal),
+            tradedAtLocal: initialTime,
             multiplier: String(trade.multiplier),
             note: trade.note ?? '',
           }}
           onFinish={(values) => {
+            if (!lotsReady) return
             setSubmitError(null)
             mutation.mutate(values)
           }}
           data-testid="trade-edit-form"
         >
-          <Form.Item label="张数" name="contracts" required rules={[toRule(validateContracts)]}>
-            <Input inputMode="numeric" autoComplete="off" data-testid="trade-edit-contracts" />
-          </Form.Item>
+          {closing ? (
+            <Form.Item label="被平批次" required>
+              {choicesQuery.isError ? (
+                <Alert
+                  type="error"
+                  showIcon
+                  title={
+                    <span data-testid="trade-edit-lots-error">
+                      可选批次加载失败：{choicesQuery.error.message}
+                    </span>
+                  }
+                />
+              ) : choicesQuery.data === undefined ? (
+                <Spin size="small">
+                  <span data-testid="trade-edit-lots-loading">正在加载可选批次…</span>
+                </Spin>
+              ) : (
+                <CloseLotPicker
+                  lots={lotOptions}
+                  selectedIds={lotTradeIds}
+                  onChange={setPickedIds}
+                  showFrozen={trade.action === 'BTC' && trade.optionType === 'PUT'}
+                  testIdPrefix="trade-edit"
+                  hint={EDIT_LOTS_HINT}
+                />
+              )}
+            </Form.Item>
+          ) : (
+            <Form.Item label="张数" name="contracts" required rules={[toRule(validateContracts)]}>
+              <Input inputMode="numeric" autoComplete="off" data-testid="trade-edit-contracts" />
+            </Form.Item>
+          )}
           <Form.Item
             label={
               <span data-testid="trade-edit-net-amount-label">{netAmountLabel(trade.action)}</span>
@@ -182,6 +274,7 @@ export function EditTradeModal({ trade, onDone }: EditTradeModalProps) {
               type="primary"
               htmlType="submit"
               loading={mutation.isPending}
+              disabled={!lotsReady}
               data-testid="trade-edit-submit"
             >
               保存修改

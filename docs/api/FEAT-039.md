@@ -10,7 +10,7 @@ Q77–Q79、Q101–Q103 均已定（A）。本节只写**新增或不同**的部
 | `PUT /api/option-trades/{id}` | — | STO call 改张数 / 时间 / multiplier → E1、E3"修改"；BTC 改时间、开仓（任意）改动导致历史不满足 → E3"修改"。旧批次通过检查后变为受检 |
 | `DELETE /api/option-trades/{id}` | — | 删除 BTC、`EXP`、put `ASG` → 可能 E3"删除"。删除 STO call、call `ASG` 不会因覆盖被拒 |
 | `POST /api/option-trades/assignments` | — | call 被指派涉及旧批次 → 可能 E3"被指派" |
-| `POST /api/option-trades/closes`、`.../expirations` | — | 无（只会释放股票） |
+| `POST /api/option-trades/closes`、`.../expirations` | — | 无（只会释放股票）。**FEAT-051**：BTC 释放的是它所选批次中受检批次的股数（`LEGACY` 批次释放 0，Q79）；修改平仓的所选批次（`PUT` 带 `lotTradeIds`）会改变释放的股数，可能 E3"修改"。见 [FEAT-051.md](FEAT-051.md) |
 | `POST` / `PUT` / `DELETE /api/stock-trades/**` | — | `SELL` 新增 / 修改 → E2；任何新增 / 修改 / 删除 → 可能 E3 |
 | `GET /api/option-positions` | 空头 call 行、批次的覆盖字段 | — |
 | `GET /api/stock-positions` | `coveredShares`、`availableShares` | — |

@@ -51,12 +51,14 @@ public class OptionPositionService {
     private final TradingCalendarService tradingCalendar;
     private final AdhocClosureService adhocClosures;
     private final ExpirationAdjustmentRepository adjustments;
+    private final CloseLotStore closeLots;
     private final Clock clock;
 
     public OptionPositionService(OptionTradeRepository trades, CashLedgerService ledger,
                                  StockPositionService stockPositions, CoverageService coverage,
                                  TradingCalendarService tradingCalendar, AdhocClosureService adhocClosures,
-                                 ExpirationAdjustmentRepository adjustments, Clock clock) {
+                                 ExpirationAdjustmentRepository adjustments, CloseLotStore closeLots, Clock clock) {
+        this.closeLots = closeLots;
         this.adjustments = adjustments;
         this.adhocClosures = adhocClosures;
         this.tradingCalendar = tradingCalendar;
@@ -163,12 +165,13 @@ public class OptionPositionService {
 
     private Map<ContractKey, List<LotTrade>> replayInput(long accountId) {
         List<OptionTradeEntity> all = trades.findByAccountIdOrderByTradedAtAscIdAsc(accountId);
+        Map<Long, List<Long>> selections = closeLots.byAccount(accountId);
         Map<Long, CashLedgerEntryEntity> entries = ledger.findBySources(accountId, OptionTradeService.TRADE_SOURCE_TYPES,
                 all.stream().map(OptionTradeEntity::getId).toList());
         Map<ContractKey, List<LotTrade>> byContract = new LinkedHashMap<>();
         for (OptionTradeEntity t : all) {
             CashLedgerEntryEntity e = OptionTradeService.entry(t, entries);
-            byContract.computeIfAbsent(t.contract(), k -> new ArrayList<>()).add(OptionTradeService.toLotTrade(t, e));
+            byContract.computeIfAbsent(t.contract(), k -> new ArrayList<>()).add(OptionTradeService.toLotTrade(t, e, selections.get(t.getId())));
         }
         return byContract;
     }

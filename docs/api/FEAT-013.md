@@ -1,5 +1,7 @@
 # FEAT-013 卖出 put 被指派（`ASG`）
 
+> **FEAT-051 修订**：`ASG`（及 FEAT-041 call 被指派、FEAT-014 行权 `EXR`）仍按"最早整批次"重放（Q260），作用在 BTC / STC 保存的所选批次平掉之后剩下的批次上；下文"之后的平仓…按新 FIFO 重新检查"中，之后的 BTC / STC 不再重新匹配，改按保存的所选批次检查（不成立 → 422 `CLOSE_LOTS_INVALID`，文案 `… 已被更早的被指派平掉` / `… 已被更早的行权平掉`）。`assignChoices` / `exerciseChoices` 的含义不变。见 [FEAT-051.md](FEAT-051.md)。
+
 **兼容性一览**（所有接口仍要求 `X-Account-Id`，只读写该账户；用另一账户的 id → 404 `NOT_FOUND`）：
 
 | 接口 | 新增（兼容） | **行为变化** |

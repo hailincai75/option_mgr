@@ -261,21 +261,33 @@ class HasAuditLogSystemTest extends OptionTradeSystemTestBase {
     }
 
     @Test
-    @DisplayName("cascade: editing an opening STO put corrects the closing trade's frozen release, but only the edited trade is marked")
+    @DisplayName("cascade: editing an opening STO put corrects the put assignment's stock cost, but only the edited trade is marked")
     void cascadeCorrectedRecordNotMarked() {
-        // Same rounding scenario as FEAT-005 AC10: strike 12.345 x multiplier 1 -> collateral 12.35 per 1-contract
-        // lot, 24.69 for a 2-contract lot. C1 (2 contracts) first closes L1 + L2 (release 24.70); after L1 becomes
-        // 2 contracts C1 closes L1 alone and its release is corrected to 24.69 as a side effect of editing L1.
-        deposit("100.00", "2026-11-02T09:30");
-        long l1 = okTrade(trade("STO", 1, "ZZQX", EXP, "12.345", "PUT", "0.50", "2026-11-02T10:00", 1)).get("id").asLong();
-        long l2 = okTrade(trade("STO", 1, "ZZQX", EXP, "12.345", "PUT", "0.50", "2026-11-03T10:00", 1)).get("id").asLong();
-        long c1 = closeTrade("BTC", 2, "12.345", "PUT", "0.20", "2026-11-05T10:00");
-        assertThat(ledgerRowFor("OPTION_CLOSE", c1).get("frozenChange").asText()).isEqualTo("-24.70");
+        // FEAT-051 (Q255): BTC / STC keep their saved lots, so the old cascade used here (editing L1 1 → 2 re-matched
+        // the BTC and corrected its frozen release −24.70 → −24.69) is now rejected with CLOSE_LOTS_INVALID. An ASG is
+        // still replayed by FIFO (Q260) and its stock cost is corrected when a covered open's net changes (FEAT-013),
+        // so it carries the same "cascade-corrected record keeps its flag" check.
+        deposit("5000.00", "2026-11-02T09:30");
+        long l1 = okTrade(zzqx("STO", 1, "40", "PUT", "120.00", "2026-11-03T10:00")).get("id").asLong();
+        long l2 = okTrade(zzqx("STO", 1, "5", "PUT", "10.00", "2026-11-03T11:00")).get("id").asLong();
+        ObjectNode a = json.createObjectNode();
+        a.put("symbol", "ZZQX");
+        a.put("expirationDate", EXP);
+        a.put("strike", "40");
+        a.put("optionType", "PUT");
+        a.put("contracts", 1);
+        a.put("assignmentDate", "2026-11-06");
+        a.put("assignmentFee", "0.00");
+        a.putNull("note");
+        Resp asg = postRaw(TRADES + "/assignments", a.toString(), MediaType.APPLICATION_JSON);
+        assertThat(asg.status()).as("ASG -> %s", asg.body()).isEqualTo(201);
+        long c1 = asg.body().get("id").asLong();
+        assertThat(asg.body().get("assignment").get("stockCost").asText()).isEqualTo("3880.00");
 
-        Resp put = putTradeWithMultiplier(l1, 2, "0.50", "2026-11-02T10:00", 1);
+        Resp put = putTradeWithMultiplier(l1, 1, "130.00", "2026-11-03T10:00", 100);
         assertThat(put.status()).as("PUT L1 -> %s", put.body()).isEqualTo(200);
-        assertThat(ledgerRowFor("OPTION_CLOSE", c1).get("frozenChange").asText())
-                .as("C1 was cascade-corrected").isEqualTo("-24.69");
+        assertThat(getTrade(c1).get("assignment").get("stockCost").asText())
+                .as("ASG was cascade-corrected").isEqualTo("3870.00");
         assertThat(get("/api/audit-log").body().get("items").get(0).get("sideEffects")).as("side effect recorded")
                 .hasSize(1);
 

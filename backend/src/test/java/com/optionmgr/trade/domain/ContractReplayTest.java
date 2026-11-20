@@ -162,7 +162,117 @@ class ContractReplayTest {
         assertThat(close("2026-11-03T10:30", TradeAction.BTC, 1, "-1.00").step(NEW).isValid()).isTrue();
     }
 
-    // ---------------------------------------------------------------- Q39 back-filled closes
+    // ---------------------------------------------------------------- FEAT-051 stored selections (Q255)
+
+    private long recordClose(String nyTime, int contracts, String cash, Long... lots) {
+        long id = nextId++;
+        trades.add(trade(id, nyTime, TradeAction.BTC, contracts, 100, cash, "0.00").withLots(List.of(lots)));
+        return id;
+    }
+
+    private ContractHistory closeLots(String nyTime, int contracts, String cash, Long... lots) {
+        return with(trade(NEW, nyTime, TradeAction.BTC, contracts, LotTrade.INHERIT_MULTIPLIER, cash, "0.00")
+                .withLots(List.of(lots)));
+    }
+
+    @Test
+    void selectedLaterLotIsClosedAndTheEarlierStaysOpen() {
+        long a = record("2026-11-10T10:00", TradeAction.STO, 1, 100, "18.34", "0.00");
+        long b = record("2026-11-11T10:00", TradeAction.STO, 1, 100, "37.34", "0.00");
+        ContractHistory h = closeLots("2026-11-19T10:00", 1, "-15.10", b);
+        ReplayedTrade s = h.step(NEW);
+        assertThat(s.isValid()).isTrue();
+        assertThat(s.match().orElseThrow().coveredLots()).extracting(PositionLot::tradeId).containsExactly(b);
+        assertThat(s.match().orElseThrow().realizedPnl()).hasToString("22.24");
+        assertThat(h.openLots()).extracting(PositionLot::tradeId).containsExactly(a);
+        assertThat(s.lotsBefore()).extracting(PositionLot::tradeId).containsExactly(a, b);
+    }
+
+    @Test
+    void nonContiguousSelectionReleasesItsLotsFrozen() {
+        long p1 = record("2026-11-10T10:00", TradeAction.STO, 2, 100, "30.00", "1600.00");
+        long p2 = record("2026-11-11T10:00", TradeAction.STO, 1, 100, "21.00", "800.00");
+        long p3 = record("2026-11-12T10:00", TradeAction.STO, 1, 100, "10.00", "800.00");
+        CloseMatch m = closeLots("2026-11-19T10:00", 3, "-20.00", p3, p1).step(NEW).match().orElseThrow();
+        assertThat(m.coveredLots()).extracting(PositionLot::tradeId).containsExactly(p1, p3);
+        assertThat(m.releasedFrozen()).hasToString("2400.00");
+        assertThat(m.realizedPnl()).hasToString("20.00");
+        assertThat(closeLots("2026-11-19T10:00", 3, "-20.00", p3, p1).openLots()).extracting(PositionLot::tradeId)
+                .containsExactly(p2);
+    }
+
+    @Test
+    void selectionProblems_notYetOpen_alreadyClosed_contractsMismatch() {
+        long a = record("2026-11-10T10:00", TradeAction.STO, 1, 100, "18.34", "0.00");
+        long b = record("2026-11-11T10:00", TradeAction.STO, 1, 100, "37.34", "0.00");
+        long c1 = recordClose("2026-11-19T10:00", 1, "-15.10", b);
+
+        ReplayedTrade early = closeLots("2026-11-10T15:00", 1, "-1.00", b).step(NEW);
+        assertThat(early.violations()).containsExactly(ViolationKind.CLOSE_LOTS_INVALID);
+        assertThat(early.lotProblems()).extracting(LotProblem::reason).containsExactly(LotProblem.Reason.NOT_YET_OPEN);
+        assertThat(TradeRejectionMessages.selectedLotProblem(early.lotProblems().get(0), early.trade()))
+                .isEqualTo("所选批次（2026-11-11 10:00 STO 1 张）在成交时间 2026-11-10 15:00 还未开仓");
+
+        ReplayedTrade again = closeLots("2026-11-20T09:00", 1, "-1.00", b).step(NEW);
+        assertThat(again.lotProblems().get(0).closedBy().tradeId()).isEqualTo(c1);
+        assertThat(TradeRejectionMessages.selectedLotProblem(again.lotProblems().get(0), again.trade()))
+                .isEqualTo("所选批次（2026-11-11 10:00 STO 1 张）已被 2026-11-19 10:00 的 BTC 1 张平掉");
+
+        ReplayedTrade size = closeLots("2026-11-20T09:00", 2, "-1.00", a).step(NEW);
+        assertThat(size.lotProblems()).extracting(LotProblem::reason)
+                .containsExactly(LotProblem.Reason.CONTRACTS_MISMATCH);
+        assertThat(TradeRejectionMessages.selectedLotProblem(size.lotProblems().get(0), size.trade()))
+                .isEqualTo("平仓张数 2 张与所选批次张数之和 1 张不一致");
+    }
+
+    @Test
+    void backfilledCloseNoLongerRematchesAStoredSelection() {
+        long l1 = record("2026-11-03T10:30", TradeAction.STO, 1, 100, "349.35", "20000.00");
+        long l2 = record("2026-11-04T11:00", TradeAction.STO, 1, 100, "360.00", "20000.00");
+        long later = recordClose("2026-11-06T10:00", 1, "-100.00", l1);
+
+        // FIFO back-fill takes L1: the later close's stored lot is then already closed
+        ContractHistory fifo = close("2026-11-05T10:00", TradeAction.BTC, 1, "-120.00");
+        ReplayedTrade v = fifo.firstViolationFrom(NEW, k -> true).orElseThrow();
+        assertThat(v.trade().tradeId()).isEqualTo(later);
+        assertThat(v.violations()).containsExactly(ViolationKind.CLOSE_LOTS_INVALID);
+        ContractKey zzq = new ContractKey("ZZQ", java.time.LocalDate.parse("2026-12-18"), new BigDecimal("200"),
+                OptionType.PUT);
+        assertThat(TradeRejectionMessages.of(zzq, v, ViolationKind.CLOSE_LOTS_INVALID, false))
+                .isEqualTo("补录后，2026-11-06 10:00 BTC 1 张 ZZQ 2026-12-18 200 P 选中的批次 2026-11-03 10:30 STO 1 张 "
+                        + "已被更早的平仓平掉");
+
+        // selecting L2 keeps the later close on L1
+        ContractHistory ok = closeLots("2026-11-05T10:00", 1, "-120.00", l2);
+        assertThat(ok.firstViolationFrom(NEW, k -> true)).isEmpty();
+        assertThat(ok.step(later).match().orElseThrow().coveredLots()).extracting(PositionLot::tradeId)
+                .containsExactly(l1);
+        assertThat(ok.step(later).match().orElseThrow().realizedPnl()).hasToString("249.35");
+    }
+
+    @Test
+    void backfilledEarlierOpenStaysARemainingLot() {
+        long l1 = record("2026-11-03T10:30", TradeAction.STO, 2, 100, "698.70", "40000.00");
+        long l2 = record("2026-11-04T11:00", TradeAction.STO, 1, 100, "360.00", "20000.00");
+        long c = recordClose("2026-11-05T10:00", 2, "-241.30", l1);
+        ContractHistory h = with(trade(NEW, "2026-11-02T10:00", TradeAction.STO, 1, 100, "100.00", "20000.00"));
+        assertThat(h.firstViolationFrom(NEW, k -> true)).isEmpty();
+        assertThat(h.step(c).match().orElseThrow().realizedPnl()).hasToString("457.40");
+        assertThat(h.openLots()).extracting(PositionLot::tradeId).containsExactly(NEW, l2);
+    }
+
+    @Test
+    void expiryAfterASelectedCloseTakesTheRemainingLots() {
+        long a = record("2026-11-10T10:00", TradeAction.STO, 1, 100, "18.34", "0.00");
+        long b = record("2026-11-11T10:00", TradeAction.STO, 1, 100, "37.34", "0.00");
+        recordClose("2026-11-19T10:00", 1, "-15.10", b);
+        ContractHistory h = close("2026-11-20T16:00", TradeAction.ASG, 1, "0.00");
+        assertThat(h.step(NEW).match().orElseThrow().coveredLots()).extracting(PositionLot::tradeId)
+                .containsExactly(a);
+    }
+
+    // ---------------------------------------------------------------- FIFO replay without a stored selection
+    // (a FIFO-mode new close, Q257, and EXP / ASG / EXR, Q260; before FEAT-051 every close - Q39 re-matching)
 
     @Test
     void backfilledCloseMakesLaterCloseInvalid() {

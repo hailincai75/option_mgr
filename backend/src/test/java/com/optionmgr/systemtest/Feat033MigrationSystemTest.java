@@ -86,11 +86,14 @@ class Feat033MigrationSystemTest {
     private static long latestMigrationVersion() throws Exception {
         long max = 0;
         var resolver = new org.springframework.core.io.support.PathMatchingResourcePatternResolver();
-        var pattern = java.util.regex.Pattern.compile("^V(\\d+)__.*\\.sql$");
-        for (var res : resolver.getResources("classpath*:db/migration/V*__*.sql")) {
-            var m = pattern.matcher(String.valueOf(res.getFilename()));
-            if (m.matches()) {
-                max = Math.max(max, Long.parseLong(m.group(1)));
+        // FEAT-051: V18 is a Flyway Java migration (db.migration.V18__…), so compiled classes count as well
+        var pattern = java.util.regex.Pattern.compile("^V(\\d+)__[^$]*\\.(sql|class)$");
+        for (String glob : new String[] {"classpath*:db/migration/V*__*.sql", "classpath*:db/migration/V*__*.class"}) {
+            for (var res : resolver.getResources(glob)) {
+                var m = pattern.matcher(String.valueOf(res.getFilename()));
+                if (m.matches()) {
+                    max = Math.max(max, Long.parseLong(m.group(1)));
+                }
             }
         }
         assertThat(max).as("migration files found on the classpath").isGreaterThanOrEqualTo(7);

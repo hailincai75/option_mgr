@@ -3,6 +3,8 @@
 > **FEAT-035 修订**：`GET /api/cash/summary` 接受 `X-Account-Id: ALL`（顶层为全部账户之和），新增 `accounts[]`（每账户一行；单账户时只有该账户）；流水与入金 / 出金写接口不接受 `ALL`。见 [FEAT-035.md](FEAT-035.md)。
 >
 > **FEAT-046 修订**：`GET /api/cash/ledger` 接受 `ALL`：行新增 `accountId`、`accountName`（单账户也有值）；排序 `occurredAt` 倒序 → `id` 倒序 → `accountId` 升序，合并后分页；`balanceAfter` 仍是**该行所在账户自己的**累计总现金（Q228），不是跨账户连续余额。入金 / 出金写接口仍不接受 `ALL`。见 [FEAT-046.md](FEAT-046.md)。
+>
+> **FEAT-051 修订**：平仓保存被平批次（Q39 自动重新匹配取消），`OPTION_CLOSE` 的 `frozenChange` 不再因补录 / 修改 / 删除被改正（下表"可能按新的 FIFO 匹配被更新"对 `OPTION_CLOSE` 不再成立；`OPTION_EXPIRE` / `OPTION_ASSIGN` 照旧）。见 [FEAT-051.md](FEAT-051.md)。
 
 单账户、只有 USD。所有金额 scale 固定为 2（`"0.00"`、`"30000.00"`、`"-2500.50"`），JSON 字符串，**不带千分位**；千分位、`+`/`−` 号由前端格式化。
 

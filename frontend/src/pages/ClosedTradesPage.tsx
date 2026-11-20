@@ -160,7 +160,7 @@ export function ClosedTradesPage() {
           </Space>
         )}
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          净额均已含手续费；空头开仓为实收、多头开仓为实付；每张平均四舍五入到分，仅供参考。展开行查看被平掉的开仓批次（FIFO）。
+          净额均已含手续费；空头开仓为实收、多头开仓为实付；每张平均四舍五入到分，仅供参考。展开行查看被平掉的开仓批次。
           <span data-testid="closed-expiry-note">{EXPIRY_NOTE}</span>
           <span data-testid="closed-assignment-note">{ASSIGNMENT_NOTE}</span>
           <span data-testid="closed-call-assignment-note">{CALL_ASSIGNMENT_NOTE}</span>

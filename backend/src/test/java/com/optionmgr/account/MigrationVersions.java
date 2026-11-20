@@ -14,12 +14,12 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
  */
 final class MigrationVersions {
 
-    private static final Pattern VERSION = Pattern.compile("^V(\\d+)__.*\\.sql$");
+    private static final Pattern VERSION = Pattern.compile("^V(\\d+)__.*\\.(sql|class)$");
 
     private MigrationVersions() {
     }
 
-    /** Latest real migration ({@code classpath:db/migration}). */
+    /** Latest real migration ({@code classpath:db/migration}): SQL or Java (FEAT-051 V18). */
     static int latest() {
         return latestIn("db/migration");
     }
@@ -31,7 +31,7 @@ final class MigrationVersions {
 
     static int latestIn(String location) {
         try {
-            Resource[] files = new PathMatchingResourcePatternResolver().getResources("classpath*:" + location + "/V*.sql");
+            Resource[] files = new PathMatchingResourcePatternResolver().getResources("classpath*:" + location + "/V*");
             return Arrays.stream(files).map(Resource::getFilename).filter(n -> n != null)
                     .map(VERSION::matcher).filter(Matcher::matches).mapToInt(m -> Integer.parseInt(m.group(1)))
                     .max().orElseThrow(() -> new IllegalStateException("no migrations in " + location));

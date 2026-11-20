@@ -123,6 +123,7 @@ class MarketDataControllerTest {
     void clean() {
         jdbc.update("DELETE FROM audit_record");
         jdbc.update("DELETE FROM stock_trade");
+        jdbc.update("DELETE FROM option_close_lot");
         jdbc.update("DELETE FROM option_trade");
         jdbc.update("DELETE FROM cash_ledger_entry");
         jdbc.update("DELETE FROM cash_transfer");

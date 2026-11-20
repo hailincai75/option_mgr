@@ -128,6 +128,7 @@ class ExpirationAdjustmentControllerTest {
         jdbc.update("DELETE FROM expiration_adjustment");
         jdbc.update("DELETE FROM audit_record_object");
         jdbc.update("DELETE FROM audit_record");
+        jdbc.update("DELETE FROM option_close_lot");
         jdbc.update("DELETE FROM option_trade");
         jdbc.update("DELETE FROM cash_ledger_entry");
         jdbc.update("DELETE FROM cash_transfer");

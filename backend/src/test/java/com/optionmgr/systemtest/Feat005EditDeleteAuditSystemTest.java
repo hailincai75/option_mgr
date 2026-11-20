@@ -236,53 +236,78 @@ class Feat005EditDeleteAuditSystemTest extends OptionTradeSystemTestBase {
         assertThat(getTrade(c1).get("realizedPnl").asText()).isEqualTo("448.70");
     }
 
+    /** FEAT-051 (Q256): PUT body of a close that replaces its chosen lots (no contracts). */
+    ObjectNode c1Lots(String net, String at, long... lots) {
+        ObjectNode n = json.createObjectNode();
+        com.fasterxml.jackson.databind.node.ArrayNode arr = n.putArray("lotTradeIds");
+        for (long l : lots) {
+            arr.add(l);
+        }
+        n.put("netAmount", net);
+        n.put("tradedAtLocal", at);
+        return n;
+    }
+
+    /*
+     * FEAT-051 (Q255 cancels Q39, Q256): AC3 / AC4 / AC5 (first case) / AC6 / AC10 / deleteRematches changed their
+     * expected results — closes keep their saved lots, a close's contracts follow its chosen lots. Old expectations are
+     * kept in the comments.
+     */
+
     @Test
-    @DisplayName("AC3 C1 张数 2 → 3：平 L1+L2、冻结 −60,000、盈亏 +817.40；改成 1 被拒且不写审计")
+    @DisplayName("AC3（FEAT-051 / Q256）只带张数 1 / 3 → CLOSE_LOTS_INVALID（与所选批次之和 2 不一致），不写审计；改选 L1 + L2 → 3 张、冻结 −60,000、盈亏 +817.40")
     void ac3_editCloseContracts() {
         scenarioA();
-        assertThat(rejectedEdit(c1, c1Body(1, "241.30", "2026-11-05T10:00"), "CLOSE_NOT_WHOLE_LOTS"))
-                .isEqualTo("必须一次平掉整笔开仓：最早一笔是 2 张，可平 2 张或 3 张");
+        // old: CLOSE_NOT_WHOLE_LOTS "必须一次平掉整笔开仓：最早一笔是 2 张，可平 2 张或 3 张"
+        assertThat(rejectedEdit(c1, c1Body(1, "241.30", "2026-11-05T10:00"), "CLOSE_LOTS_INVALID"))
+                .isEqualTo("平仓张数 1 张与所选批次张数之和 2 张不一致");
+        // old: 200 (contracts 3 → L1 + L2)
+        assertThat(rejectedEdit(c1, c1Body(3, "241.30", "2026-11-05T10:00"), "CLOSE_LOTS_INVALID"))
+                .isEqualTo("平仓张数 3 张与所选批次张数之和 2 张不一致");
         assertThat(audit().get("totalItems").asInt()).isZero();
 
-        JsonNode t = okEditTrade(c1, c1Body(3, "241.30", "2026-11-05T10:00"));
+        JsonNode t = okEditTrade(c1, c1Lots("241.30", "2026-11-05T10:00", l1, l2));
+        assertThat(t.get("contracts").asInt()).isEqualTo(3);
         assertThat(t.get("frozenChange").asText()).isEqualTo("-60000.00");
         assertThat(t.get("coveredLots")).hasSize(2);
         assertThat(t.get("realizedPnl").asText()).isEqualTo("817.40");
         assertSummary("80817.40", "0.00", "80817.40");
         assertThat(position(AAPL)).isNull();
         assertThat(ledgerRowFor("OPTION_CLOSE", c1).get("frozenChange").asText()).isEqualTo("-60000.00");
-        assertThat(texts(lastAudit().get("changes")))
-                .containsExactly("张数：2 → 3", "冻结变动：−40,000.00 → −60,000.00");
+        // old: ["张数：2 → 3", "冻结变动：−40,000.00 → −60,000.00"]; now the lot change comes first
+        assertThat(texts(lastAudit().get("changes"))).containsExactly(
+                "被平批次：2026-11-03 10:30 2 张 → 2026-11-03 10:30 2 张、2026-11-04 11:00 1 张",
+                "张数：2 → 3", "冻结变动：−40,000.00 → −60,000.00");
     }
 
     // ------------------------------------------------------------------ AC 4, 5
 
     @Test
-    @DisplayName("AC4 L1 张数 2 → 3 让 C1 不是整笔批次被拒；2 → 1 成功，C1 改平 L1+L2")
+    @DisplayName("AC4（FEAT-051 / Q255）L1 张数 2 → 3 / 2 → 1 都让 C1 所选批次 L1 的张数与平仓不一致 → CLOSE_LOTS_INVALID，什么都不变")
     void ac4_editOpenContracts() {
         scenarioA();
-        assertThat(rejectedEdit(l1, edit(3, "698.70", "2026-11-03T10:30", 100, null), "CLOSE_NOT_WHOLE_LOTS"))
-                .isEqualTo("修改后该合约（AAPL 2026-12-18 200 P）在 2026-11-05 10:00 的 BTC 2 张将不是整笔开仓（最早一笔是 3 张，可平 3 张或 4 张）");
-        okEditTrade(l1, edit(1, "698.70", "2026-11-03T10:30", 100, null));
+        // old: CLOSE_NOT_WHOLE_LOTS "修改后该合约（AAPL 2026-12-18 200 P）在 2026-11-05 10:00 的 BTC 2 张将不是整笔开仓（最早一笔是 3 张，可平 3 张或 4 张）"
+        assertThat(rejectedEdit(l1, edit(3, "698.70", "2026-11-03T10:30", 100, null), "CLOSE_LOTS_INVALID"))
+                .isEqualTo("修改后，2026-11-05 10:00 BTC 2 张 AAPL 2026-12-18 200 P 选中的批次 2026-11-03 10:30 STO 3 张 张数与平仓不一致（所选批次共 3 张，平仓 2 张）");
+        // old: 200, C1 re-matched to L1 + L2 (frozen −40,000.00, +817.40), summary 80,817.40 / 0.00 / 80,817.40
+        assertThat(rejectedEdit(l1, edit(1, "698.70", "2026-11-03T10:30", 100, null), "CLOSE_LOTS_INVALID"))
+                .isEqualTo("修改后，2026-11-05 10:00 BTC 2 张 AAPL 2026-12-18 200 P 选中的批次 2026-11-03 10:30 STO 1 张 张数与平仓不一致（所选批次共 1 张，平仓 2 张）");
         JsonNode c = getTrade(c1);
         List<Long> covered = new ArrayList<>();
         c.get("coveredLots").forEach(x -> covered.add(x.get("tradeId").asLong()));
-        assertThat(covered).containsExactly(l1, l2);
-        assertThat(c.get("frozenChange").asText()).isEqualTo("-40000.00");
-        assertThat(c.get("realizedPnl").asText()).isEqualTo("817.40");
-        assertSummary("80817.40", "0.00", "80817.40");
-        assertThat(position(AAPL)).isNull();
-        JsonNode a = lastAudit();
-        assertThat(texts(a.get("changes"))).containsExactly("张数：2 → 1", "冻结变动：+40,000.00 → +20,000.00");
-        assertThat(a.get("sideEffects")).isEmpty();
+        assertThat(covered).containsExactly(l1);
+        assertThat(c.get("realizedPnl").asText()).isEqualTo("457.40");
+        assertSummary("80817.40", "20000.00", "60817.40");
+        assertThat(audit().get("totalItems").asInt()).isZero();
     }
 
     @Test
-    @DisplayName("AC5 改时间：L1 挪到 C1 之后 → 超过持仓；C1 挪到 L1 之前 → 没有持仓；未来时间 → 字段错误")
+    @DisplayName("AC5 改时间：L1 挪到 C1 之后 → CLOSE_LOTS_INVALID 未开仓（FEAT-051，原为超过持仓）；C1 挪到 L1 之前 → 没有持仓；未来时间 → 字段错误")
     void ac5_editTimes() {
         scenarioA();
-        assertThat(rejectedEdit(l1, edit(2, "698.70", "2026-11-06T10:00", 100, null), "CLOSE_EXCEEDS_POSITION"))
-                .isEqualTo("修改后该合约（AAPL 2026-12-18 200 P）在 2026-11-05 10:00 的 BTC 2 张将超过当时持仓 1 张");
+        // old: CLOSE_EXCEEDS_POSITION "修改后该合约（AAPL 2026-12-18 200 P）在 2026-11-05 10:00 的 BTC 2 张将超过当时持仓 1 张"
+        assertThat(rejectedEdit(l1, edit(2, "698.70", "2026-11-06T10:00", 100, null), "CLOSE_LOTS_INVALID"))
+                .isEqualTo("修改后，2026-11-05 10:00 BTC 2 张 AAPL 2026-12-18 200 P 选中的批次 2026-11-06 10:00 STO 2 张 在该平仓成交时还未开仓");
         assertThat(rejectedEdit(c1, c1Body(2, "241.30", "2026-11-03T10:00"), "NO_POSITION_TO_CLOSE"))
                 .isEqualTo("该合约（AAPL 2026-12-18 200 P）在成交时没有持仓，无法平仓");
         Full before = full();
@@ -299,8 +324,9 @@ class Feat005EditDeleteAuditSystemTest extends OptionTradeSystemTestBase {
     @DisplayName("AC6 删 L1 被拒（被 C1 平掉）；删 L2 成功：汇总、流水少 1 条、404、审计 DELETE 内容")
     void ac6_deleteOpen() {
         scenarioA();
-        assertThat(rejectedDelete(l1, "CLOSE_EXCEEDS_POSITION"))
-                .isEqualTo("该开仓被 2026-11-05 10:00 的 BTC 2 张平掉（删除后那笔平仓将超过当时持仓 1 张），请先修改或删除那笔平仓");
+        // FEAT-051: old CLOSE_EXCEEDS_POSITION "…（删除后那笔平仓将超过当时持仓 1 张）…"
+        assertThat(rejectedDelete(l1, "CLOSE_LOTS_INVALID"))
+                .isEqualTo("该开仓被 2026-11-05 10:00 的 BTC 2 张平掉（所选批次 2026-11-03 10:30 STO 2 张），请先修改或删除那笔平仓");
 
         ok(deleteTrade(l2), 204);
         assertSummary("80457.40", "0.00", "80457.40");
@@ -460,38 +486,34 @@ class Feat005EditDeleteAuditSystemTest extends OptionTradeSystemTestBase {
     // ------------------------------------------------------------------ AC 10 (Q28/Q39/Q42)
 
     @Test
-    @DisplayName("AC10 F1 张数 1 → 2：FC 改平 F1、冻结 −24.70 → −24.69（连带变化写入同一条审计）")
+    @DisplayName("AC10（FEAT-051 / Q255）F1 张数 1 → 2：FC 保存的批次 F1 + F2 张数与平仓不一致 → CLOSE_LOTS_INVALID（原为 FC 改平 F1、冻结 −24.70 → −24.69 连带变化）；只改 F1 净额 → 成功，没有 BTC 连带变化")
     void ac10_sideEffect() {
         deposit("100.00", "2026-10-26T10:00");
         long f1 = open("STO", 1, "F", "2026-12-18", "12.345", "PUT", "0.50", "2026-11-02T10:00", 1);
         long f2 = open("STO", 1, "F", "2026-12-18", "12.345", "PUT", "0.50", "2026-11-03T10:00", 1);
         long fc = closeTrade("BTC", 2, "F", "2026-12-18", "12.345", "PUT", "0.20", "2026-11-05T10:00");
         assertSummary("100.80", "0.00", "100.80");
-        JsonNode t = okEditTrade(f1, edit(2, "0.50", "2026-11-02T10:00", 1, null));
-        assertThat(t.get("frozenChange").asText()).isEqualTo("24.69");
-        JsonNode c = getTrade(fc);
-        assertThat(c.get("frozenChange").asText()).isEqualTo("-24.69");
-        assertThat(c.get("coveredLots")).hasSize(1);
-        assertThat(c.get("coveredLots").get(0).get("tradeId").asLong()).isEqualTo(f1);
-        assertThat(c.get("realizedPnl").asText()).isEqualTo("0.30");
-        assertThat(ledgerRowFor("OPTION_CLOSE", fc).get("frozenChange").asText()).isEqualTo("-24.69");
-        JsonNode p = position("F 2026-12-18 12.345 P");
-        assertThat(p.get("contracts").asInt()).isEqualTo(1);
-        assertThat(p.get("frozenCash").asText()).isEqualTo("12.35");
-        assertThat(p.get("lots").get(0).get("tradeId").asLong()).isEqualTo(f2);
-        assertSummary("100.80", "12.35", "88.45");
+        // old: 200; FC re-matched to F1 alone, frozenChange −24.69, +0.30, summary 100.80 / 12.35 / 88.45, audit
+        // changes ["张数：1 → 2", "冻结变动：+12.35 → +24.69"] + sideEffects ["交易 #<fc> BTC 冻结变动 −24.70 → −24.69"]
+        String msg = rejectedEdit(f1, edit(2, "0.50", "2026-11-02T10:00", 1, null), "CLOSE_LOTS_INVALID");
+        // the contract does not fix which of FC's two lots the message names
+        assertThat(msg).startsWith("修改后，2026-11-05 10:00 BTC 2 张 F 2026-12-18 12.345 P 选中的批次 ")
+                .endsWith("张数与平仓不一致（所选批次共 3 张，平仓 2 张）");
+        assertThat(audit().get("totalItems").asInt()).isZero();
 
-        JsonNode a = audit();
-        assertThat(a.get("totalItems").asInt()).isEqualTo(1);
-        JsonNode r = a.get("items").get(0);
+        okEditTrade(f1, edit(1, "0.60", "2026-11-02T10:00", 1, null));
+        JsonNode c = getTrade(fc);
+        assertThat(c.get("frozenChange").asText()).isEqualTo("-24.70");
+        List<Long> covered = new ArrayList<>();
+        c.get("coveredLots").forEach(x -> covered.add(x.get("tradeId").asLong()));
+        assertThat(covered).containsExactly(f1, f2);
+        assertThat(c.get("realizedPnl").asText()).isEqualTo("0.90");
+        assertThat(ledgerRowFor("OPTION_CLOSE", fc).get("frozenChange").asText()).isEqualTo("-24.70");
+        assertSummary("100.90", "0.00", "100.90");
+        JsonNode r = audit().get("items").get(0);
         assertThat(r.get("objectId").asLong()).isEqualTo(f1);
-        assertThat(texts(r.get("changes"))).containsExactly("张数：1 → 2", "冻结变动：+12.35 → +24.69");
-        assertThat(texts(r.get("sideEffects"))).containsExactly("交易 #" + fc + " BTC 冻结变动 −24.70 → −24.69");
-        JsonNode se = r.get("sideEffects").get(0);
-        assertThat(se.get("tradeId").asLong()).isEqualTo(fc);
-        assertThat(se.get("action").asText()).isEqualTo("BTC");
-        assertThat(se.get("contractLabel").asText()).isEqualTo("F 2026-12-18 12.345 P");
-        assertThat(se.get("field").asText()).isEqualTo("frozenChange");
+        assertThat(texts(r.get("changes"))).containsExactly("净额：0.50 → 0.60");
+        assertThat(r.get("sideEffects")).isEmpty();
     }
 
     // ------------------------------------------------------------------ AC 11
@@ -635,7 +657,7 @@ class Feat005EditDeleteAuditSystemTest extends OptionTradeSystemTestBase {
     }
 
     @Test
-    @DisplayName("删掉被平开仓但之后平仓按 FIFO 仍合法 → 允许（改平另一批）；删前一笔平仓 → 之后平仓重新匹配")
+    @DisplayName("（FEAT-051 / Q255）删前一笔平仓 → 之后那笔仍是它保存的 b（原为改平 a +80.00），a 恢复为持仓；删未被选中的 a → 允许；删被选中的 b → CLOSE_LOTS_INVALID")
     void deleteRematches() {
         deposit("100000.00", "2026-10-26T10:00");
         long a = open("STO", 1, "AAPL", "2026-12-18", "200", "PUT", "100.00", "2026-11-02T10:00", 100);
@@ -644,9 +666,12 @@ class Feat005EditDeleteAuditSystemTest extends OptionTradeSystemTestBase {
         long cb = closeTrade("BTC", 1, "AAPL", "2026-12-18", "200", "PUT", "20.00", "2026-11-06T10:00");
         assertThat(getTrade(cb).get("realizedPnl").asText()).isEqualTo("180.00");
         ok(deleteTrade(ca), 204);
-        assertThat(getTrade(cb).get("coveredLots").get(0).get("tradeId").asLong()).isEqualTo(a);
-        assertThat(getTrade(cb).get("realizedPnl").asText()).isEqualTo("80.00");
-        assertThat(position(AAPL).get("lots").get(0).get("tradeId").asLong()).isEqualTo(b);
+        // old: cb re-matched to a, +80.00, position lot b
+        assertThat(getTrade(cb).get("coveredLots").get(0).get("tradeId").asLong()).isEqualTo(b);
+        assertThat(getTrade(cb).get("realizedPnl").asText()).isEqualTo("180.00");
+        assertThat(position(AAPL).get("lots").get(0).get("tradeId").asLong()).isEqualTo(a);
+        assertThat(rejectedDelete(b, "CLOSE_LOTS_INVALID"))
+                .isEqualTo("该开仓被 2026-11-06 10:00 的 BTC 1 张平掉（所选批次 2026-11-03 10:00 STO 1 张），请先修改或删除那笔平仓");
         ok(deleteTrade(a), 204);
         assertThat(getTrade(cb).get("coveredLots").get(0).get("tradeId").asLong()).isEqualTo(b);
         assertThat(getTrade(cb).get("realizedPnl").asText()).isEqualTo("180.00");

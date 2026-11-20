@@ -1,5 +1,7 @@
 # FEAT-004 录入平仓交易（BTC / STC）
 
+> **FEAT-051 修订（行为变化）**：请求新增 `lotTradeIds`（指定被平批次，可不连续；带了时 `contracts` 可省略，= 批次张数之和）；不带时仍按本节 FIFO 匹配。每笔平仓**保存**它的被平批次（含已有数据，迁移按现在的 FIFO 结果写入），下文"补录（Q27、Q39）"中"之后的平仓按新的 FIFO 匹配""`coveredLots` / `realizedPnl` / `frozenChange` 按当前 FIFO 匹配给出"**不再成立**：补录不会改变已有平仓的被平批次；补录平仓选走之后某笔平仓的批次 → 422 `CLOSE_LOTS_INVALID`；补录更早的开仓不再使之后的平仓 `CLOSE_NOT_WHOLE_LOTS`。`CLOSE_EXCEEDS_POSITION` / `CLOSE_NOT_WHOLE_LOTS` 只用于不带 `lotTradeIds` 的新平仓。持仓 `allowedCloseContracts` 保留但平仓对话框改用 `lots[]` + `lots[].closeDefault`。见 [FEAT-051.md](FEAT-051.md)。
+
 平仓与开仓存放在同一个交易记录里：`GET /api/option-trades/{id}`、`GET /api/option-trades`（FEAT-002）都能查到平仓；`GET /api/option-positions`（FEAT-003）按 FIFO 扣掉被平批次。开仓仍用 `POST /api/option-trades`（它继续拒绝 `BTC`/`STC`，提示"平仓请使用平仓功能"）；平仓用下面的 `POST /api/option-trades/closes`。
 
 #### 概念

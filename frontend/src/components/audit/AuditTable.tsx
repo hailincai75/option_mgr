@@ -1,7 +1,13 @@
 import { Button, Col, Descriptions, Row, Table, Tag } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { HTMLAttributes, ReactNode } from 'react'
-import type { AuditExpirationAdjustment, AuditRecord, AuditSnapshot } from '../../api/types'
+import type {
+  AuditExpirationAdjustment,
+  AuditRecord,
+  AuditSelectedLot,
+  AuditSnapshot,
+  AuditSnapshotValue,
+} from '../../api/types'
 import { EMPTY_VALUE, formatDateTimeSecondsNY, formatMoney } from '../../utils/format'
 import { stockTypeLabel } from '../stock/stockLabels'
 import { tradeActionLabel } from '../trade/tradeLabels'
@@ -14,6 +20,7 @@ type FieldFormat =
   | 'action'
   | 'transferType'
   | 'stockType'
+  | 'lots'
 
 /** Fields of the before / after snapshots shown when a row is expanded (contract field list). */
 const SNAPSHOT_FIELDS: Record<string, { key: string; label: string; format: FieldFormat }[]> = {
@@ -98,7 +105,12 @@ const PUT_EXERCISE_FIELDS: SnapshotField[] = [
  * (FEAT-041, by the snapshot's `optionType`); a 行权 (FEAT-014) its exercise fields.
  */
 function optionTradeFields(snapshot: AuditSnapshot | null): SnapshotField[] {
-  const base = SNAPSHOT_FIELDS.OPTION_TRADE ?? []
+  const fields = SNAPSHOT_FIELDS.OPTION_TRADE ?? []
+  // FEAT-051: close snapshots carry `selectedLots` (records written before it don't: shown as-is).
+  const base =
+    snapshot !== null && 'selectedLots' in snapshot
+      ? [...fields, { key: 'selectedLots', label: '被平批次', format: 'lots' as const }]
+      : fields
   if (snapshot?.action === 'EXR') {
     const isCall = snapshot.optionType === 'CALL'
     return [...base, ...(isCall ? CALL_EXERCISE_FIELDS : PUT_EXERCISE_FIELDS)]
@@ -127,8 +139,22 @@ function stockTradeFields(snapshot: AuditSnapshot | null): SnapshotField[] {
   ]
 }
 
-function formatValue(value: string | number | null | undefined, format: FieldFormat): string {
+/** "2026-11-04T11:00:00" → "2026-11-04 11:00" (already New York local time). */
+function localTimeText(local: string): string {
+  return local.replace('T', ' ').slice(0, 16)
+}
+
+/** FEAT-051: "2026-11-10 10:00 2 张、2026-11-11 10:00 1 张" (same wording as the change text). */
+function selectedLotsText(lots: AuditSelectedLot[]): string {
+  if (lots.length === 0) return EMPTY_VALUE
+  return lots
+    .map((lot) => `${localTimeText(lot.tradedAtLocal)} ${String(lot.contracts)} 张`)
+    .join('、')
+}
+
+function formatValue(value: AuditSnapshotValue | undefined, format: FieldFormat): string {
   if (value === null || value === undefined || value === '') return EMPTY_VALUE
+  if (Array.isArray(value)) return format === 'lots' ? selectedLotsText(value) : EMPTY_VALUE
   const text = String(value)
   switch (format) {
     case 'money':
@@ -136,8 +162,7 @@ function formatValue(value: string | number | null | undefined, format: FieldFor
     case 'signedMoney':
       return formatMoney(text, { signed: true })
     case 'localTime':
-      // "2026-11-04T11:00:00" → "2026-11-04 11:00" (already New York local time).
-      return text.replace('T', ' ').slice(0, 16)
+      return localTimeText(text)
     case 'action':
       return tradeActionLabel(text)
     case 'stockType':
@@ -145,6 +170,7 @@ function formatValue(value: string | number | null | undefined, format: FieldFor
     case 'transferType':
       return text === 'DEPOSIT' ? '入金' : text === 'WITHDRAWAL' ? '出金' : text
     case 'text':
+    case 'lots':
       return text
   }
 }

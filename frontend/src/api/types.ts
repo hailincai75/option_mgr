@@ -384,6 +384,11 @@ export interface OptionPositionLot extends UnrealizedFields {
   shortfallAt?: InstantString | null
   shortfallAtLocal?: LocalDateTimeString | null
   shortfallHeldShares?: number | null
+  /**
+   * FEAT-051 (rule 3): the lot the 平仓 dialog preselects (the earliest lot → true, others false).
+   * Optional: older fixtures (the dialog then falls back to the first lot).
+   */
+  closeDefault?: boolean
 }
 
 /** FEAT-039: coverage status of an STO call lot. */
@@ -393,7 +398,10 @@ export type CoverageStatus = 'CHECKED' | 'LEGACY' | (string & {})
 export interface OptionPosition extends UnrealizedFields, RowAccountFields {
   /** FEAT-004: action that closes this position (short → BTC, long → STC). */
   closeAction: ClosingAction
-  /** FEAT-004: contract counts that can be closed now (cumulative whole earliest lots), ascending. */
+  /**
+   * FEAT-004: contract counts that can be closed now (cumulative whole earliest lots), ascending.
+   * FEAT-051: no longer used by the 平仓 dialog (it picks lots from `lots[]`).
+   */
   allowedCloseContracts: number[]
   /** FEAT-012: now < expiration date 16:00 New York; the 平仓 button is shown only when true. */
   closable: boolean
@@ -568,14 +576,21 @@ export interface CoveredLot {
   frozen: MoneyString
 }
 
-/** Contract: `POST /api/option-trades/closes` request body (no multiplier: taken from the position). */
+/**
+ * Contract: `POST /api/option-trades/closes` request body (no multiplier: taken from the position).
+ * FEAT-051: with `lotTradeIds` (chosen-lots mode, the positions-page dialog) `contracts` may be
+ * omitted (= sum of the chosen lots); without it (FIFO mode, 录入交易 page, Q257) `contracts` is
+ * required.
+ */
 export interface CreateCloseTradeRequest {
   symbol: string
   expirationDate: LocalDateString
   strike: string
   optionType: OptionType
   action: ClosingAction
-  contracts: number
+  contracts?: number
+  /** FEAT-051: opening trade ids of the lots to close (order irrelevant, at least one). */
+  lotTradeIds?: number[] | null
   /** BTC = paid incl. fees, STC = received after fees. > 0, ≤ 2 decimals. */
   netAmount: MoneyString
   tradedAtLocal: LocalDateTimeString
@@ -738,12 +753,36 @@ export const COVERAGE_INSUFFICIENT = 'COVERAGE_INSUFFICIENT'
  * (omitting / null `note` clears it). `multiplier` only for opens (null = unchanged); omit for closes.
  */
 export interface UpdateOptionTradeRequest {
-  contracts: number
+  /** Required for opens; FEAT-051: omitted for closes (= sum of the chosen lots). */
+  contracts?: number
   netAmount: MoneyString
   tradedAtLocal: LocalDateTimeString
   multiplier?: number | null
   note: string | null
+  /** FEAT-051 (closes only): the new chosen lots (whole replacement); omitted / null = unchanged. */
+  lotTradeIds?: number[] | null
 }
+
+/**
+ * FEAT-051: `GET /api/option-trades/{id}/close-lot-choices` → `lots[]`. Same fields as
+ * `coveredLots[]` plus `selected` (one of the close's current chosen lots). No unrealized P&L.
+ */
+export interface CloseLotChoice extends CoveredLot {
+  selected: boolean
+}
+
+/** FEAT-051: `GET /api/option-trades/{id}/close-lot-choices[?tradedAtLocal=]` → 200. */
+export interface CloseLotChoicesResponse {
+  closeTradeId: number
+  /** The instant the choices were computed for (the query param or the close's current time). */
+  tradedAt: InstantString
+  tradedAtLocal: LocalDateTimeString
+  /** Ascending by opening (time, id). */
+  lots: CloseLotChoice[]
+}
+
+/** FEAT-051 error code (HTTP 422; `message` is user-facing Chinese, shown verbatim). */
+export const CLOSE_LOTS_INVALID = 'CLOSE_LOTS_INVALID'
 
 /** Contract: `PUT /api/cash/transfers/{id}` request body (same as create). */
 export type UpdateCashTransferRequest = CreateCashTransferRequest
@@ -757,8 +796,20 @@ export type AuditOperation =
   | 'ADJUST_EXPIRATION'
   | (string & {})
 
+/** FEAT-051: one entry of a close snapshot's `selectedLots` (opening time order). */
+export interface AuditSelectedLot {
+  tradeId: number
+  action: string
+  tradedAt: InstantString
+  tradedAtLocal: LocalDateTimeString
+  contracts: number
+}
+
+/** A value of an audit snapshot; FEAT-051 adds the `selectedLots` array on close snapshots. */
+export type AuditSnapshotValue = string | number | null | AuditSelectedLot[]
+
 /** A full snapshot of the object (trade or transfer fields, see contract); display only. */
-export type AuditSnapshot = Record<string, string | number | null>
+export type AuditSnapshot = Record<string, AuditSnapshotValue>
 
 export interface AuditFieldChange {
   field: string

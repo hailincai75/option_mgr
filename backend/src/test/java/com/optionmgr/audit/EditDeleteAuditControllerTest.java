@@ -75,6 +75,7 @@ class EditDeleteAuditControllerTest {
 
     void emptyDatabase() {
         jdbc.update("DELETE FROM audit_record");
+        jdbc.update("DELETE FROM option_close_lot");
         jdbc.update("DELETE FROM option_trade");
         jdbc.update("DELETE FROM cash_ledger_entry");
         jdbc.update("DELETE FROM cash_transfer");
@@ -277,10 +278,17 @@ class EditDeleteAuditControllerTest {
     @Test
     void ac3_editCloseContracts() throws Exception {
         scenarioA();
-        assertThat(editRejected(c1, n -> n.put("contracts", 1), "CLOSE_NOT_WHOLE_LOTS"))
-                .isEqualTo("必须一次平掉整笔开仓：最早一笔是 2 张，可平 2 张或 3 张");
+        // FEAT-051: a close's contracts follow its selected lots; changing only the contracts is rejected
+        assertThat(editRejected(c1, n -> n.put("contracts", 1), "CLOSE_LOTS_INVALID"))
+                .isEqualTo("平仓张数 1 张与所选批次张数之和 2 张不一致");
+        assertThat(editRejected(c1, n -> n.put("contracts", 3), "CLOSE_LOTS_INVALID"))
+                .isEqualTo("平仓张数 3 张与所选批次张数之和 2 张不一致");
 
-        JsonNode t = editOk(c1, n -> n.put("contracts", 3));
+        JsonNode t = editOk(c1, n -> {
+            n.remove("contracts");
+            n.putArray("lotTradeIds").add(l2).add(l1);
+        });
+        assertThat(t.get("contracts").asInt()).isEqualTo(3);
         assertThat(t.get("frozenChange").asText()).isEqualTo("-60000.00");
         assertThat(t.get("realizedPnl").asText()).isEqualTo("817.40");
         assertThat(t.get("coveredLots")).hasSize(2);
@@ -288,33 +296,45 @@ class EditDeleteAuditControllerTest {
         assertThat(aaplPosition()).isNull();
         JsonNode row = getJson("/api/cash/ledger").get("items").get(0);
         assertThat(row.get("description").asText()).isEqualTo("BTC 3 张 AAPL 2026-12-18 200 P");
-        assertThat(texts(audit("").get("items").get(0).get("changes")))
-                .containsExactly("张数：2 → 3", "冻结变动：−40,000.00 → −60,000.00");
+        JsonNode a = audit("").get("items").get(0);
+        assertThat(texts(a.get("changes"))).containsExactly(
+                "被平批次：2026-11-03 10:30 2 张 → 2026-11-03 10:30 2 张、2026-11-04 11:00 1 张",
+                "张数：2 → 3", "冻结变动：−40,000.00 → −60,000.00");
+        assertThat(a.get("before").get("selectedLots")).hasSize(1);
+        assertThat(a.get("before").get("selectedLots").get(0).get("tradeId").asLong()).isEqualTo(l1);
+        assertThat(a.get("after").get("selectedLots")).hasSize(2);
+        assertThat(a.get("after").get("selectedLots").get(1).get("tradedAtLocal").asText())
+                .isEqualTo("2026-11-04T11:00:00");
     }
 
     @Test
-    void ac4_editOpenContractsRematchesLaterClose() throws Exception {
+    void ac4_editOpenSelectedByLaterClose() throws Exception {
         scenarioA();
-        assertThat(editRejected(l1, n -> n.put("contracts", 3), "CLOSE_NOT_WHOLE_LOTS"))
-                .isEqualTo("修改后该合约（AAPL 2026-12-18 200 P）在 2026-11-05 10:00 的 BTC 2 张将不是整笔开仓"
-                        + "（最早一笔是 3 张，可平 3 张或 4 张）");
+        // FEAT-051 (Q255): the close keeps its selected lot L1; changing L1's size is rejected (no re-matching)
+        assertThat(editRejected(l1, n -> n.put("contracts", 3), "CLOSE_LOTS_INVALID"))
+                .isEqualTo("修改后，2026-11-05 10:00 BTC 2 张 AAPL 2026-12-18 200 P 选中的批次 2026-11-03 10:30 STO 3 张 "
+                        + "张数与平仓不一致（所选批次共 3 张，平仓 2 张）");
+        assertThat(editRejected(l1, n -> n.put("contracts", 1), "CLOSE_LOTS_INVALID"))
+                .isEqualTo("修改后，2026-11-05 10:00 BTC 2 张 AAPL 2026-12-18 200 P 选中的批次 2026-11-03 10:30 STO 1 张 "
+                        + "张数与平仓不一致（所选批次共 1 张，平仓 2 张）");
 
-        editOk(l1, n -> n.put("contracts", 1));
+        // only the net amount: allowed, the close's P&L follows
+        editOk(l1, n -> n.put("netAmount", "700.00"));
         JsonNode close = getJson(TRADES + "/" + c1);
         assertThat(close.get("frozenChange").asText()).isEqualTo("-40000.00");
-        assertThat(close.get("realizedPnl").asText()).isEqualTo("817.40");
-        assertThat(close.get("coveredLots")).hasSize(2);
-        assertSummary("80817.40", "0.00", "80817.40");
-        assertThat(aaplPosition()).isNull();
-        // frozen release unchanged (20,000 + 20,000), so no side effect
+        assertThat(close.get("realizedPnl").asText()).isEqualTo("458.70");
+        assertThat(close.get("coveredLots")).hasSize(1);
+        assertThat(close.get("coveredLots").get(0).get("tradeId").asLong()).isEqualTo(l1);
+        assertSummary("80818.70", "20000.00", "60818.70");
         assertThat(audit("").get("items").get(0).get("sideEffects")).isEmpty();
     }
 
     @Test
     void ac5_editTime() throws Exception {
         scenarioA();
-        assertThat(editRejected(l1, n -> n.put("tradedAtLocal", "2026-11-06T10:00"), "CLOSE_EXCEEDS_POSITION"))
-                .isEqualTo("修改后该合约（AAPL 2026-12-18 200 P）在 2026-11-05 10:00 的 BTC 2 张将超过当时持仓 1 张");
+        assertThat(editRejected(l1, n -> n.put("tradedAtLocal", "2026-11-06T10:00"), "CLOSE_LOTS_INVALID"))
+                .isEqualTo("修改后，2026-11-05 10:00 BTC 2 张 AAPL 2026-12-18 200 P 选中的批次 2026-11-06 10:00 STO 2 张 "
+                        + "在该平仓成交时还未开仓");
         assertThat(editRejected(c1, n -> n.put("tradedAtLocal", "2026-11-03T10:00"), "NO_POSITION_TO_CLOSE"))
                 .isEqualTo("该合约（AAPL 2026-12-18 200 P）在成交时没有持仓，无法平仓");
 
@@ -329,8 +349,8 @@ class EditDeleteAuditControllerTest {
     @Test
     void ac6_deleteOpen() throws Exception {
         scenarioA();
-        assertThat(deleteRejected(TRADES + "/" + l1, "CLOSE_EXCEEDS_POSITION"))
-                .isEqualTo("该开仓被 2026-11-05 10:00 的 BTC 2 张平掉（删除后那笔平仓将超过当时持仓 1 张），"
+        assertThat(deleteRejected(TRADES + "/" + l1, "CLOSE_LOTS_INVALID"))
+                .isEqualTo("该开仓被 2026-11-05 10:00 的 BTC 2 张平掉（所选批次 2026-11-03 10:30 STO 2 张），"
                         + "请先修改或删除那笔平仓");
 
         call(delete(TRADES + "/" + l2), 204);
@@ -434,28 +454,29 @@ class EditDeleteAuditControllerTest {
     }
 
     @Test
-    void ac10_frozenCorrectionIsAuditedAsSideEffect() throws Exception {
+    void ac10_selectedLotsKeepTheCloseFrozenRelease() throws Exception {
+        // FEAT-051 (Q255, cancels Q39): a BTC's released frozen cash follows its stored lots; the edit that used to
+        // re-match it (and correct its frozen change as a side effect) is now rejected
         deposit("100.00", "2026-10-26T10:00");
         long f1 = open("F", "12.345", 1, 1, "0.50", "2026-11-02T10:00");
         open("F", "12.345", 1, 1, "0.50", "2026-11-03T10:00");
         long fc = btc("F", "12.345", 2, "0.20", "2026-11-05T10:00");
         assertSummary("100.80", "0.00", "100.80");
+        assertThat(getJson(TRADES + "/" + fc).get("frozenChange").asText()).isEqualTo("-24.70");
 
-        JsonNode t = editOk(f1, n -> n.put("contracts", 2));
-        assertThat(t.get("frozenChange").asText()).isEqualTo("24.69");
+        assertThat(editRejected(f1, n -> n.put("contracts", 2), "CLOSE_LOTS_INVALID"))
+                .isEqualTo("修改后，2026-11-05 10:00 BTC 2 张 F 2026-12-18 12.345 P 选中的批次 2026-11-02 10:00 STO 2 张 "
+                        + "张数与平仓不一致（所选批次共 3 张，平仓 2 张）");
+
+        editOk(f1, n -> n.put("netAmount", "0.60"));
         JsonNode close = getJson(TRADES + "/" + fc);
-        assertThat(close.get("frozenChange").asText()).isEqualTo("-24.69");
-        assertThat(close.get("coveredLots")).hasSize(1);
-        assertThat(close.get("realizedPnl").asText()).isEqualTo("0.30");
-        assertSummary("100.80", "12.35", "88.45");
-        assertThat(getJson("/api/option-positions").get("frozenTotal").asText()).isEqualTo("12.35");
-
+        assertThat(close.get("frozenChange").asText()).isEqualTo("-24.70");
+        assertThat(close.get("coveredLots")).hasSize(2);
+        assertThat(close.get("realizedPnl").asText()).isEqualTo("0.90");
+        assertSummary("100.90", "0.00", "100.90");
         JsonNode a = audit("").get("items").get(0);
-        assertThat(texts(a.get("changes"))).containsExactly("张数：1 → 2", "冻结变动：+12.35 → +24.69");
-        assertThat(texts(a.get("sideEffects"))).containsExactly("交易 #" + fc + " BTC 冻结变动 −24.70 → −24.69");
-        JsonNode effect = a.get("sideEffects").get(0);
-        assertThat(effect.get("tradeId").asLong()).isEqualTo(fc);
-        assertThat(effect.get("contractLabel").asText()).isEqualTo("F 2026-12-18 12.345 P");
+        assertThat(texts(a.get("changes"))).containsExactly("净额：0.50 → 0.60");
+        assertThat(a.get("sideEffects")).isEmpty();
     }
 
     @Test

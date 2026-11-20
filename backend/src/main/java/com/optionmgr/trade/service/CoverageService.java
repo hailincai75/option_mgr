@@ -51,8 +51,11 @@ public class CoverageService {
 
     private final OptionTradeRepository optionTrades;
     private final StockTradeRepository stockTrades;
+    private final CloseLotStore closeLots;
 
-    public CoverageService(OptionTradeRepository optionTrades, StockTradeRepository stockTrades) {
+    public CoverageService(OptionTradeRepository optionTrades, StockTradeRepository stockTrades,
+                           CloseLotStore closeLots) {
+        this.closeLots = closeLots;
         this.optionTrades = optionTrades;
         this.stockTrades = stockTrades;
     }
@@ -234,10 +237,13 @@ public class CoverageService {
         // option side: every call contract of the symbol, the proposed one replaced
         Map<Long, OptionTradeEntity> byId = new HashMap<>();
         Map<ContractKey, List<LotTrade>> contracts = new LinkedHashMap<>();
+        // FEAT-051: BTC lots as stored (Q255)
+        Map<Long, List<Long>> selections = calls.isEmpty() ? Map.of() : closeLots.byAccount(accountId);
         for (OptionTradeEntity t : calls) {
             byId.put(t.getId(), t);
             contracts.computeIfAbsent(t.contract(), c -> new ArrayList<>()).add(new LotTrade(t.getId(),
-                    t.getTradedAt(), t.getAction(), t.getContracts(), t.getMultiplier(), Money.ZERO, Money.ZERO, null));
+                    t.getTradedAt(), t.getAction(), t.getContracts(), t.getMultiplier(), Money.ZERO, Money.ZERO, null,
+                    selections.get(t.getId())));
         }
         if (p.contract() != null && p.contract().optionType() == OptionType.CALL
                 && p.contract().symbol().equals(symbol)) {

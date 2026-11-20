@@ -98,6 +98,7 @@ class OptionTradeControllerTest {
     }
 
     void emptyDatabase() {
+        jdbc.update("DELETE FROM option_close_lot");
         jdbc.update("DELETE FROM option_trade");
         jdbc.update("DELETE FROM cash_ledger_entry");
         jdbc.update("DELETE FROM cash_transfer");

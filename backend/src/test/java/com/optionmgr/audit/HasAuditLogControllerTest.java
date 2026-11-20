@@ -75,6 +75,8 @@ class HasAuditLogControllerTest {
 
     void emptyDatabase() {
         jdbc.update("DELETE FROM audit_record");
+        jdbc.update("DELETE FROM stock_trade");
+        jdbc.update("DELETE FROM option_close_lot");
         jdbc.update("DELETE FROM option_trade");
         jdbc.update("DELETE FROM cash_ledger_entry");
         jdbc.update("DELETE FROM cash_transfer");
@@ -143,32 +145,37 @@ class HasAuditLogControllerTest {
 
     @Test
     void recordsCorrectedAsSideEffectsStayFalse() throws Exception {
-        // FEAT-005 AC 10 scenario: editing F1's contracts corrects the closing trade's frozen change (连带变化)
+        // editing F1's net amount corrects the stock cost of the assignment that covers F1 (连带变化). FEAT-051: a
+        // BTC's lots are stored (Q255), so a BTC is no longer corrected - an assignment (FIFO, Q260) still is.
         transfer("DEPOSIT", "100.00", "2026-10-26T10:00:00");
         long f1 = openF("2026-11-02T10:00:00");
         long f2 = openF("2026-11-03T10:00:00");
-        long fc = btc("F", "12.345", 2, "0.20", "2026-11-05T10:00:00");
-        String fcFrozenBefore = getJson(TRADES + "/" + fc).get("frozenChange").asText();
+        ObjectNode asg = json.createObjectNode();
+        asg.put("symbol", "F");
+        asg.put("expirationDate", "2026-12-18");
+        asg.put("strike", "12.345");
+        asg.put("optionType", "PUT");
+        asg.put("contracts", 1);
+        asg.put("assignmentDate", "2026-11-04");
+        long fa = send(post(TRADES + "/assignments"), asg, 201).get("id").asLong();
 
         JsonNode t = getJson(TRADES + "/" + f1);
         ObjectNode n = json.createObjectNode();
-        n.put("contracts", 2);
-        n.put("netAmount", t.get("netAmount").asText());
+        n.put("contracts", 1);
+        n.put("netAmount", "0.60");
         n.put("tradedAtLocal", t.get("tradedAtLocal").asText());
         n.put("multiplier", 1);
         assertThat(send(put(TRADES + "/" + f1), n, 200).get("hasAuditLog").asBoolean()).isTrue();
 
         JsonNode audit = getJson("/api/audit-log").get("items").get(0);
         assertThat(audit.get("objectId").asLong()).isEqualTo(f1);
-        assertThat(audit.get("sideEffects").get(0).get("tradeId").asLong()).isEqualTo(fc);
-        assertThat(getJson(TRADES + "/" + fc).get("frozenChange").asText()).isNotEqualTo(fcFrozenBefore);
+        assertThat(audit.get("sideEffects").get(0).get("tradeId").asLong()).isEqualTo(fa);
 
         assertThat(tradeRow(f1).get("hasAuditLog").asBoolean()).isTrue();
         assertThat(tradeRow(f2).get("hasAuditLog").asBoolean()).isFalse();
-        assertThat(tradeRow(fc).get("hasAuditLog").asBoolean()).isFalse();
-        assertThat(getJson(TRADES + "/" + fc).get("hasAuditLog").asBoolean()).isFalse();
-        assertThat(closedRow(fc).get("hasAuditLog").asBoolean()).isFalse();
-        assertThat(storedTradeFlag(fc)).isFalse();
+        assertThat(tradeRow(fa).get("hasAuditLog").asBoolean()).isFalse();
+        assertThat(getJson(TRADES + "/" + fa).get("hasAuditLog").asBoolean()).isFalse();
+        assertThat(storedTradeFlag(fa)).isFalse();
     }
 
     @Test

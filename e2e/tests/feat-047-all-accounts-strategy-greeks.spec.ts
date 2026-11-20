@@ -1,3 +1,4 @@
+import { chooseFifoLots } from '../support/closeLots'
 import type { Locator, Page } from '@playwright/test'
 import { BACKEND_URL, setApiAccount } from '../support/backend'
 import { fixNow, nyInstant, setBackendNow } from '../support/clock'
@@ -405,7 +406,7 @@ async function closeOnPositions(page: Page, contract: string, net: string, time:
   await optRow(page, contract).getByTestId('position-close').click()
   const modal = id(page, 'close-trade-modal')
   await expect(modal.getByRole('dialog')).toBeVisible()
-  await modal.getByTestId('close-trade-contracts-1').check()
+  await chooseFifoLots(modal, 1)
   await modal.getByTestId('close-trade-net-amount').fill(net)
   await modal.getByTestId('close-trade-time').fill(time)
   await modal.getByTestId('close-trade-submit').click()

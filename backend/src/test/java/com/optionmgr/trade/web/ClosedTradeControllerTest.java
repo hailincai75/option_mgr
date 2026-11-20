@@ -76,6 +76,7 @@ class ClosedTradeControllerTest {
     void emptyDatabase() {
         jdbc.update("DELETE FROM audit_record");
         jdbc.update("DELETE FROM stock_trade");
+        jdbc.update("DELETE FROM option_close_lot");
         jdbc.update("DELETE FROM option_trade");
         jdbc.update("DELETE FROM cash_ledger_entry");
         jdbc.update("DELETE FROM cash_transfer");
@@ -272,7 +273,8 @@ class ClosedTradeControllerTest {
     // ---------------------------------------------------------------- AC 5 re-matching
 
     @Test
-    void ac5_rematchAfterBackfillEditDelete() throws Exception {
+    void ac5_storedLotsAfterBackfillEditDelete() throws Exception {
+        // FEAT-051 (Q255 cancels Q39): a back-filled close no longer re-matches later closes
         deposit("80000.00", "2026-10-26T10:00");
         long l1 = trade("L1", "STO", "AAPL", "2026-12-18", "200", "PUT", 1, 100, "349.35", "2026-11-03T10:30", null);
         long l2 = trade("L2", "STO", "AAPL", "2026-12-18", "200", "PUT", 1, 100, "360.00", "2026-11-04T11:00", null);
@@ -280,11 +282,30 @@ class ClosedTradeControllerTest {
         assertThat(rows("", 1, "249.35")).containsExactly("X 249.35");
         assertThat(closed("").get("items").get(0).get("coveredLots").get(0).get("tradeId").asLong()).isEqualTo(l1);
 
-        long y = trade("Y", "BTC", "AAPL", "2026-12-18", "200", "PUT", 1, null, "120.00", "2026-11-05T10:00", null);
-        assertThat(rows("", 2, "489.35")).containsExactly("X 260.00", "Y 229.35");
+        // FIFO mode would take L1, which X has selected: rejected
+        ObjectNode fifo = json.createObjectNode();
+        fifo.put("symbol", "AAPL");
+        fifo.put("expirationDate", "2026-12-18");
+        fifo.put("strike", "200");
+        fifo.put("optionType", "PUT");
+        fifo.put("action", "BTC");
+        fifo.put("contracts", 1);
+        fifo.put("netAmount", "120.00");
+        fifo.put("tradedAtLocal", "2026-11-05T10:00");
+        JsonNode err = send(post("/api/option-trades/closes"), fifo, 422);
+        assertThat(err.get("code").asText()).isEqualTo("CLOSE_LOTS_INVALID");
+        assertThat(err.get("message").asText()).isEqualTo("补录后，2026-11-06 10:00 BTC 1 张 AAPL 2026-12-18 200 P "
+                + "选中的批次 2026-11-03 10:30 STO 1 张 已被更早的平仓平掉");
+
+        ObjectNode selected = fifo.deepCopy();
+        selected.remove("contracts");
+        selected.putArray("lotTradeIds").add(l2);
+        long y = send(post("/api/option-trades/closes"), selected, 201).get("id").asLong();
+        names.put(y, "Y");
+        assertThat(rows("", 2, "489.35")).containsExactly("X 249.35", "Y 240.00");
         JsonNode items = closed("").get("items");
-        assertThat(items.get(0).get("coveredLots").get(0).get("tradeId").asLong()).isEqualTo(l2);
-        assertThat(items.get(1).get("coveredLots").get(0).get("tradeId").asLong()).isEqualTo(l1);
+        assertThat(items.get(0).get("coveredLots").get(0).get("tradeId").asLong()).isEqualTo(l1);
+        assertThat(items.get(1).get("coveredLots").get(0).get("tradeId").asLong()).isEqualTo(l2);
 
         ObjectNode edit = json.createObjectNode();
         edit.put("contracts", 1);
@@ -292,7 +313,7 @@ class ClosedTradeControllerTest {
         edit.put("tradedAtLocal", "2026-11-04T11:00");
         edit.put("multiplier", 100);
         send(put("/api/option-trades/" + l2), edit, 200);
-        assertThat(rows("", 2, "494.35")).containsExactly("X 265.00", "Y 229.35");
+        assertThat(rows("", 2, "494.35")).containsExactly("X 249.35", "Y 245.00");
 
         call(delete("/api/option-trades/" + y), 204);
         assertThat(rows("", 1, "249.35")).containsExactly("X 249.35");

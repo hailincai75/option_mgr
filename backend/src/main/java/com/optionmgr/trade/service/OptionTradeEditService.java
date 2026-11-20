@@ -28,6 +28,7 @@ import com.optionmgr.trade.domain.ContractHistory;
 import com.optionmgr.trade.domain.ContractKey;
 import com.optionmgr.trade.domain.ContractReplay;
 import com.optionmgr.trade.domain.CoverageStatus;
+import com.optionmgr.trade.domain.LotProblem;
 import com.optionmgr.trade.domain.LotTrade;
 import com.optionmgr.trade.domain.OpenTradeTerms;
 import com.optionmgr.trade.domain.OptionType;
@@ -77,11 +78,14 @@ public class OptionTradeEditService {
     private final StockTradeService stocks;
     private final StockTradeRepository stockTrades;
     private final CoverageService coverage;
+    private final CloseLotStore closeLots;
     private final Clock clock;
 
     public OptionTradeEditService(OptionTradeRepository trades, OptionTradeService tradeService,
                                   CashLedgerService ledger, AuditService audit, StockTradeService stocks,
-                                  StockTradeRepository stockTrades, CoverageService coverage, Clock clock) {
+                                  StockTradeRepository stockTrades, CoverageService coverage, CloseLotStore closeLots,
+                                  Clock clock) {
+        this.closeLots = closeLots;
         this.coverage = coverage;
         this.stocks = stocks;
         this.stockTrades = stockTrades;
@@ -96,10 +100,12 @@ public class OptionTradeEditService {
      * Editable fields (Q43), already format-validated by the web layer.
      *
      * @param multiplier opens only; null = unchanged. Ignored for closes (they take the position's multiplier).
+     * @param contracts  opens: required; closes: optional (= the selected lots' sum, FEAT-051)
      * @param note       full replacement; null / blank = no note
+     * @param lotTradeIds closes only (FEAT-051, Q256): the new selection; null = unchanged
      */
-    public record EditCommand(int contracts, BigDecimal netAmount, LocalDateTime tradedAtLocal, Integer multiplier,
-                              String note) {
+    public record EditCommand(Integer contracts, BigDecimal netAmount, LocalDateTime tradedAtLocal, Integer multiplier,
+                              String note, List<Long> lotTradeIds) {
         public EditCommand {
             Objects.requireNonNull(netAmount, "netAmount");
             Objects.requireNonNull(tradedAtLocal, "tradedAtLocal");
@@ -139,36 +145,51 @@ public class OptionTradeEditService {
         if (tradedAt.isAfter(clock.instant())) {
             errors.add(new ErrorResponse.FieldError("tradedAtLocal", OptionTradeService.FUTURE_TIME_MESSAGE));
         }
+        if (opening && cmd.contracts() == null) {
+            errors.add(new ErrorResponse.FieldError("contracts", "张数不能为空"));
+        }
         if (!errors.isEmpty()) {
             throw new ApiException(ErrorCode.VALIDATION_ERROR, "Request validation failed", errors);
         }
         BigDecimal net = Money.of(cmd.netAmount());
         int multiplier = opening && cmd.multiplier() != null ? cmd.multiplier() : trade.getMultiplier();
         String note = blankToNull(cmd.note());
-        boolean sizeOrTimeChanged = cmd.contracts() != trade.getContracts() || multiplier != trade.getMultiplier()
-                || !tradedAt.equals(trade.getTradedAt());
+        OptionTradeService.ContractTrades existing = tradeService.load(accountId, contract);
+        // FEAT-051 (Q256): a close's selection (null request = unchanged); its contracts = the selected lots' sum
+        List<Long> storedLots = opening ? null : storedSelection(existing, id);
+        List<Long> newLots = opening ? null
+                : cmd.lotTradeIds() == null ? storedLots : OptionTradeService.distinct(cmd.lotTradeIds());
+        int contracts = opening ? cmd.contracts() : OptionTradeService.selectedContracts(existing, newLots);
+        boolean lotsChanged = !opening && !Set.copyOf(newLots).equals(Set.copyOf(storedLots));
+        boolean contractsDiffer = !opening && cmd.contracts() != null && cmd.contracts() != contracts;
+        boolean sizeOrTimeChanged = contracts != trade.getContracts() || multiplier != trade.getMultiplier()
+                || !tradedAt.equals(trade.getTradedAt()) || lotsChanged || contractsDiffer;
         if (!sizeOrTimeChanged && net.compareTo(trade.getNetAmount()) == 0 && Objects.equals(note, trade.getNote())) {
             throw new ApiException(ErrorCode.NO_CHANGES, NO_CHANGES_MESSAGE);
         }
 
         // 2.-4. replay the contract with the edited trade (same id = same entry order)
-        OptionTradeService.ContractTrades existing = tradeService.load(accountId, contract);
         OpenTradeTerms terms = opening
-                ? new OpenTradeTerms(contract, trade.getAction(), cmd.contracts(), multiplier, net) : null;
+                ? new OpenTradeTerms(contract, trade.getAction(), contracts, multiplier, net) : null;
         BigDecimal cashChange = opening ? terms.cashChange() : (trade.getAction().receivesCash() ? net : net.negate());
-        LotTrade edited = new LotTrade(id, tradedAt, trade.getAction(), cmd.contracts(),
+        LotTrade edited = new LotTrade(id, tradedAt, trade.getAction(), contracts,
                 opening ? multiplier : LotTrade.INHERIT_MULTIPLIER, cashChange,
-                opening ? terms.frozenChange() : Money.ZERO, note);
+                opening ? terms.frozenChange() : Money.ZERO, note, newLots);
         List<LotTrade> all = new ArrayList<>(existing.trades().stream().filter(t -> t.tradeId() != id).toList());
         all.add(edited);
         ContractHistory history = ContractReplay.replay(all);
         ReplayedTrade step = history.step(id);
+        if (!opening) {
+            // the edited close itself: position / direction, then its lots a-e (FEAT-051)
+            OptionTradeService.rejectPositionProblem(contract, step);
+            OptionTradeService.checkSelection(contract, existing, cmd.lotTradeIds(), step, cmd.contracts());
+        }
         if (!step.isValid()) {
             ViolationKind kind = ContractHistory.primaryViolation(step, k -> true);
             throw new ApiException(OptionTradeService.errorCode(kind),
                     TradeRejectionMessages.of(contract, step, kind, true));
         }
-        rejectFirstViolation(contract, history, "修改", systemRecordCovering(existing, id));
+        rejectFirstViolation(contract, history, "修改", systemRecordCovering(existing, id), opening ? edited : null);
         List<OptionTradeService.CostCorrection> costs = tradeService.costCorrections(accountId, contract, existing,
                 history, LotTrade.NOT_YET_ENTERED);
         OptionTradeService.rejectNonPositiveCost(costs, "修改");
@@ -214,12 +235,18 @@ public class OptionTradeEditService {
 
         // save
         Map<String, Object> before = snapshot(trade, entry.getAmount(), entry.getFrozenChange());
+        if (!opening) {
+            before.put("selectedLots", selectedLots(lotsOf(existing, storedLots)));
+        }
         List<SideEffect> effects = sideEffects(existing, corrections, costs);
         effects.addAll(soldCostEffects(accountId, contract.symbol(), costs, null));
-        trade.update(cmd.contracts(), effectiveMultiplier, net, tradedAt, note);
+        trade.update(contracts, effectiveMultiplier, net, tradedAt, note);
         trade.markAudited(); // only the edited trade; records corrected as side effects keep their flag
         ledger.updateEntry(accountId, entry.getId(), tradedAt, entry.getSourceType(), cashChange, frozenChange,
-                OpenTradeTerms.describe(trade.getAction(), cmd.contracts(), effectiveMultiplier, contract), note);
+                OpenTradeTerms.describe(trade.getAction(), contracts, effectiveMultiplier, contract), note);
+        if (!opening) {
+            closeLots.replace(accountId, id, OptionTradeService.lotIds(step.match().orElseThrow()));
+        }
         ledger.correctFrozenChanges(accountId, corrections);
         OptionTradeService.applyCostCorrections(costs);
         if (includeEdited) {
@@ -228,6 +255,9 @@ public class OptionTradeEditService {
         }
         effects.addAll(coverage.includeLegacy(accountId, contract.symbol()));
         Map<String, Object> after = snapshot(trade, cashChange, frozenChange);
+        if (!opening) {
+            after.put("selectedLots", selectedLots(lotsOf(existing, newLots)));
+        }
         audit.record(new AuditService.NewAuditRecord(accountId, AuditOperation.UPDATE, AuditObjectType.OPTION_TRADE, id,
                 summary(trade), before, after, changes(before, after), effects));
         return tradeService.get(accountId, id);
@@ -252,7 +282,13 @@ public class OptionTradeEditService {
             ViolationKind kind = ContractHistory.primaryViolation(v, k -> true);
             boolean coveringRecord = coveredBy(existing, id).filter(closeId -> closeId == v.trade().tradeId()).isPresent();
             String message;
-            if (coveringRecord && v.trade().action().isDeleteOnly()) {
+            boolean selecting = kind == ViolationKind.CLOSE_LOTS_INVALID && v.trade().hasSelection()
+                    && v.trade().lotTradeIds().contains(id);
+            if (selecting) {
+                // FEAT-051: the deleted open is selected by that close (replaces deletedOpenStillClosed)
+                LotTrade deleted = existing.trades().stream().filter(t -> t.tradeId() == id).findFirst().orElseThrow();
+                message = TradeRejectionMessages.deletedOpenSelected(v.trade(), deleted);
+            } else if (coveringRecord && v.trade().action().isDeleteOnly()) {
                 message = TradeRejectionMessages.coveredOpenChanged(v, kind, "删除");
             } else if (coveringRecord) {
                 message = TradeRejectionMessages.deletedOpenStillClosed(v, kind);
@@ -294,6 +330,9 @@ public class OptionTradeEditService {
         BigDecimal cashChange = entry == null ? Money.ZERO : entry.getAmount();
         BigDecimal frozenChange = entry == null ? Money.ZERO : entry.getFrozenChange();
         Map<String, Object> before = snapshot(trade, cashChange, frozenChange);
+        if (trade.getAction().isUserClose()) {
+            before.put("selectedLots", selectedLots(lotsOf(existing, storedSelection(existing, id))));
+        }
         if (assignment) {
             OptionTradeService.TradeView view = tradeService.views(accountId, List.of(trade)).get(0);
             boolean exercise = trade.getAction() == TradeAction.EXR;
@@ -326,6 +365,9 @@ public class OptionTradeEditService {
         String summary = summary(trade);
         if (entry != null) {
             ledger.deleteEntry(accountId, entry.getId());
+        }
+        if (trade.getAction().isUserClose()) {
+            closeLots.delete(id); // FEAT-051: its lots become open again
         }
         if (lot != null) {
             stockTrades.delete(lot);
@@ -372,16 +414,74 @@ public class OptionTradeEditService {
      * invalid record is the expiry that covered the edited open (FEAT-012), the message names that expiry.
      */
     private static void rejectFirstViolation(ContractKey contract, ContractHistory history, String verb,
-                                             Optional<Long> coveringExpiry) {
+                                             Optional<Long> coveringExpiry, LotTrade editedOpen) {
         for (ReplayedTrade s : history.steps()) {
             if (!s.isValid()) {
                 ViolationKind kind = ContractHistory.primaryViolation(s, k -> true);
                 boolean covering = coveringExpiry.filter(eid -> eid == s.trade().tradeId()).isPresent();
+                if (kind == ViolationKind.CLOSE_LOTS_INVALID) {
+                    // FEAT-051: a size mismatch names the edited open when that close selected it
+                    LotProblem p = s.lotProblems().get(0);
+                    if (p.reason() == LotProblem.Reason.CONTRACTS_MISMATCH && editedOpen != null
+                            && s.trade().lotTradeIds().contains(editedOpen.tradeId())) {
+                        p = new LotProblem(editedOpen.tradeId(), editedOpen, p.reason(), null, p.selectedContracts());
+                    }
+                    throw new ApiException(ErrorCode.CLOSE_LOTS_INVALID,
+                            TradeRejectionMessages.laterCloseLotsInvalid(contract, s, p, verb));
+                }
                 throw new ApiException(OptionTradeService.errorCode(kind), covering
                         ? TradeRejectionMessages.coveredOpenChanged(s, kind, verb)
                         : TradeRejectionMessages.of(contract, s, kind, false, verb));
             }
         }
+    }
+
+    // ------------------------------------------------------------------ FEAT-051 selected lots
+
+    /** A close's stored selection; for data without one (not expected after V18) its current FIFO match. */
+    private static List<Long> storedSelection(OptionTradeService.ContractTrades existing, long closeId) {
+        LotTrade close = existing.trades().stream().filter(t -> t.tradeId() == closeId).findFirst().orElseThrow();
+        if (close.lotTradeIds() != null) {
+            return close.lotTradeIds();
+        }
+        return ContractReplay.replay(existing.trades()).step(closeId).match()
+                .map(OptionTradeService::lotIds).orElse(List.of());
+    }
+
+    /** The opening trades with the given ids (as stored), in replay order. */
+    private static List<LotTrade> lotsOf(OptionTradeService.ContractTrades existing, List<Long> ids) {
+        Set<Long> wanted = Set.copyOf(ids);
+        return existing.trades().stream().filter(t -> t.action().isOpening() && wanted.contains(t.tradeId()))
+                .sorted(LotTrade.FIFO_ORDER).toList();
+    }
+
+    /** Audit "selectedLots": tradeId, action, tradedAt, tradedAtLocal, contracts per lot. */
+    private static List<Map<String, Object>> selectedLots(List<LotTrade> lots) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (LotTrade l : lots) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("tradeId", l.tradeId());
+            m.put("action", l.action());
+            m.put("tradedAt", l.tradedAt());
+            m.put("tradedAtLocal", LOCAL_SECONDS.format(MarketTime.toLocal(l.tradedAt())));
+            m.put("contracts", l.contracts());
+            out.add(m);
+        }
+        return out;
+    }
+
+    /** "2026-11-10 10:00 2 张、2026-11-11 10:00 1 张"; null when the snapshot has no selection. */
+    @SuppressWarnings("unchecked")
+    private static String selectedLotsText(Map<String, Object> snapshot) {
+        Object lots = snapshot.get("selectedLots");
+        if (lots == null) {
+            return null;
+        }
+        List<String> parts = new ArrayList<>();
+        for (Map<String, Object> m : (List<Map<String, Object>>) lots) {
+            parts.add(MarketTime.displayMinute((Instant) m.get("tradedAt")) + " " + m.get("contracts") + " 张");
+        }
+        return String.join("、", parts);
     }
 
     private static void rejectNegativeCash(List<ReplayStep> steps, String verb) {
@@ -479,6 +579,7 @@ public class OptionTradeEditService {
 
     private static List<FieldChange> changes(Map<String, Object> b, Map<String, Object> a) {
         return new FieldChanges()
+                .compare("selectedLots", "被平批次", selectedLotsText(b), selectedLotsText(a))
                 .compare("contracts", "张数", String.valueOf(b.get("contracts")), String.valueOf(a.get("contracts")))
                 .compare("netAmount", "净额", Money.display((BigDecimal) b.get("netAmount")),
                         Money.display((BigDecimal) a.get("netAmount")))

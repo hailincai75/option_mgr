@@ -1,3 +1,4 @@
+import { chooseFifoLots } from '../support/closeLots'
 import type { Locator, Page } from '@playwright/test'
 import { BACKEND_URL, setApiAccount } from '../support/backend'
 import { fixNow, nyInstant, setBackendNow } from '../support/clock'
@@ -324,7 +325,7 @@ class Ui {
     await this.posRow(contract).getByTestId('position-close').click()
     const modal = this.id('close-trade-modal')
     await expect(modal.getByRole('dialog')).toBeVisible()
-    await modal.getByTestId(`close-trade-contracts-${contracts}`).check()
+    await chooseFifoLots(modal, contracts)
     await modal.getByTestId('close-trade-net-amount').fill(net)
     await modal.getByTestId('close-trade-time').fill(time)
     await modal.getByTestId('close-trade-submit').click()

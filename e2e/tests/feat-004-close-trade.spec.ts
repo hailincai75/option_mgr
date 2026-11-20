@@ -1,3 +1,4 @@
+import { chooseFifoLots, lotLines, lotSelection } from '../support/closeLots'
 import type { Locator, Page } from '@playwright/test'
 import { apiLedger, apiTransfer, CashPage, expect, MINUS, nyLocal, test } from '../support/fixtures'
 import { apiTrade, TradeForm } from '../support/trade'
@@ -66,7 +67,8 @@ class CloseUi {
   }
 
   async submit(t: { contracts?: number; net?: string; time?: string; note?: string }): Promise<void> {
-    if (t.contracts !== undefined) await this.m(`close-trade-contracts-${t.contracts}`).check()
+    // FEAT-051: the contracts radio became a lot list; tick the earliest whole lots the old count meant
+    if (t.contracts !== undefined) await chooseFifoLots(this.modal, t.contracts)
     if (t.net !== undefined) await this.m('close-trade-net-amount').fill(t.net)
     if (t.time !== undefined) await this.m('close-trade-time').fill(t.time)
     if (t.note !== undefined) await this.m('close-trade-note').fill(t.note)
@@ -125,9 +127,14 @@ test.describe('FEAT-004 平仓', () => {
     await expect(ui.m('close-trade-contract')).toHaveText('AAPL 2026-12-18 200 P')
     await expect(ui.m('close-trade-action')).toHaveText('BTC（买入平仓）')
     await expect(ui.m('close-trade-multiplier')).toHaveText('100')
-    await expect(ui.modal.locator('[data-testid^="close-trade-contracts-"]')).toHaveCount(2)
-    await expect(ui.m('close-trade-contracts-2')).toBeChecked()
-    await expect(ui.m('close-trade-contracts-3')).not.toBeChecked()
+    // FEAT-051: was "可平 2 / 3 radio, 2 checked" — now the lot list, earliest lot (L1, 2 张) ticked by default
+    await expect(ui.modal.getByTestId('close-trade-lot-row')).toHaveCount(2)
+    expect(await lotLines(ui.modal)).toEqual([
+      '2026-11-03 10:30 STO（卖出开仓） 2 张 +698.70 FIFO 默认',
+      '2026-11-04 11:00 STO（卖出开仓） 1 张 +360.00',
+    ])
+    expect(await lotSelection(ui.modal)).toEqual([true, false])
+    await expect(ui.m('close-trade-lots-total')).toHaveText('平仓张数：2')
     await expect(ui.m('close-trade-net-amount-label')).toHaveText('实付总额（含手续费）')
     expect([before, after]).toContain(await ui.m('close-trade-time').inputValue())
     await expect(ui.modal.getByText('美东时间').first()).toBeVisible()
@@ -146,6 +153,8 @@ test.describe('FEAT-004 平仓', () => {
     await expect(c('cash-change')).toHaveText(`${MINUS}241.30`)
     await expect(c('frozen-change')).toHaveText(`${MINUS}40,000.00`)
     await expect(c('realized-pnl')).toHaveText('+457.40')
+    // FEAT-051: title was "被平掉的开仓批次（FIFO）" in the positions dialog
+    await expect(c('covered-lots-title')).toHaveText('被平掉的开仓批次')
     expect(await ui.coveredLots(c('covered-lots'))).toEqual(['2026-11-03 10:30 STO（卖出开仓） 2 张 +698.70'])
     await expect(c('covered-lots').getByTestId('covered-lot-row')).toHaveAttribute('data-trade-id', String(l1))
     await expect(ui.m('cash-summary-total')).toHaveText('80,817.40')
@@ -159,8 +168,10 @@ test.describe('FEAT-004 平仓', () => {
     })
     await expect(page.getByTestId('positions-frozen-total')).toHaveText('冻结现金合计 20,000.00')
     await ui.openModal('AAPL 2026-12-18 200 P')
-    await expect(ui.modal.locator('[data-testid^="close-trade-contracts-"]')).toHaveCount(1)
-    await expect(ui.m('close-trade-contracts-1')).toBeChecked()
+    // FEAT-051: was "可平 [1] checked" — now one lot row (L2), ticked
+    await expect(ui.modal.getByTestId('close-trade-lot-row')).toHaveCount(1)
+    expect(await lotSelection(ui.modal)).toEqual([true])
+    await expect(ui.m('close-trade-lots-total')).toHaveText('平仓张数：1')
     await ui.m('close-trade-cancel').click()
 
     // cash page ledger
@@ -372,7 +383,9 @@ test.describe('FEAT-004 平仓', () => {
     await expect(ui.row(`SPY ${d} 600 C`).getByTestId('position-cell-dte-today')).toBeVisible()
     await ui.openModal(`SPY ${d} 600 C`)
     await expect(ui.m('close-trade-action')).toHaveText('STC（卖出平仓）')
-    await expect(ui.m('close-trade-contracts-1')).toBeChecked()
+    // FEAT-051: was the "1" contracts radio checked — now the only lot is ticked
+    expect(await lotSelection(ui.modal)).toEqual([true])
+    await expect(ui.m('close-trade-lots-total')).toHaveText('平仓张数：1')
 
     // FEAT-012 (Q10 / Q83): from 16:00 NY on the expiration date the position can no longer be closed
     await fixNow(page, '2026-11-23T21:30:00Z') // 16:30 NY
@@ -381,9 +394,13 @@ test.describe('FEAT-004 平仓', () => {
     await expect(ui.row(`SPY ${d} 600 C`).getByTestId('position-close')).toHaveCount(0)
   })
 
-  test('AC10 补录平仓：使之后平仓无持仓 → 拒绝并指出时间；BTC 1 张成功，之后那笔改平 L2（+260.00）', async ({ page, trade }) => {
+  // FEAT-051 (Q255 cancels Q39): the later close keeps its stored lot L1. Old expectation: the FIFO backfill of 1 张
+  // succeeded (+229.35) and re-matched the later close to L2 (+260.00). New: that backfill is rejected with
+  // CLOSE_LOTS_INVALID; the backfill is then done in the positions dialog choosing L2 (+240.00), the later close stays
+  // L1 (+249.35). Cash ends the same (80,489.35 / 0.00 / 80,489.35).
+  test('AC10 补录平仓（Q255）：使之后平仓无持仓 → 拒绝；录入交易页 FIFO 1 张选到之后平仓的 L1 → CLOSE_LOTS_INVALID；持仓页选 L2 补录 +240.00，之后那笔仍是 L1 +249.35', async ({ page, trade }) => {
     await apiTransfer('DEPOSIT', '80000.00', '2026-10-26T10:00')
-    await apiTrade({ action: 'STO', strike: '200', type: 'PUT', netAmount: '349.35', time: '2026-11-03T10:30' })
+    const l1 = (await apiTrade({ action: 'STO', strike: '200', type: 'PUT', netAmount: '349.35', time: '2026-11-03T10:30' })).id
     const l2 = (await apiTrade({ action: 'STO', strike: '200', type: 'PUT', netAmount: '360.00', time: '2026-11-04T11:00' })).id
     const later = await apiClose({ action: 'BTC', contracts: 1, netAmount: '100.00', tradedAtLocal: '2026-11-06T10:00' })
     await trade.open()
@@ -396,13 +413,37 @@ test.describe('FEAT-004 平仓', () => {
     await trade.contracts.fill('1')
     await trade.netAmount.fill('120.00')
     await trade.submit.click()
-    await expect(page.getByTestId('open-trade-confirmation-realized-pnl')).toHaveText('+229.35')
-    await new CashPage(page).expectSummary('80,489.35', '0.00', '80,489.35')
+    await expect(trade.error).toHaveText(
+      '补录后，2026-11-06 10:00 BTC 1 张 AAPL 2026-12-18 200 P 选中的批次 2026-11-03 10:30 STO 1 张 已被更早的平仓平掉',
+    )
+    await expect(trade.error).toHaveAttribute('data-error-code', 'CLOSE_LOTS_INVALID')
+    await expect(trade.contracts).toHaveValue('1')
+    await new CashPage(page).expectSummary('80,609.35', '20,000.00', '60,609.35')
+
+    // the positions dialog lists the lot still held (L2) and can backfill it at 11-05
+    const ui = new CloseUi(page)
+    await ui.openPositions()
+    await ui.openModal('AAPL 2026-12-18 200 P')
+    await expect(ui.modal.getByTestId('close-trade-lot-row')).toHaveCount(1)
+    await expect(ui.modal.getByTestId('close-trade-lot-row')).toHaveAttribute('data-trade-id', String(l2))
+    await ui.submit({ net: '120.00', time: '2026-11-05T10:00' })
+    await expect(ui.m('close-trade-confirmation-realized-pnl')).toHaveText('+240.00')
+    await expect(ui.m('cash-summary-total')).toHaveText('80,489.35')
+    await expect(ui.m('cash-summary-frozen')).toHaveText('0.00')
     const re = await apiGet<{ realizedPnl: string; coveredLots: { tradeId: number }[] }>(`/api/option-trades/${String(later.id)}`)
-    expect(re.realizedPnl).toBe('260.00')
-    expect(re.coveredLots.map((l) => l.tradeId)).toEqual([l2])
-    await page.getByTestId('nav-positions').click()
+    expect(re.realizedPnl).toBe('249.35')
+    expect(re.coveredLots.map((l) => l.tradeId)).toEqual([l1])
+    await ui.m('close-trade-done').click()
     await expect(page.getByTestId('positions-count')).toHaveText('共 0 个持仓')
+  })
+
+  test('FEAT-051 录入交易页 BTC 确认信息标题仍为"被平掉的开仓批次（FIFO）"（Q257）', async ({ page, trade }) => {
+    await scenarioA()
+    await trade.open()
+    await fillClose(trade, 'BTC', { contracts: '2', net: '241.30', time: '2026-11-05T10:00' })
+    await trade.submit.click()
+    await expect(page.getByTestId('open-trade-confirmation-realized-pnl')).toHaveText('+457.40')
+    await expect(page.getByTestId('open-trade-confirmation-covered-lots-title')).toHaveText('被平掉的开仓批次（FIFO）')
   })
 
   test('AC11 平仓对话框字段校验：净额 0 / −10.00 / 241.305、时间晚于当前、备注 501 → 字段错误、不提交', async ({ page }) => {

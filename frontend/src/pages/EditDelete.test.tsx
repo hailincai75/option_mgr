@@ -7,6 +7,7 @@ import type {
   CashLedgerEntry,
   CashLedgerPage,
   CashSummary,
+  CloseLotChoicesResponse,
   OptionTrade,
   OptionTradePage,
 } from '../api/types'
@@ -84,6 +85,40 @@ const C1 = trade({
   realizedPnl: '457.40',
   hasAuditLog: true,
 })
+
+/**
+ * FEAT-051 close-lot-choices of C1: at its own time L1 (selected) and L2; at a time before L2
+ * opened (2026-11-04 10:00) only L1.
+ */
+function lotChoices(closeTradeId: number, tradedAtLocal: string | null): CloseLotChoicesResponse {
+  const l1 = {
+    tradeId: 1,
+    action: 'STO',
+    tradedAt: L1.tradedAt,
+    tradedAtLocal: L1.tradedAtLocal,
+    contracts: 2,
+    netAmount: '698.70',
+    frozen: '40000.00',
+    selected: true,
+  }
+  const l2 = {
+    tradeId: 2,
+    action: 'STO',
+    tradedAt: L2.tradedAt,
+    tradedAtLocal: L2.tradedAtLocal,
+    contracts: 1,
+    netAmount: '360.00',
+    frozen: '20000.00',
+    selected: false,
+  }
+  const early = tradedAtLocal === '2026-11-04T10:00'
+  return {
+    closeTradeId,
+    tradedAt: early ? '2026-11-04T15:00:00Z' : C1.tradedAt,
+    tradedAtLocal: early ? '2026-11-04T10:00:00' : C1.tradedAtLocal,
+    lots: early ? [l1] : [l1, l2],
+  }
+}
 
 const SUMMARY_A: CashSummary = {
   totalCash: '80817.40',
@@ -202,6 +237,11 @@ function startFakeServer(server: FakeServer) {
     const path = new URL(url, 'http://localhost').pathname
     const idMatch = /\/(\d+)$/.exec(path)
     const id = idMatch ? Number(idMatch[1]) : NaN
+    const choicesMatch = /^\/api\/option-trades\/(\d+)\/close-lot-choices$/.exec(path)
+    if (method === 'GET' && choicesMatch) {
+      const time = new URL(url, 'http://localhost').searchParams.get('tradedAtLocal')
+      return Promise.resolve(jsonResponse(lotChoices(Number(choicesMatch[1]), time)))
+    }
     if (method === 'GET' && path === '/api/option-trades') {
       const result: OptionTradePage = page(server.trades)
       return Promise.resolve(jsonResponse(result))
@@ -391,6 +431,24 @@ describe('trade list: 修改', () => {
     expect(byTestId('trade-edit-net-amount-label')).toHaveTextContent('实付总额（含手续费）')
     expect(screen.queryByTestId('trade-edit-multiplier')).not.toBeInTheDocument()
     expect(byTestId('trade-edit-multiplier-readonly')).toHaveTextContent('100')
+    // FEAT-051: no contracts input; the lot list from close-lot-choices with the current lot ticked.
+    expect(await screen.findByTestId('trade-edit-lots-total')).toHaveTextContent('平仓张数：2')
+    expect(screen.queryByTestId('trade-edit-contracts')).not.toBeInTheDocument()
+    const rows = screen.getAllByTestId('trade-edit-lot-row')
+    expect(rows.map((row) => row.getAttribute('data-trade-id'))).toEqual(['1', '2'])
+    const first = within(rows[0] as HTMLElement)
+    expect(first.getByTestId('trade-edit-lot-checkbox')).toBeChecked()
+    expect(first.getByTestId('trade-edit-lot-time')).toHaveTextContent('2026-11-03 10:30')
+    expect(first.getByTestId('trade-edit-lot-net-amount')).toHaveTextContent('+698.70')
+    expect(first.getByTestId('trade-edit-lot-frozen')).toHaveTextContent('40,000.00')
+    expect(first.getByTestId('trade-edit-lot-unrealized-pnl')).toHaveTextContent('—')
+    expect(first.queryByTestId('trade-edit-lot-fifo-default')).not.toBeInTheDocument()
+    expect(
+      within(rows[1] as HTMLElement).getByTestId('trade-edit-lot-checkbox'),
+    ).not.toBeChecked()
+    expect(
+      requests.filter((r) => r.url.includes('close-lot-choices')).map((r) => r.url),
+    ).toEqual(['/api/option-trades/3/close-lot-choices'])
     setText('trade-edit-net-amount', '250.00')
     await userEvent.click(byTestId('trade-edit-submit'))
 
@@ -398,18 +456,77 @@ describe('trade list: 修改', () => {
       expect(writes(requests)).toHaveLength(1)
     })
     expect(writes(requests)[0]?.body).toEqual({
-      contracts: 2,
+      lotTradeIds: [1],
       netAmount: '250.00',
       tradedAtLocal: '2026-11-05T10:00',
       note: null,
     })
   })
 
+  it('changes the chosen lots of a close (FEAT-051 AC 7)', async () => {
+    const server = scenarioA()
+    server.onPutTrade = () => jsonResponse(C1)
+    const requests = startFakeServer(server)
+    renderWithProviders(<TradeListPage />)
+
+    await userEvent.click(within(await tradeRow(3)).getByTestId('trade-edit'))
+    const rows = await screen.findAllByTestId('trade-edit-lot-row')
+    await userEvent.click(within(rows[0] as HTMLElement).getByTestId('trade-edit-lot-checkbox'))
+    expect(byTestId('trade-edit-lots-total')).toHaveTextContent('平仓张数：0')
+    expect(byTestId('trade-edit-submit')).toBeDisabled()
+    await userEvent.click(within(rows[1] as HTMLElement).getByTestId('trade-edit-lot-checkbox'))
+    expect(byTestId('trade-edit-lots-total')).toHaveTextContent('平仓张数：1')
+    await userEvent.click(byTestId('trade-edit-submit'))
+
+    await waitFor(() => {
+      expect(writes(requests)).toHaveLength(1)
+    })
+    expect(writes(requests)[0]?.body).toEqual({
+      lotTradeIds: [2],
+      netAmount: '241.30',
+      tradedAtLocal: '2026-11-05T10:00',
+      note: null,
+    })
+  })
+
+  it('reloads the choices for a changed trade time and drops lots no longer selectable (FEAT-051)', async () => {
+    const server = scenarioA()
+    server.onPutTrade = () => jsonResponse(C1)
+    const requests = startFakeServer(server)
+    renderWithProviders(<TradeListPage />)
+
+    await userEvent.click(within(await tradeRow(3)).getByTestId('trade-edit'))
+    const rows = await screen.findAllByTestId('trade-edit-lot-row')
+    // Tick L2 as well (3 contracts), then move the close before L2 opened.
+    await userEvent.click(within(rows[1] as HTMLElement).getByTestId('trade-edit-lot-checkbox'))
+    expect(byTestId('trade-edit-lots-total')).toHaveTextContent('平仓张数：3')
+    setText('trade-edit-time', '2026-11-04T10:00')
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('trade-edit-lot-row')).toHaveLength(1)
+    })
+    expect(byTestId('trade-edit-lots-total')).toHaveTextContent('平仓张数：2')
+    expect(requests.map((r) => r.url)).toContain(
+      '/api/option-trades/3/close-lot-choices?tradedAtLocal=2026-11-04T10%3A00',
+    )
+    await userEvent.click(byTestId('trade-edit-submit'))
+    await waitFor(() => {
+      expect(writes(requests)).toHaveLength(1)
+    })
+    expect(writes(requests)[0]?.body).toMatchObject({
+      lotTradeIds: [1],
+      tradedAtLocal: '2026-11-04T10:00',
+    })
+  })
+
   it.each([
-    ['CLOSE_NOT_WHOLE_LOTS', '必须一次平掉整笔开仓：最早一笔是 2 张，可平 2 张或 3 张'],
     [
-      'CLOSE_NOT_WHOLE_LOTS',
-      '修改后该合约（AAPL 2026-12-18 200 P）在 2026-11-05 10:00 的 BTC 2 张将不是整笔开仓（最早一笔是 3 张，可平 3 张或 4 张）',
+      'CLOSE_LOTS_INVALID',
+      '所选批次（2026-11-04 11:00 STO 1 张）在成交时间 2026-11-03 15:00 还未开仓',
+    ],
+    [
+      'CLOSE_LOTS_INVALID',
+      '修改后，2026-11-19 10:00 BTC 1 张 AAPL 2026-12-18 200 P 选中的批次 2026-11-04 11:00 STO 1 张 已被更早的平仓平掉',
     ],
     ['NO_CHANGES', '没有修改'],
     ['CASH_INSUFFICIENT', '可用现金不足：修改后 2026-11-04 11:00 时可用现金将变为 −41.30'],
@@ -418,14 +535,15 @@ describe('trade list: 修改', () => {
     renderWithProviders(<TradeListPage />)
 
     await userEvent.click(within(await tradeRow(3)).getByTestId('trade-edit'))
-    setText('trade-edit-contracts', '1')
+    const rows = await screen.findAllByTestId('trade-edit-lot-row')
+    await userEvent.click(within(rows[1] as HTMLElement).getByTestId('trade-edit-lot-checkbox'))
     setText('trade-edit-note', '试改')
     await userEvent.click(byTestId('trade-edit-submit'))
 
     const error = await screen.findByTestId('trade-edit-error')
     expect(error).toHaveTextContent(message)
     expect(error).toHaveAttribute('data-error-code', code)
-    expect(byTestId('trade-edit-contracts')).toHaveValue('1')
+    expect(byTestId('trade-edit-lots-total')).toHaveTextContent('平仓张数：3')
     expect(byTestId('trade-edit-note')).toHaveValue('试改')
     expect(byTestId('trade-edit-modal')).toBeInTheDocument()
   })
@@ -728,6 +846,92 @@ describe('cash ledger: transfer actions', () => {
       'DELETE /api/cash/transfers/1',
     ])
     expect(await screen.findByTestId('cash-ledger-empty')).toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// FEAT-051: audit of a close's chosen lots
+// ---------------------------------------------------------------------------
+
+describe('audit: 被平批次', () => {
+  const closeSnapshot = {
+    id: 3,
+    contractLabel: 'AAPL 2026-12-18 200 P',
+    action: 'BTC',
+    contracts: 2,
+    multiplier: 100,
+    netAmount: '241.30',
+    tradedAtLocal: '2026-11-05T10:00:00',
+    note: null,
+    cashChange: '-241.30',
+    frozenChange: '-40000.00',
+  }
+  const lot = (tradeId: number, tradedAtLocal: string, contracts: number) => ({
+    tradeId,
+    action: 'STO',
+    tradedAt: '2026-11-03T15:30:00Z',
+    tradedAtLocal,
+    contracts,
+  })
+
+  it('shows the backend change text and the chosen lots before / after; old records as-is', async () => {
+    const edit: AuditRecord = {
+      ...AUDIT_EDIT_L2,
+      id: 2,
+      objectId: 3,
+      summary: 'BTC AAPL 2026-12-18 200 P',
+      before: { ...closeSnapshot, selectedLots: [lot(1, '2026-11-03T10:30:00', 2)] },
+      after: {
+        ...closeSnapshot,
+        contracts: 3,
+        selectedLots: [lot(1, '2026-11-03T10:30:00', 2), lot(2, '2026-11-04T11:00:00', 1)],
+      },
+      changes: [
+        {
+          field: 'selectedLots',
+          label: '被平批次',
+          before: '2026-11-03 10:30 2 张',
+          after: '2026-11-03 10:30 2 张、2026-11-04 11:00 1 张',
+          text: '被平批次：2026-11-03 10:30 2 张 → 2026-11-03 10:30 2 张、2026-11-04 11:00 1 张',
+        },
+        { field: 'contracts', label: '张数', before: '2', after: '3', text: '张数：2 → 3' },
+      ],
+    }
+    const legacy: AuditRecord = {
+      ...AUDIT_EDIT_L2,
+      id: 1,
+      objectId: 3,
+      before: closeSnapshot,
+      after: { ...closeSnapshot, netAmount: '250.00' },
+    }
+    startFakeServer(scenarioA({ audit: [edit, legacy] }))
+    renderWithProviders(<App />, { route: '/audit' })
+
+    const rows = await screen.findAllByTestId('audit-row')
+    const first = within(rows[0] as HTMLElement)
+    expect(first.getAllByTestId('audit-cell-changes-line').map((line) => line.textContent)).toEqual(
+      [
+        '被平批次：2026-11-03 10:30 2 张 → 2026-11-03 10:30 2 张、2026-11-04 11:00 1 张',
+        '张数：2 → 3',
+      ],
+    )
+    await userEvent.click(first.getByTestId('audit-expand'))
+    const details = await screen.findAllByTestId('audit-detail')
+    const detail = within(details[0] as HTMLElement)
+    expect(detail.getByTestId('audit-before-selectedLots')).toHaveTextContent(
+      '2026-11-03 10:30 2 张',
+    )
+    expect(detail.getByTestId('audit-after-selectedLots')).toHaveTextContent(
+      '2026-11-03 10:30 2 张、2026-11-04 11:00 1 张',
+    )
+
+    await userEvent.click(within(rows[1] as HTMLElement).getByTestId('audit-expand'))
+    await waitFor(() => {
+      expect(screen.getAllByTestId('audit-detail')).toHaveLength(2)
+    })
+    const legacyDetail = within(screen.getAllByTestId('audit-detail')[1] as HTMLElement)
+    expect(legacyDetail.getByTestId('audit-before-netAmount')).toHaveTextContent('241.30')
+    expect(legacyDetail.queryByTestId('audit-before-selectedLots')).not.toBeInTheDocument()
   })
 })
 

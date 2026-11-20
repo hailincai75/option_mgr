@@ -317,10 +317,11 @@ public final class OptionTradeDtos {
 
     /**
      * FEAT-005 edit (Q43): only editable fields; contract and action are not part of it (extra properties ignored).
-     * {@code multiplier}: opens only, null = unchanged; ignored for closes.
+     * {@code multiplier}: opens only, null = unchanged; ignored for closes. FEAT-051: {@code contracts} is required for
+     * opens (checked in the service), optional for closes; {@code lotTradeIds}: closes only, null = unchanged.
      */
+    @LotSelection
     public record EditTradeRequest(
-            @NotNull(message = "张数不能为空")
             @Positive(message = "张数必须是正整数")
             @Digits(integer = 100, fraction = 0, message = "张数必须是正整数")
             @DecimalMax(value = "100000", message = "张数过大")
@@ -342,7 +343,20 @@ public final class OptionTradeDtos {
             BigDecimal multiplier,
 
             @Size(max = 500, message = "备注最多 500 个字符")
-            String note) {
+            String note,
+
+            @JsonDeserialize(contentUsing = LotSelection.StrictLongDeserializer.class)
+            List<Long> lotTradeIds) implements LotSelection.Request {
+    }
+
+    /** FEAT-051: the lots a close may select (edit form). */
+    public record CloseLotChoicesResponse(long closeTradeId, Instant tradedAt, String tradedAtLocal,
+                                          List<CloseLotChoice> lots) {
+    }
+
+    /** FEAT-051: one selectable lot; {@code selected}: in the close's current selection. */
+    public record CloseLotChoice(long tradeId, TradeAction action, Instant tradedAt, String tradedAtLocal,
+                                 int contracts, BigDecimal netAmount, BigDecimal frozen, boolean selected) {
     }
 
     /** FEAT-004: one whole lot covered by a close. */
@@ -350,7 +364,12 @@ public final class OptionTradeDtos {
                                      int contracts, BigDecimal netAmount, BigDecimal frozen) {
     }
 
-    /** FEAT-004 closing trade; no multiplier (taken from the position; an extra "multiplier" property is ignored). */
+    /**
+     * FEAT-004 closing trade; no multiplier (taken from the position; an extra "multiplier" property is ignored).
+     * FEAT-051: {@code lotTradeIds} given = the selected lots ({@code contracts} optional); absent / null = FIFO mode
+     * ({@code contracts} required).
+     */
+    @LotSelection(contractsRequiredWithoutLots = true)
     public record CloseTradeRequest(
             @NotEmpty(message = "标的不能为空")
             @Size(max = Symbols.MAX_LENGTH, message = "标的最多 10 个字符")
@@ -373,7 +392,6 @@ public final class OptionTradeDtos {
             @ClosingAction
             TradeAction action,
 
-            @NotNull(message = "张数不能为空")
             @Positive(message = "张数必须是正整数")
             @Digits(integer = 100, fraction = 0, message = "张数必须是正整数")
             @DecimalMax(value = "100000", message = "张数过大")
@@ -390,7 +408,10 @@ public final class OptionTradeDtos {
             LocalDateTime tradedAtLocal,
 
             @Size(max = 500, message = "备注最多 500 个字符")
-            String note) {
+            String note,
+
+            @JsonDeserialize(contentUsing = LotSelection.StrictLongDeserializer.class)
+            List<Long> lotTradeIds) implements LotSelection.Request {
 
         public CloseTradeRequest {
             symbol = Symbols.normalize(symbol);

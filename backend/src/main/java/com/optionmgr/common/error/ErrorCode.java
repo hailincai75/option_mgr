@@ -26,6 +26,8 @@ public enum ErrorCode {
     CLOSE_EXCEEDS_POSITION(HttpStatus.UNPROCESSABLE_ENTITY),
     /** FEAT-004 Q21: close contracts are not the earliest whole lots. */
     CLOSE_NOT_WHOLE_LOTS(HttpStatus.UNPROCESSABLE_ENTITY),
+    /** FEAT-051: a close's selected lots are invalid, or a change makes a stored selection invalid (Q255). */
+    CLOSE_LOTS_INVALID(HttpStatus.UNPROCESSABLE_ENTITY),
     /** FEAT-005: an edit that changes nothing ("没有修改"); nothing saved, nothing audited. */
     NO_CHANGES(HttpStatus.UNPROCESSABLE_ENTITY),
     /** FEAT-012 Q10: expiring before 17:30 New York on the expiration date. */

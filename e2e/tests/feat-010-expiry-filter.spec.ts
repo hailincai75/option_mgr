@@ -1,3 +1,4 @@
+import { chooseFifoLots } from '../support/closeLots'
 import type { Locator, Page } from '@playwright/test'
 import { apiTransfer, expect, MINUS, test } from '../support/fixtures'
 import { apiTrade } from '../support/trade'
@@ -395,7 +396,7 @@ test.describe('FEAT-010 持仓页到期过滤', () => {
     await ui.posRow(R.R4).getByTestId('position-close').click()
     const cm = ui.id('close-trade-modal')
     await expect(cm.getByRole('dialog')).toBeVisible()
-    await cm.getByTestId('close-trade-contracts-1').check()
+    await chooseFifoLots(cm, 1)
     await cm.getByTestId('close-trade-net-amount').fill('20.00')
     await cm.getByTestId('close-trade-time').fill(at(addDays(T, -1), '11:00'))
     await cm.getByTestId('close-trade-submit').click()

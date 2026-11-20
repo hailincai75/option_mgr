@@ -247,7 +247,11 @@ test.describe('FEAT-006 已平仓', () => {
     await expect(c.rows).toHaveCount(0)
   })
 
-  test('AC5 补录 / 修改 / 删除后重新匹配，已平仓页无需刷新', async ({ page }) => {
+  // FEAT-051 (Q255 cancels Q39): X keeps its stored lot L1. Old: the entry-page backfill Y (FIFO 1 张) succeeded at
+  // +229.35 and re-matched X to L2 (+260.00, then +265.00 after the L2 edit). New: that backfill is rejected
+  // (CLOSE_LOTS_INVALID); Y is entered in the positions dialog choosing L2 (+240.00) and X stays L1 +249.35; the L2 net
+  // edit changes Y (+245.00). Totals are unchanged (+489.35, +494.35, +249.35).
+  test('AC5（FEAT-051）补录 / 修改 / 删除后 X 保持所选批次 L1，已平仓页无需刷新', async ({ page }) => {
     await apiTransfer('DEPOSIT', '80000.00', '2026-10-26T10:00')
     await apiTrade({ action: 'STO', strike: '200', type: 'PUT', netAmount: '349.35', time: '2026-11-03T10:30' }) // L1 #1
     await apiTrade({ action: 'STO', strike: '200', type: 'PUT', netAmount: '360.00', time: '2026-11-04T11:00' }) // L2 #2
@@ -258,22 +262,40 @@ test.describe('FEAT-006 已平仓', () => {
     await expect(c.total).toHaveText('+249.35')
     expect((await c.lots(3))[0]).toContain('2026-11-03 10:30')
 
-    // backfill Y through the entry page
+    // backfill Y through the entry page (FIFO) → takes L1, which X already chose → rejected
     await page.getByTestId('nav-open-trade').click()
     const form = new TradeForm(page)
     await page.getByTestId('open-trade-action-btc').check()
     await form.fill({ symbol: 'AAPL', expiration: '2026-12-18', strike: '200', type: 'PUT', contracts: '1', netAmount: '120.00', time: '2026-11-05T10:00' })
     await form.submit.click()
-    await expect(page.getByTestId('open-trade-confirmation-realized-pnl')).toHaveText('+229.35')
+    await expect(form.error).toHaveAttribute('data-error-code', 'CLOSE_LOTS_INVALID')
+    await expect(form.error).toHaveText(
+      '补录后，2026-11-06 10:00 BTC 1 张 AAPL 2026-12-18 200 P 选中的批次 2026-11-03 10:30 STO 1 张 已被更早的平仓平掉',
+    )
+
+    // backfill Y in the positions dialog: the only lot held is L2 (ticked by default)
+    await page.getByTestId('nav-positions').click()
+    await page.locator('[data-testid="position-row"][data-contract="AAPL 2026-12-18 200 P"]').getByTestId('position-close').click()
+    const m = page.getByTestId('close-trade-modal')
+    await expect(m.getByRole('dialog')).toBeVisible()
+    await expect(m.getByTestId('close-trade-lot-row')).toHaveCount(1)
+    await expect(m.getByTestId('close-trade-lot-row')).toHaveAttribute('data-trade-id', '2')
+    await m.getByTestId('close-trade-net-amount').fill('120.00')
+    await m.getByTestId('close-trade-time').fill('2026-11-05T10:00')
+    await m.getByTestId('close-trade-submit').click()
+    await expect(m.getByTestId('close-trade-confirmation-realized-pnl')).toHaveText('+240.00')
+    await m.getByTestId('close-trade-done').click()
+    await expect(m.getByRole('dialog')).toBeHidden()
+
     await page.getByTestId('nav-closed').click()
     await expect(c.count).toHaveText('共 2 笔平仓')
     await expect(c.total).toHaveText('+489.35')
-    await expect(c.row(3).getByTestId('closed-cell-pnl')).toHaveText('+260.00')
-    await expect(c.row(4).getByTestId('closed-cell-pnl')).toHaveText('+229.35')
-    expect((await c.lots(3))[0]).toContain('2026-11-04 11:00')
-    expect((await c.lots(4))[0]).toContain('2026-11-03 10:30')
+    await expect(c.row(3).getByTestId('closed-cell-pnl')).toHaveText('+249.35')
+    await expect(c.row(4).getByTestId('closed-cell-pnl')).toHaveText('+240.00')
+    expect((await c.lots(3))[0]).toContain('2026-11-03 10:30')
+    expect((await c.lots(4))[0]).toContain('2026-11-04 11:00')
 
-    // edit L2 net in the trade list
+    // edit L2 net in the trade list → only Y (which chose L2) changes
     await page.getByTestId('nav-trades').click()
     await page.locator('[data-testid="trade-row"][data-trade-id="2"]').getByTestId('trade-edit').click()
     const d = page.getByTestId('trade-edit-modal').getByRole('dialog')
@@ -282,7 +304,8 @@ test.describe('FEAT-006 已平仓', () => {
     await expect(d).toBeHidden()
     await page.getByTestId('nav-closed').click()
     await expect(c.total).toHaveText('+494.35')
-    await expect(c.row(3).getByTestId('closed-cell-pnl')).toHaveText('+265.00')
+    await expect(c.row(3).getByTestId('closed-cell-pnl')).toHaveText('+249.35')
+    await expect(c.row(4).getByTestId('closed-cell-pnl')).toHaveText('+245.00')
 
     // delete Y
     await page.getByTestId('nav-trades').click()

@@ -89,6 +89,7 @@ abstract class CashSystemTestBase {
         // FEAT-011: stock_trade has an FK to account, so it must be emptied before non-default accounts are removed.
         // FEAT-013: ASSIGN_BUY rows reference option_trade (fk_stock_trade_option_trade), so stock_trade goes first.
         jdbc.update("DELETE FROM stock_trade");
+        jdbc.update("DELETE FROM option_close_lot"); // FEAT-051: FK to option_trade, no cascade
         jdbc.update("DELETE FROM option_trade");
         jdbc.update("DELETE FROM audit_record");
         jdbc.update("DELETE FROM cash_account WHERE id <> 1");

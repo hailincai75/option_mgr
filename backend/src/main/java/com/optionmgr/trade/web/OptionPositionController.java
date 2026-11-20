@@ -136,7 +136,9 @@ public class OptionPositionController {
                               String shortfallAtLocal, Long shortfallHeldShares,
                               /* FEAT-048: valued with the row's mark; status / label = the row's (Q239) */
                               BigDecimal marketValue, BigDecimal unrealizedPnl, BigDecimal unrealizedPnlPercent,
-                              ValuationStatus unrealizedStatus, String unrealizedLabel) {
+                              ValuationStatus unrealizedStatus, String unrealizedLabel,
+                              /* FEAT-051: the lot the close form selects by default (the earliest, rule 3) */
+                              boolean closeDefault) {
     }
 
     @GetMapping
@@ -194,7 +196,7 @@ public class OptionPositionController {
         List<RowValuation> lotValues = UnrealizedValuationService.optionLots(p, v, optionQuote);
         List<LotResponse> lots = new ArrayList<>(p.lots().size());
         for (int i = 0; i < p.lots().size(); i++) {
-            lots.add(toResponse(p.lots().get(i), rc, lotValues.get(i)));
+            lots.add(toResponse(p.lots().get(i), rc, lotValues.get(i), i == 0));
         }
         return new PositionResponse(accountId, accountName, c.symbol(), c.expirationDate(),
                 ContractKey.strikeText(c.strike()),
@@ -223,7 +225,8 @@ public class OptionPositionController {
                 GreeksResponse.of(UnrealizedValuationService.greeks(p, today, optionQuote, book.stored(c))));
     }
 
-    private static LotResponse toResponse(PositionLot l, OptionPositionService.RowCoverage rc, RowValuation v) {
+    private static LotResponse toResponse(PositionLot l, OptionPositionService.RowCoverage rc, RowValuation v,
+                                          boolean closeDefault) {
         OptionPositionService.LotCoverage lc = rc == null ? null : rc.lots().get(l.tradeId());
         CoverageTimeline.Shortfall sf = lc == null ? null : lc.shortfall();
         return new LotResponse(l.tradeId(), l.action(), l.tradedAt(),
@@ -232,6 +235,6 @@ public class OptionPositionController {
                 l.remainingFrozen(), l.note(), lc == null ? null : lc.status(), lc == null ? null : lc.requiredShares(),
                 sf == null ? null : sf.at(), sf == null ? null : LOCAL_SECONDS.format(MarketTime.toLocal(sf.at())),
                 sf == null ? null : sf.held(), v.marketValue(), v.unrealizedPnl(), v.percent(), v.status(),
-                v.label());
+                v.label(), closeDefault);
     }
 }

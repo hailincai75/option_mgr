@@ -79,6 +79,12 @@ const AAPL_POSITION: OptionPosition = {
       originalFrozen: '40000.00',
       remainingFrozen: '40000.00',
       note: null,
+      closeDefault: true,
+      unrealizedStatus: 'OK',
+      marketValue: '-500.00',
+      unrealizedPnl: '198.70',
+      unrealizedPnlPercent: '28.44',
+      unrealizedLabel: null,
     },
     {
       ...L2,
@@ -89,6 +95,9 @@ const AAPL_POSITION: OptionPosition = {
       originalFrozen: '20000.00',
       remainingFrozen: '20000.00',
       note: null,
+      closeDefault: false,
+      unrealizedStatus: 'NO_QUOTE',
+      unrealizedLabel: '无报价',
     },
   ],
 }
@@ -113,7 +122,7 @@ const POSITIONS_AFTER_AC1: OptionPositionsResponse = {
       frozenCash: '20000.00',
       lotCount: 1,
       allowedCloseContracts: [1],
-      lots: AAPL_POSITION.lots.slice(1),
+      lots: AAPL_POSITION.lots.slice(1).map((lot) => ({ ...lot, closeDefault: true })),
     },
   ],
 }
@@ -222,6 +231,17 @@ function acceptingAc1(server: FakeServer): FakeServer {
 
 const byTestId = (id: string) => screen.getByTestId(id)
 
+/** FEAT-051 lot rows of the 平仓 dialog, in list order. */
+function lotRows(): HTMLElement[] {
+  return screen.getAllByTestId('close-trade-lot-row')
+}
+
+function lotCheckbox(index: number): HTMLElement {
+  const row = lotRows()[index]
+  if (!row) throw new Error(`lot row ${String(index)} not found`)
+  return within(row).getByTestId('close-trade-lot-checkbox')
+}
+
 function setText(testId: string, value: string) {
   fireEvent.change(byTestId(testId), { target: { value } })
 }
@@ -245,7 +265,7 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('平仓 from the positions page', () => {
-  it('prefills contract, BTC, allowed counts (default the smallest) and the paid label (AC 9)', async () => {
+  it('prefills contract, BTC, the lot list (FIFO default ticked) and the paid label (AC 9; FEAT-051 AC 1)', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-11-11T15:00:00Z'))
     startFakeServer(scenarioA())
@@ -256,14 +276,128 @@ describe('平仓 from the positions page', () => {
     expect(byTestId('close-trade-contract')).toHaveTextContent('AAPL 2026-12-18 200 P')
     expect(byTestId('close-trade-action')).toHaveTextContent('BTC（买入平仓）')
     expect(byTestId('close-trade-multiplier')).toHaveTextContent('100')
-    expect(byTestId('close-trade-contracts-2')).toBeChecked()
-    expect(byTestId('close-trade-contracts-3')).not.toBeChecked()
-    expect(within(modal).queryByTestId('close-trade-contracts-1')).not.toBeInTheDocument()
+    expect(within(modal).queryByTestId('close-trade-contracts-2')).not.toBeInTheDocument()
+
+    const rows = lotRows()
+    expect(rows.map((row) => row.getAttribute('data-trade-id'))).toEqual(['1', '2'])
+    const [first, second] = rows.map((row) => within(row))
+    if (!first || !second) throw new Error('lot rows missing')
+    expect(first.getByTestId('close-trade-lot-time')).toHaveTextContent('2026-11-03 10:30')
+    expect(first.getByTestId('close-trade-lot-action')).toHaveTextContent('STO')
+    expect(first.getByTestId('close-trade-lot-contracts')).toHaveTextContent('2 张')
+    expect(first.getByTestId('close-trade-lot-net-amount')).toHaveTextContent('+698.70')
+    expect(first.getByTestId('close-trade-lot-frozen')).toHaveTextContent('40,000.00')
+    expect(first.getByTestId('close-trade-lot-unrealized-pnl')).toHaveTextContent('+198.70')
+    expect(first.getByTestId('close-trade-lot-fifo-default')).toHaveTextContent('FIFO 默认')
+    expect(first.getByTestId('close-trade-lot-checkbox')).toBeChecked()
+    expect(second.getByTestId('close-trade-lot-time')).toHaveTextContent('2026-11-04 11:00')
+    expect(second.getByTestId('close-trade-lot-contracts')).toHaveTextContent('1 张')
+    expect(second.getByTestId('close-trade-lot-net-amount')).toHaveTextContent('+360.00')
+    expect(second.getByTestId('close-trade-lot-unrealized-pnl')).toHaveTextContent('无报价')
+    expect(second.queryByTestId('close-trade-lot-fifo-default')).not.toBeInTheDocument()
+    expect(second.getByTestId('close-trade-lot-checkbox')).not.toBeChecked()
+    expect(byTestId('close-trade-lots-total')).toHaveTextContent('平仓张数：2')
+    expect(byTestId('close-trade-lots-hint')).toHaveTextContent(
+      '选择要整笔平掉的开仓批次（默认最早一笔，FIFO）',
+    )
+
     expect(byTestId('close-trade-net-amount-label')).toHaveTextContent('实付总额（含手续费）')
     expect(byTestId('close-trade-time')).toHaveValue('2026-11-11T10:00')
-    expect(screen.getByText('必须整笔平掉开仓批次（FIFO，从最早的一笔起）')).toBeInTheDocument()
     // Contract and direction are not editable inputs.
     expect(within(modal).queryByTestId('open-trade-symbol')).not.toBeInTheDocument()
+  })
+
+  it('closes only the later lot: non-contiguous choice, sum shown, lotTradeIds sent (FEAT-051 AC 2, 4)', async () => {
+    const close: OptionTrade = {
+      ...CLOSE_AC1,
+      contracts: 1,
+      netAmount: '9.65',
+      cashChange: '-9.65',
+      frozenChange: '-20000.00',
+      coveredLots: [{ ...L2, contracts: 1, netAmount: '360.00', frozen: '20000.00' }],
+      realizedPnl: '350.35',
+    }
+    const requests = startFakeServer(scenarioA({ onClose: () => jsonResponse(close, 201) }))
+    renderWithProviders(<PositionsPage />)
+
+    await userEvent.click(await screen.findByTestId('position-close'))
+    await userEvent.click(lotCheckbox(0))
+    expect(byTestId('close-trade-lots-total')).toHaveTextContent('平仓张数：0')
+    expect(byTestId('close-trade-lots-none-selected')).toHaveTextContent('请至少选择一笔开仓批次')
+    expect(byTestId('close-trade-submit')).toBeDisabled()
+    await userEvent.click(lotCheckbox(1))
+    expect(byTestId('close-trade-lots-total')).toHaveTextContent('平仓张数：1')
+    expect(byTestId('close-trade-submit')).toBeEnabled()
+    setText('close-trade-net-amount', '9.65')
+    setText('close-trade-time', '2026-11-19T10:00')
+    await userEvent.click(byTestId('close-trade-submit'))
+
+    const confirmation = await screen.findByTestId('close-trade-confirmation')
+    expect(
+      within(confirmation).getByTestId('close-trade-confirmation-covered-lots-title'),
+    ).toHaveTextContent(/^被平掉的开仓批次$/)
+    const lots = within(confirmation).getAllByTestId('covered-lot-row')
+    expect(lots.map((row) => row.getAttribute('data-trade-id'))).toEqual(['2'])
+    expect(
+      within(confirmation).getByTestId('close-trade-confirmation-realized-pnl'),
+    ).toHaveTextContent('+350.35')
+    expect(posts(requests)[0]?.body).toEqual({
+      symbol: 'AAPL',
+      expirationDate: '2026-12-18',
+      strike: '200',
+      optionType: 'PUT',
+      action: 'BTC',
+      lotTradeIds: [2],
+      netAmount: '9.65',
+      tradedAtLocal: '2026-11-19T10:00',
+      note: null,
+    })
+  })
+
+  it('sends every ticked lot in list order and shows their sum (FEAT-051 AC 4)', async () => {
+    const requests = startFakeServer(
+      scenarioA({ onClose: () => reject422('CASH_INSUFFICIENT', '可用现金不足') }),
+    )
+    renderWithProviders(<PositionsPage />)
+    await userEvent.click(await screen.findByTestId('position-close'))
+    await userEvent.click(lotCheckbox(1))
+    expect(byTestId('close-trade-lots-total')).toHaveTextContent('平仓张数：3')
+    setText('close-trade-net-amount', '20.00')
+    await userEvent.click(byTestId('close-trade-submit'))
+    await screen.findByTestId('close-trade-error')
+    expect(posts(requests)[0]?.body).toMatchObject({ lotTradeIds: [1, 2] })
+    expect(posts(requests)[0]?.body).not.toHaveProperty('contracts')
+  })
+
+  it('does not submit with no lot ticked (FEAT-051 AC 5)', async () => {
+    const requests = startFakeServer(scenarioA())
+    renderWithProviders(<PositionsPage />)
+    await userEvent.click(await screen.findByTestId('position-close'))
+    await userEvent.click(lotCheckbox(0))
+    setText('close-trade-net-amount', '1.00')
+    fireEvent.submit(byTestId('close-trade-form'))
+    await userEvent.click(byTestId('close-trade-cancel'))
+    expect(posts(requests)).toHaveLength(0)
+  })
+
+  it('hides the frozen column for a short call and falls back to the first lot without closeDefault', async () => {
+    const call: OptionPosition = {
+      ...AAPL_POSITION,
+      optionType: 'CALL',
+      contractLabel: 'AAPL 2026-12-18 200 C',
+      frozenCash: '0.00',
+      lots: AAPL_POSITION.lots.map((lot) => ({
+        ...lot,
+        closeDefault: undefined,
+        remainingFrozen: '0.00',
+      })),
+    }
+    startFakeServer(scenarioA({ positions: { ...POSITIONS_A, positions: [call] } }))
+    renderWithProviders(<PositionsPage />)
+    await userEvent.click(await screen.findByTestId('position-close'))
+    expect(lotCheckbox(0)).toBeChecked()
+    expect(lotCheckbox(1)).not.toBeChecked()
+    expect(screen.queryByTestId('close-trade-lot-frozen')).not.toBeInTheDocument()
   })
 
   it('submits the close, shows P&L and covered lots, and refreshes positions and cash (AC 1, 9)', async () => {
@@ -300,7 +434,7 @@ describe('平仓 from the positions page', () => {
       strike: '200',
       optionType: 'PUT',
       action: 'BTC',
-      contracts: 2,
+      lotTradeIds: [1],
       netAmount: '241.30',
       tradedAtLocal: '2026-11-05T10:00',
       note: null,
@@ -321,14 +455,17 @@ describe('平仓 from the positions page', () => {
     await waitFor(() => {
       expect(screen.queryByTestId('close-trade-confirmation')).not.toBeInTheDocument()
     })
-    // The refreshed row now only offers 1 contract.
+    // The refreshed row now only offers the remaining lot L2.
     await userEvent.click(byTestId('position-close'))
-    expect(await screen.findByTestId('close-trade-contracts-1')).toBeChecked()
-    expect(screen.queryByTestId('close-trade-contracts-2')).not.toBeInTheDocument()
+    expect(await screen.findByTestId('close-trade-lot-checkbox')).toBeChecked()
+    expect(lotRows().map((row) => row.getAttribute('data-trade-id'))).toEqual(['2'])
   })
 
   it.each([
-    ['CLOSE_NOT_WHOLE_LOTS', '必须一次平掉整笔开仓：最早一笔是 2 张，可平 2 张或 3 张'],
+    [
+      'CLOSE_LOTS_INVALID',
+      '所选批次（2026-11-04 11:00 STO 1 张）在成交时间 2026-11-03 15:00 还未开仓',
+    ],
     [
       'CASH_INSUFFICIENT',
       '可用现金不足：需要 20,349.36，可用 349.35 + 释放冻结 20,000.00 = 20,349.35',
@@ -344,7 +481,7 @@ describe('平仓 from the positions page', () => {
       renderWithProviders(<PositionsPage />)
 
       await userEvent.click(await screen.findByTestId('position-close'))
-      await userEvent.click(byTestId('close-trade-contracts-3'))
+      await userEvent.click(lotCheckbox(1))
       setText('close-trade-net-amount', '400.00')
       setText('close-trade-time', '2026-11-05T10:00')
       setText('close-trade-note', '试平')
@@ -353,7 +490,8 @@ describe('平仓 from the positions page', () => {
       const error = await screen.findByTestId('close-trade-error')
       expect(error).toHaveTextContent(message)
       expect(error).toHaveAttribute('data-error-code', code)
-      expect(byTestId('close-trade-contracts-3')).toBeChecked()
+      expect(lotCheckbox(0)).toBeChecked()
+      expect(lotCheckbox(1)).toBeChecked()
       expect(byTestId('close-trade-net-amount')).toHaveValue('400.00')
       expect(byTestId('close-trade-time')).toHaveValue('2026-11-05T10:00')
       expect(byTestId('close-trade-note')).toHaveValue('试平')
@@ -452,7 +590,7 @@ describe('平仓 from the positions page', () => {
     await userEvent.click(within(rows[1] as HTMLElement).getByTestId('position-close'))
     expect(await screen.findByTestId('close-trade-action')).toHaveTextContent('STC（卖出平仓）')
     expect(byTestId('close-trade-net-amount-label')).toHaveTextContent('实收净额（已扣手续费）')
-    expect(byTestId('close-trade-contracts-1')).toBeChecked()
+    expect(lotCheckbox(0)).toBeChecked()
   })
 
   it('cancels without saving', async () => {
@@ -523,6 +661,10 @@ describe('录入交易 page with closes', () => {
       within(confirmation).getByTestId('open-trade-confirmation-realized-pnl'),
     ).toHaveTextContent('+457.40')
     expect(within(confirmation).getAllByTestId('covered-lot-row')).toHaveLength(1)
+    // Q257: the 录入交易 page still matches FIFO by contracts.
+    expect(
+      within(confirmation).getByTestId('open-trade-confirmation-covered-lots-title'),
+    ).toHaveTextContent('被平掉的开仓批次（FIFO）')
     const post = posts(requests)[0]
     expect(post?.url).toBe('/api/option-trades/closes')
     expect(post?.body).not.toHaveProperty('multiplier')

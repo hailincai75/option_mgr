@@ -3,6 +3,8 @@
 > **FEAT-035 修订**：`X-Account-Id: ALL`（全部账户，只读）时返回全部账户的持仓行，行新增 `accountId`、`accountName`（单账户也有值）；排序原规则相同时按账户 id 升序。见 [FEAT-035.md](FEAT-035.md)。
 >
 > **FEAT-048 修订**：`lots[]` 新增 `marketValue`、`unrealizedPnl`、`unrealizedPnlPercent`、`unrealizedStatus`、`unrealizedLabel`（纯新增，与 FEAT-017 行字段同格式；状态 / 标签 = 所属行；最后一个批次的市值取"行市值 − 其它批次之和"，各批次之和始终等于行，Q238 A）。见 [FEAT-048.md](FEAT-048.md)。
+>
+> **FEAT-051 修订**：`lots[]` 新增 `closeDefault`（boolean，最早批次为 `true`，平仓表单默认勾选）。持仓按每笔平仓保存的所选批次扣除，剩余批次可以不是"最早若干笔之后"的连续批次（如只剩较早的一笔）；`lots` 仍按开仓 `(成交时间, 交易 id)` 升序。见 [FEAT-051.md](FEAT-051.md)。
 
 只读：不修改任何数据，不影响现金。持仓不存库，每次请求时按 `(成交时间, 交易 id)` 重放每个合约的全部交易得出（见 FEAT-001"持仓（按时点）"）；因为所有交易都不晚于当前时间，结果就是"当前"持仓。
 

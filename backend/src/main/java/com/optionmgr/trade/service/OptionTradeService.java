@@ -27,6 +27,7 @@ import com.optionmgr.trade.domain.ExpirationTimes;
 import com.optionmgr.trade.domain.LotTrade;
 import com.optionmgr.trade.domain.OpenTradeTerms;
 import com.optionmgr.trade.domain.OptionType;
+import com.optionmgr.trade.domain.PositionLot;
 import com.optionmgr.trade.domain.ReplayedTrade;
 import com.optionmgr.trade.domain.TradeAction;
 import com.optionmgr.trade.domain.TradeFilter;
@@ -86,10 +87,13 @@ public class OptionTradeService {
     private final StockTradeRepository stockTrades;
     private final CoverageService coverage;
     private final TradingCalendarService calendar;
+    private final CloseLotStore closeLots;
     private final Clock clock;
 
     public OptionTradeService(OptionTradeRepository trades, CashLedgerService ledger, StockTradeRepository stockTrades,
-                              CoverageService coverage, TradingCalendarService calendar, Clock clock) {
+                              CoverageService coverage, TradingCalendarService calendar, CloseLotStore closeLots,
+                              Clock clock) {
+        this.closeLots = closeLots;
         this.calendar = calendar;
         this.coverage = coverage;
         this.trades = trades;
@@ -114,9 +118,20 @@ public class OptionTradeService {
         }
     }
 
-    /** A closing trade (BTC / STC) whose fields already passed request validation; multiplier comes from the position. */
-    public record CloseCommand(ContractKey contract, TradeAction action, int contracts, BigDecimal netAmount,
-                               LocalDateTime tradedAtLocal, String note) {
+    /**
+     * A closing trade (BTC / STC) whose fields already passed request validation; multiplier comes from the position.
+     *
+     * @param contracts   FIFO mode: required; with {@code lotTradeIds}: optional, must equal the selected lots' sum
+     * @param lotTradeIds FEAT-051: the selected lots (non-empty); null = FIFO mode (Q257)
+     */
+    public record CloseCommand(ContractKey contract, TradeAction action, Integer contracts, BigDecimal netAmount,
+                               LocalDateTime tradedAtLocal, String note, List<Long> lotTradeIds) {
+
+        public CloseCommand(ContractKey contract, TradeAction action, int contracts, BigDecimal netAmount,
+                            LocalDateTime tradedAtLocal, String note) {
+            this(contract, action, Integer.valueOf(contracts), netAmount, tradedAtLocal, note, null);
+        }
+
         public CloseCommand {
             Objects.requireNonNull(contract, "contract");
             Objects.requireNonNull(action, "action");
@@ -125,6 +140,10 @@ public class OptionTradeService {
             if (action.isOpening()) {
                 throw new IllegalArgumentException("not a closing action: " + action);
             }
+            if (lotTradeIds == null && contracts == null) {
+                throw new IllegalArgumentException("contracts required without lotTradeIds");
+            }
+            lotTradeIds = lotTradeIds == null ? null : List.copyOf(lotTradeIds);
         }
     }
 
@@ -311,13 +330,20 @@ public class OptionTradeService {
 
         ledger.lockAccount(accountId);
         ContractTrades existing = load(accountId, contract);
-        LotTrade candidate = new LotTrade(LotTrade.NOT_YET_ENTERED, tradedAt, cmd.action(), cmd.contracts(),
-                LotTrade.INHERIT_MULTIPLIER, cashChange, Money.ZERO, note);
+        // FEAT-051: with a lot selection the close's contracts are the selected lots' sum (rule 2)
+        List<Long> selection = cmd.lotTradeIds() == null ? null : distinct(cmd.lotTradeIds());
+        int contracts = selection == null ? cmd.contracts() : selectedContracts(existing, selection);
+        LotTrade candidate = new LotTrade(LotTrade.NOT_YET_ENTERED, tradedAt, cmd.action(), contracts,
+                LotTrade.INHERIT_MULTIPLIER, cashChange, Money.ZERO, note, selection);
         ContractHistory history = replayWith(existing, candidate);
-
-        // 2.-4. position and direction, whole lots, then every later trade of the contract (time order)
-        rejectFirstViolation(contract, history, ANY);
         ReplayedTrade step = history.step(LotTrade.NOT_YET_ENTERED);
+
+        // 2. position and direction; 3. lots (FEAT-051 a-e, or FIFO whole lots); 4. every later trade (time order)
+        if (selection != null) {
+            rejectPositionProblem(contract, step);
+            checkSelection(contract, existing, cmd.lotTradeIds(), step, cmd.contracts());
+        }
+        rejectFirstViolation(contract, history, ANY);
         CloseMatch match = step.match().orElseThrow();
         BigDecimal frozenChange = match.releasedFrozen().negate();
         List<CostCorrection> costs = costCorrections(accountId, contract, existing, history, LotTrade.NOT_YET_ENTERED);
@@ -340,11 +366,13 @@ public class OptionTradeService {
         }
 
         int multiplier = step.effectiveMultiplier();
-        OptionTradeEntity trade = trades.save(new OptionTradeEntity(accountId, contract, cmd.action(), cmd.contracts(),
+        OptionTradeEntity trade = trades.save(new OptionTradeEntity(accountId, contract, cmd.action(), contracts,
                 multiplier, net, tradedAt, note, clock.instant()));
         CashLedgerEntryEntity entry = ledger.append(new NewLedgerEntry(accountId, tradedAt, CashSourceType.OPTION_CLOSE,
                 trade.getId(), cashChange, frozenChange,
-                OpenTradeTerms.describe(cmd.action(), cmd.contracts(), multiplier, contract), note));
+                OpenTradeTerms.describe(cmd.action(), contracts, multiplier, contract), note));
+        // Q255 / Q257: both modes store the lots finally matched as the close's selection
+        closeLots.replace(accountId, trade.getId(), lotIds(match));
         ledger.correctFrozenChanges(accountId, corrections);
         applyCostCorrections(costs);
         coverage.includeLegacy(accountId, contract.symbol());
@@ -494,12 +522,137 @@ public class OptionTradeService {
 
     // ------------------------------------------------------------------ helpers
 
+    // ------------------------------------------------------------------ FEAT-051 selected lots
+
+    /** The ids in request order without repeats. */
+    static List<Long> distinct(List<Long> ids) {
+        return List.copyOf(new java.util.LinkedHashSet<>(ids));
+    }
+
+    /** Current contracts of the selected opening trades of the contract (unknown ids count 0); at least 1. */
+    static int selectedContracts(ContractTrades existing, List<Long> selection) {
+        Map<Long, LotTrade> opens = opens(existing);
+        int sum = selection.stream().map(opens::get).filter(Objects::nonNull).mapToInt(LotTrade::contracts).sum();
+        return Math.max(sum, 1); // a selection with no lot of the contract is rejected by check a
+    }
+
+    /** The contract's opening trades by id. */
+    static Map<Long, LotTrade> opens(ContractTrades existing) {
+        Map<Long, LotTrade> out = new HashMap<>();
+        existing.trades().stream().filter(t -> t.action().isOpening()).forEach(t -> out.put(t.tradeId(), t));
+        return out;
+    }
+
+    /** Ids of the lots a close covers (FIFO order of the lots). */
+    static List<Long> lotIds(CloseMatch match) {
+        return match.coveredLots().stream().map(PositionLot::tradeId).toList();
+    }
+
+    /** FEAT-004 step 2 for the close being recorded / edited: position and direction at its point. */
+    static void rejectPositionProblem(ContractKey contract, ReplayedTrade step) {
+        for (ViolationKind k : List.of(ViolationKind.NO_POSITION, ViolationKind.CLOSE_WRONG_DIRECTION)) {
+            if (step.violations().contains(k)) {
+                throw new ApiException(errorCode(k), TradeRejectionMessages.of(contract, step, k, true));
+            }
+        }
+    }
+
+    /**
+     * FEAT-051 step 3 a-e for the close being recorded / edited ({@code step}: its replay step, made with the
+     * requested selection without repeats), each in the order of {@code requested} (null = selection unchanged:
+     * only c-e).
+     */
+    static void checkSelection(ContractKey contract, ContractTrades existing, List<Long> requested,
+                               ReplayedTrade step, Integer requestedContracts) {
+        Map<Long, LotTrade> opens = opens(existing);
+        List<Long> order = requested != null ? requested : step.trade().lotTradeIds();
+        if (requested != null) {
+            // a. an opening trade of this account's contract (only the id is named)
+            for (Long id : requested) {
+                if (!opens.containsKey(id)) {
+                    throw new ApiException(ErrorCode.CLOSE_LOTS_INVALID, TradeRejectionMessages.lotNotInContract(contract, id));
+                }
+            }
+            // b. no repeats
+            Set<Long> seen = new java.util.HashSet<>();
+            for (Long id : requested) {
+                if (!seen.add(id)) {
+                    throw new ApiException(ErrorCode.CLOSE_LOTS_INVALID,
+                            TradeRejectionMessages.lotSelectedTwice(opens.get(id)));
+                }
+            }
+        }
+        // c. open at the close's point, d. not closed before it
+        Map<Long, com.optionmgr.trade.domain.LotProblem> problems = new HashMap<>();
+        step.lotProblems().forEach(p -> problems.putIfAbsent(p.lotTradeId(), p));
+        for (com.optionmgr.trade.domain.LotProblem.Reason reason : List.of(
+                com.optionmgr.trade.domain.LotProblem.Reason.NOT_YET_OPEN,
+                com.optionmgr.trade.domain.LotProblem.Reason.ALREADY_CLOSED)) {
+            for (Long id : order) {
+                com.optionmgr.trade.domain.LotProblem p = problems.get(id);
+                if (p != null && p.reason() == reason) {
+                    throw new ApiException(ErrorCode.CLOSE_LOTS_INVALID,
+                            TradeRejectionMessages.selectedLotProblem(p, step.trade()));
+                }
+            }
+        }
+        // e. contracts, when given, = the selected lots' sum (stored lots may have changed size: same check)
+        int sum = order.stream().distinct().map(opens::get).filter(Objects::nonNull).mapToInt(LotTrade::contracts).sum();
+        if (requestedContracts != null && requestedContracts != sum) {
+            throw new ApiException(ErrorCode.CLOSE_LOTS_INVALID,
+                    TradeRejectionMessages.closeContractsMismatch(requestedContracts, sum));
+        }
+        step.lotProblems().stream().findFirst().ifPresent(p -> {
+            throw new ApiException(ErrorCode.CLOSE_LOTS_INVALID, TradeRejectionMessages.selectedLotProblem(p, step.trade()));
+        });
+    }
+
+    /** FEAT-051 (Q256): the lots a close may select at {@code tradedAt} (null = its current time). */
+    public record LotChoices(long closeTradeId, Instant tradedAt, List<PositionLot> lots, Set<Long> selected) {
+    }
+
+    /**
+     * FEAT-051: the lots held at the close's point once the close itself is taken out of the replay, minus the lots
+     * other BTC / STC have selected (stored); in FIFO order.
+     */
+    @Transactional(readOnly = true)
+    public LotChoices closeLotChoices(long accountId, long closeId, LocalDateTime tradedAtLocal) {
+        OptionTradeEntity trade = trades.findByIdAndAccountId(closeId, accountId)
+                .orElseThrow(() -> ApiException.notFound("Option trade " + closeId + " not found"));
+        if (!trade.getAction().isUserClose()) {
+            throw ApiException.businessRule("只有平仓（BTC / STC）可以选择批次");
+        }
+        Instant at = tradedAtLocal == null ? trade.getTradedAt() : MarketTime.toInstant(tradedAtLocal);
+        ContractTrades existing = load(accountId, trade.contract());
+        List<LotTrade> others = new ArrayList<>();
+        Set<Long> selected = Set.of();
+        Set<Long> takenByOthers = new java.util.HashSet<>();
+        for (LotTrade t : existing.trades()) {
+            if (t.tradeId() == closeId) {
+                selected = t.lotTradeIds() == null ? Set.of() : Set.copyOf(t.lotTradeIds());
+                continue;
+            }
+            if (t.lotTradeIds() != null) {
+                takenByOthers.addAll(t.lotTradeIds());
+            }
+            others.add(t);
+        }
+        // a probe at the close's (new) point and entry order: its step's lotsBefore are the lots held there
+        others.add(new LotTrade(closeId, at, trade.getAction(), 1, LotTrade.INHERIT_MULTIPLIER, Money.ZERO,
+                Money.ZERO, null, List.of()));
+        List<PositionLot> held = ContractReplay.replay(others).step(closeId).lotsBefore();
+        return new LotChoices(closeId, at,
+                held.stream().filter(l -> !takenByOthers.contains(l.tradeId())).toList(), selected);
+    }
+
     ContractTrades load(long accountId, ContractKey c) {
         List<OptionTradeEntity> entities = trades
                 .findByAccountIdAndSymbolAndExpirationDateAndStrikeAndOptionTypeOrderByTradedAtAscIdAsc(
                         accountId, c.symbol(), c.expirationDate(), c.strike(), c.optionType());
         Map<Long, CashLedgerEntryEntity> entries = ledger.findBySources(accountId, TRADE_SOURCE_TYPES,
                 entities.stream().map(OptionTradeEntity::getId).toList());
+        Map<Long, List<Long>> selections = closeLots.forCloses(entities.stream()
+                .filter(t -> t.getAction().isUserClose()).map(OptionTradeEntity::getId).toList());
         Map<Long, CashLedgerEntryEntity> byTrade = new LinkedHashMap<>();
         Map<Long, BigDecimal> fees = new HashMap<>();
         List<LotTrade> lotTrades = new ArrayList<>(entities.size());
@@ -511,7 +664,7 @@ public class OptionTradeService {
             if (t.getAction().hasStockLeg()) {
                 fees.put(t.getId(), t.getAssignmentFee());
             }
-            lotTrades.add(toLotTrade(t, e));
+            lotTrades.add(toLotTrade(t, e, selections.get(t.getId())));
         }
         return new ContractTrades(lotTrades, byTrade, fees);
     }
@@ -530,13 +683,14 @@ public class OptionTradeService {
 
     /**
      * Replay input of a stored trade: cash and (for opens) frozen cash as recorded in its ledger entry. An expiry
-     * without entry ({@code e} null) has no cash effect.
+     * without entry ({@code e} null) has no cash effect. {@code selectedLots}: a BTC / STC's stored selection
+     * (FEAT-051; null = FIFO, only for data without a selection).
      */
-    static LotTrade toLotTrade(OptionTradeEntity t, CashLedgerEntryEntity e) {
+    static LotTrade toLotTrade(OptionTradeEntity t, CashLedgerEntryEntity e, List<Long> selectedLots) {
         // an assignment's / exercise's ledger amount is the stock leg; the option side itself has no cash
         BigDecimal cash = e == null || t.getAction().hasStockLeg() ? Money.ZERO : e.getAmount();
         return new LotTrade(t.getId(), t.getTradedAt(), t.getAction(), t.getContracts(), t.getMultiplier(),
-                cash, t.getAction().isOpening() ? e.getFrozenChange() : Money.ZERO, t.getNote());
+                cash, t.getAction().isOpening() ? e.getFrozenChange() : Money.ZERO, t.getNote(), selectedLots);
     }
 
     static ContractHistory replayWith(ContractTrades existing, LotTrade candidate) {
@@ -561,6 +715,7 @@ public class OptionTradeService {
             case NO_POSITION -> ErrorCode.NO_POSITION_TO_CLOSE;
             case CLOSE_EXCEEDS_POSITION -> ErrorCode.CLOSE_EXCEEDS_POSITION;
             case CLOSE_NOT_WHOLE_LOTS -> ErrorCode.CLOSE_NOT_WHOLE_LOTS;
+            case CLOSE_LOTS_INVALID -> ErrorCode.CLOSE_LOTS_INVALID;
         };
     }
 

@@ -114,7 +114,8 @@ public class OptionTradeController {
         ContractKey contract = new ContractKey(req.symbol(), req.expirationDate(), req.strike(), req.optionType());
         return toResponse(name(account), service.close(account.id(),
                 new OptionTradeService.CloseCommand(contract, req.action(),
-                req.contracts().intValueExact(), req.netAmount(), req.tradedAtLocal(), req.note())));
+                req.contracts() == null ? null : req.contracts().intValueExact(), req.netAmount(), req.tradedAtLocal(),
+                req.note(), req.lotTradeIds())));
     }
 
     /** FEAT-012: expire the whole position of a contract at its expiration cutoff (16:00 New York). */
@@ -178,9 +179,9 @@ public class OptionTradeController {
     @PutMapping("/{id}")
     public TradeResponse update(AccountRef account, @PathVariable long id, @Valid @RequestBody EditTradeRequest req) {
         return toResponse(name(account), edits.update(account.id(), id,
-                new OptionTradeEditService.EditCommand(req.contracts().intValueExact(),
+                new OptionTradeEditService.EditCommand(req.contracts() == null ? null : req.contracts().intValueExact(),
                 req.netAmount(), req.tradedAtLocal(),
-                req.multiplier() == null ? null : req.multiplier().intValueExact(), req.note())));
+                req.multiplier() == null ? null : req.multiplier().intValueExact(), req.note(), req.lotTradeIds())));
     }
 
     /** FEAT-005: delete a trade and its ledger entry. */
@@ -188,6 +189,29 @@ public class OptionTradeController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(AccountRef account, @PathVariable long id) {
         edits.delete(account.id(), id);
+    }
+
+    /** FEAT-051 (Q256): the lots the close may select (edit form), at its current or the given time. */
+    @GetMapping("/{id}/close-lot-choices")
+    public OptionTradeDtos.CloseLotChoicesResponse closeLotChoices(
+            AccountRef account, @PathVariable long id,
+            @RequestParam(required = false) String tradedAtLocal) {
+        java.time.LocalDateTime at = null;
+        if (tradedAtLocal != null) {
+            try {
+                at = MarketTime.parseLocal(tradedAtLocal);
+            } catch (RuntimeException e) {
+                throw new com.optionmgr.common.error.ApiException(com.optionmgr.common.error.ErrorCode.BAD_REQUEST,
+                        "Invalid parameter value", List.of(new com.optionmgr.common.error.ErrorResponse.FieldError(
+                        "tradedAtLocal", "must be a valid New York local date-time")));
+            }
+        }
+        OptionTradeService.LotChoices c = service.closeLotChoices(account.id(), id, at);
+        return new OptionTradeDtos.CloseLotChoicesResponse(c.closeTradeId(), c.tradedAt(),
+                LOCAL_SECONDS.format(MarketTime.toLocal(c.tradedAt())),
+                c.lots().stream().map(l -> new OptionTradeDtos.CloseLotChoice(l.tradeId(), l.action(), l.tradedAt(),
+                        LOCAL_SECONDS.format(MarketTime.toLocal(l.tradedAt())), l.remainingContracts(),
+                        l.remainingNetAmount(), l.remainingFrozen(), c.selected().contains(l.tradeId()))).toList());
     }
 
     @GetMapping("/{id}")

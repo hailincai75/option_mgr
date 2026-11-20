@@ -13,5 +13,7 @@ public enum ViolationKind {
     /** FEAT-004: close contracts &gt; position. */
     CLOSE_EXCEEDS_POSITION,
     /** Q21: close contracts are not the sum of the earliest whole lots. */
-    CLOSE_NOT_WHOLE_LOTS
+    CLOSE_NOT_WHOLE_LOTS,
+    /** FEAT-051: a close's selected lots cannot be closed by it (not open yet, already closed, size changed). */
+    CLOSE_LOTS_INVALID
 }

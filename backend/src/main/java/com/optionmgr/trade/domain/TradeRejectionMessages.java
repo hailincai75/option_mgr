@@ -63,6 +63,7 @@ public final class TradeRejectionMessages {
             case CLOSE_EXCEEDS_POSITION -> "超过当时持仓 " + Math.abs(s.positionBefore()) + " 张";
             case CLOSE_NOT_WHOLE_LOTS -> "不是整笔批次（最早一笔是 " + s.earliestLotContracts() + " 张，"
                     + allowedText("可为 ", s.allowedCloseContracts()) + "）";
+            case CLOSE_LOTS_INVALID -> "所选批次无效";
             case MULTIPLIER_MISMATCH -> "与当时持仓的 multiplier " + s.multiplierBefore() + " 不一致";
             // only an assignment (closes a short position) or an exercise (FEAT-014, closes a long one) has a side;
             // an expiry cannot get here
@@ -107,6 +108,7 @@ public final class TradeRejectionMessages {
             case CLOSE_EXCEEDS_POSITION -> "超过当时持仓 " + held + " 张";
             case CLOSE_NOT_WHOLE_LOTS -> "不是整笔开仓（最早一笔是 " + s.earliestLotContracts() + " 张，"
                     + allowedText(s.allowedCloseContracts()) + "）";
+            case CLOSE_LOTS_INVALID -> "所选批次无效";
             case MULTIPLIER_MISMATCH -> "与当时持仓的 multiplier " + s.multiplierBefore() + " 不一致";
             case OPEN_AGAINST_POSITION -> "与持仓方向冲突";
         };
@@ -127,6 +129,7 @@ public final class TradeRejectionMessages {
                 case CLOSE_NOT_WHOLE_LOTS -> "必须一次被指派整笔开仓：最早一笔是 " + s.earliestLotContracts() + " 张，"
                         + allowedText("可为 ", s.allowedCloseContracts());
                 case MULTIPLIER_MISMATCH -> "被指派 " + s.trade().contracts() + " 张将" + recordReason(s, kind);
+                case CLOSE_LOTS_INVALID -> "被指派 " + s.trade().contracts() + " 张将" + recordReason(s, kind);
             };
         }
         if (s.trade().action() == TradeAction.EXR) {
@@ -138,6 +141,7 @@ public final class TradeRejectionMessages {
                 case CLOSE_NOT_WHOLE_LOTS -> "必须一次行权整笔开仓：最早一笔是 " + s.earliestLotContracts() + " 张，"
                         + allowedText("可为 ", s.allowedCloseContracts());
                 case MULTIPLIER_MISMATCH -> "行权 " + s.trade().contracts() + " 张将" + recordReason(s, kind);
+                case CLOSE_LOTS_INVALID -> "行权 " + s.trade().contracts() + " 张将" + recordReason(s, kind);
             };
         }
         int held = Math.abs(s.positionBefore());
@@ -156,6 +160,7 @@ public final class TradeRejectionMessages {
             case CLOSE_EXCEEDS_POSITION -> "平仓 " + s.trade().contracts() + " 张超过当时持仓 " + held + " 张";
             case CLOSE_NOT_WHOLE_LOTS -> "必须一次平掉整笔开仓：最早一笔是 " + s.earliestLotContracts() + " 张，"
                     + allowedText(s.allowedCloseContracts());
+            case CLOSE_LOTS_INVALID -> selectedLotProblem(s.lotProblems().get(0), s.trade());
         };
     }
 
@@ -180,7 +185,79 @@ public final class TradeRejectionMessages {
             case CLOSE_EXCEEDS_POSITION -> prefix + "超过当时持仓 " + held + " 张";
             case CLOSE_NOT_WHOLE_LOTS -> prefix + "不是整笔开仓（最早一笔是 " + s.earliestLotContracts() + " 张，"
                     + allowedText(s.allowedCloseContracts()) + "）";
+            case CLOSE_LOTS_INVALID -> laterCloseLotsInvalid(c, s, s.lotProblems().get(0), verb);
         };
+    }
+
+    // ------------------------------------------------------------------ FEAT-051 selected lots
+
+    /** "2026-11-11 10:00 STO 1 张" (the opening trade's current time and contracts). */
+    public static String lotDescription(LotTrade lot) {
+        return MarketTime.displayMinute(lot.tradedAt()) + " " + lot.action().name() + " " + lot.contracts() + " 张";
+    }
+
+    /** "BTC 1 张" / "到期作废 1 张" / "被指派 1 张" / "行权 1 张". */
+    private static String recordText(LotTrade record) {
+        return record.action().displayName() + " " + record.contracts() + " 张";
+    }
+
+    /** Check a: "所选批次 #3 不是该合约（ZZQ 2026-12-18 9 C）在本账户的开仓交易". */
+    public static String lotNotInContract(ContractKey c, long lotTradeId) {
+        return "所选批次 #" + lotTradeId + " 不是该合约（" + c.label() + "）在本账户的开仓交易";
+    }
+
+    /** Check b: "所选批次（2026-11-11 10:00 STO 1 张）重复选择". */
+    public static String lotSelectedTwice(LotTrade lot) {
+        return "所选批次（" + lotDescription(lot) + "）重复选择";
+    }
+
+    /** Check e: "平仓张数 2 张与所选批次张数之和 1 张不一致". */
+    public static String closeContractsMismatch(int closeContracts, int selectedContracts) {
+        return "平仓张数 " + closeContracts + " 张与所选批次张数之和 " + selectedContracts + " 张不一致";
+    }
+
+    /**
+     * Checks c / d / e of the close being recorded or edited:
+     * "所选批次（2026-11-11 10:00 STO 1 张）在成交时间 2026-11-10 15:00 还未开仓" /
+     * "所选批次（…）已被 2026-11-19 10:00 的 BTC 1 张平掉" / "平仓张数 2 张与所选批次张数之和 1 张不一致".
+     */
+    public static String selectedLotProblem(LotProblem p, LotTrade close) {
+        return switch (p.reason()) {
+            case NOT_YET_OPEN -> p.lot() == null
+                    ? "所选批次 #" + p.lotTradeId() + " 在成交时间 " + MarketTime.displayMinute(close.tradedAt()) + " 还未开仓"
+                    : "所选批次（" + lotDescription(p.lot()) + "）在成交时间 "
+                            + MarketTime.displayMinute(close.tradedAt()) + " 还未开仓";
+            case ALREADY_CLOSED -> "所选批次（" + lotDescription(p.lot()) + "）已被 "
+                    + MarketTime.displayMinute(p.closedBy().tradedAt()) + " 的 " + recordText(p.closedBy()) + "平掉";
+            case CONTRACTS_MISMATCH -> closeContractsMismatch(close.contracts(), p.selectedContracts());
+        };
+    }
+
+    /**
+     * A later close whose stored selection no longer holds after a change:
+     * "补录后，2026-11-19 10:00 BTC 1 张 ZZQ 2026-12-18 9 C 选中的批次 2026-11-11 10:00 STO 1 张 已被更早的平仓平掉".
+     */
+    public static String laterCloseLotsInvalid(ContractKey c, ReplayedTrade s, LotProblem p, String verb) {
+        LotTrade close = s.trade();
+        String head = verb + "后，" + MarketTime.displayMinute(close.tradedAt()) + " " + close.action().name() + " "
+                + close.contracts() + " 张 " + c.label() + " 选中的批次 "
+                + (p.lot() == null ? "#" + p.lotTradeId() : lotDescription(p.lot())) + " ";
+        return head + switch (p.reason()) {
+            case NOT_YET_OPEN -> "在该平仓成交时还未开仓";
+            case ALREADY_CLOSED -> "已被更早的" + (p.closedBy().action().isUserClose() ? "平仓"
+                    : p.closedBy().action().displayName()) + "平掉";
+            case CONTRACTS_MISMATCH -> "张数与平仓不一致（所选批次共 " + p.selectedContracts() + " 张，平仓 "
+                    + close.contracts() + " 张）";
+        };
+    }
+
+    /**
+     * Deleting an open selected by a close:
+     * "该开仓被 2026-11-19 10:00 的 BTC 1 张平掉（所选批次 2026-11-11 10:00 STO 1 张），请先修改或删除那笔平仓".
+     */
+    public static String deletedOpenSelected(LotTrade close, LotTrade lot) {
+        return "该开仓被 " + MarketTime.displayMinute(close.tradedAt()) + " 的 " + close.action().name() + " "
+                + close.contracts() + " 张平掉（所选批次 " + lotDescription(lot) + "），请先修改或删除那笔平仓";
     }
 
     /** FEAT-012 operation step 3: "该合约（XYZ 2026-11-20 50 P）没有持仓，无法作废". */

@@ -10,6 +10,11 @@ interface TradeConfirmationProps {
   onClose: () => void
   /** `open-trade` on the 录入交易 page, `close-trade` in the 平仓 dialog. */
   testIdPrefix: string
+  /**
+   * Title above a close's covered lots. FEAT-051: the 平仓 dialog (chosen lots) passes
+   * "被平掉的开仓批次"; the 录入交易 page keeps FIFO matching (Q257) and the default.
+   */
+  coveredLotsTitle?: string
 }
 
 function SignedMoney({
@@ -90,7 +95,12 @@ export function CoveredLotTable({ lots }: { lots: CoveredLot[] }) {
  * Success message for a saved trade; every value comes from the backend response. Closing
  * trades (FEAT-004) also show the covered lots and this close's realized P&L.
  */
-export function TradeConfirmation({ trade, onClose, testIdPrefix }: TradeConfirmationProps) {
+export function TradeConfirmation({
+  trade,
+  onClose,
+  testIdPrefix,
+  coveredLotsTitle = '被平掉的开仓批次（FIFO）',
+}: TradeConfirmationProps) {
   const id = (suffix: string) => `${testIdPrefix}-confirmation${suffix}`
   const coveredLots = trade.coveredLots
 
@@ -141,7 +151,9 @@ export function TradeConfirmation({ trade, onClose, testIdPrefix }: TradeConfirm
           </Descriptions>
           {coveredLots !== null && (
             <div data-testid={id('-covered-lots')}>
-              <div style={{ margin: '8px 0 4px' }}>被平掉的开仓批次（FIFO）</div>
+              <div style={{ margin: '8px 0 4px' }} data-testid={id('-covered-lots-title')}>
+                {coveredLotsTitle}
+              </div>
               <CoveredLotTable lots={coveredLots} />
             </div>
           )}
