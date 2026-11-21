@@ -31,6 +31,17 @@
 ##### Yahoo 请求（规则 2，可行性探测结果）
 所有 Yahoo 请求都带浏览器 `User-Agent`（配置 `optionmgr.quotes.yahoo.user-agent`）和会话 cookie；**串行**，任意两个 Yahoo 请求之间间隔 `request-interval-millis`（默认 1000）；连接 / 读取超时沿用 `optionmgr.quotes.connect-timeout-seconds` / `read-timeout-seconds`（5 / 10）。
 
+**请求头 `Accept`（修订：上线后发现 getcrumb 返回 HTTP 406）**：
+
+| 请求 | `Accept` | 其他 |
+|------|----------|------|
+| Yahoo cookie 页（`yahoo.cookie-url`） | `*/*` | `Accept-Language: en-US,en;q=0.9` |
+| Yahoo `GET /v1/test/getcrumb` | `*/*` | `Accept-Language: en-US,en;q=0.9` |
+| Yahoo `GET /v7/finance/options/{SYMBOL}` | `*/*` | `Accept-Language: en-US,en;q=0.9` |
+| CBOE、Finnhub（FEAT-016，不变） | `application/json` | — |
+
+getcrumb 的响应是 `text/plain`；带 `Accept: application/json` 时 Yahoo 回 `406 Not Acceptable`（握手失败 `getcrumb HTTP 406`）。可行性探测用的是 curl 默认的 `Accept: */*`。
+
 1. **会话握手**（会话 = cookie + crumb，保存在内存，跨 run 复用，重启后重新握手）：
    - `GET <yahoo.cookie-url>`（默认 `https://fc.yahoo.com/`）：任何 HTTP 状态都可以（实测 404），只为取得 cookie；网络错误 → 握手失败。
    - `GET <yahoo.base-url>/v1/test/getcrumb`（默认 base `https://query2.finance.yahoo.com`），带 cookie：`200` 且响应体去掉首尾空白后为 1–64 个可见字符、不含 `<`、`{`、空格 → crumb；否则（含 401 / 403 / 429 / 网络错误）→ 握手失败。
@@ -401,7 +412,7 @@
 - `quote/domain/BlackScholesTest`：验收 3 / 4 / 5 的数字（见下表）、T ≤ 0 / σ ≤ 0 / S ≤ 0 → `null`、到期日当天 16:00 前后、夏令时、极端 IV。
 - `quote/domain/YahooQuoteRulesTest`：分类、替换 / 保留表（含 CBOE 旧报价）、Q271 mark（`0 / 0.05` → `0.025`）、手动覆盖。
 - `quote/service/QuoteParsersTest`（Yahoo 部分）：缺字段、`optionChain.error`、空 `result`、科学计数法 IV（`1.0E-5`）、非整数 volume。
-- `quote/service/HttpQuoteTransportTest`：本地假 HTTP 服务模拟 fc / getcrumb / options（cookie 回传、401 → 重新握手 → 重发、429 不重试、请求间隔可设为 0）。
+- `quote/service/HttpQuoteTransportTest`：本地假 HTTP 服务模拟 fc / getcrumb / options（cookie 回传、401 → 重新握手 → 重发、429 不重试、请求间隔可设为 0；假 getcrumb 在 `Accept` 不允许 `text/plain` 时回 406，并断言 Yahoo 请求带 `Accept: */*`、CBOE / Finnhub 带 `application/json`）。
 - `quote/web/YahooQuotesControllerTest`：in-memory 假数据源 + 可设时钟，`option-source=yahoo`、`r = 0.00`，覆盖验收 1–10。
 - 已有测试中按 15 分钟时刻 `tick`（09:30、10:15、…）或依赖 30 分钟阈值的用例需要改为新时刻 / 新阈值（`MarketDataControllerTest` 等由 backend 改；`systemtest/` 与 e2e 由 qa 改）。
 

@@ -29,7 +29,8 @@ import org.springframework.stereotype.Component;
  * header (same key lookup as FEAT-009). The key never appears in a URL, log line or detail.
  *
  * <p>FEAT-052 Yahoo: a separate client with an in-memory cookie store (process only, never written or logged), the
- * configured browser User-Agent on every request, and at least {@code request-interval-millis} between two Yahoo
+ * configured browser User-Agent, {@code Accept: *}{@code /*} and {@code Accept-Language: en-US,en;q=0.9} on every
+ * request (CBOE / Finnhub keep {@code Accept: application/json}), and at least {@code request-interval-millis} between two Yahoo
  * requests (handshake steps included).
  */
 @Component
@@ -42,6 +43,10 @@ public class HttpQuoteTransport implements QuoteTransport {
     static final String YAHOO_CRUMB_PATH = "/v1/test/getcrumb";
     static final String YAHOO_OPTIONS_PATH = "/v7/finance/options/";
     private static final String USER_AGENT = "Mozilla/5.0 (compatible; option-mgr)";
+    static final String JSON_ACCEPT = "application/json";
+    /** Yahoo's getcrumb answers text/plain, so {@code Accept: application/json} gets HTTP 406 there. */
+    static final String YAHOO_ACCEPT = "*/*";
+    static final String YAHOO_ACCEPT_LANGUAGE = "en-US,en;q=0.9";
 
     /** Waits between Yahoo requests (tests: no-op). */
     @FunctionalInterface
@@ -81,7 +86,7 @@ public class HttpQuoteTransport implements QuoteTransport {
 
     @Override
     public FetchAttempt cboe(String symbol) {
-        return get(http, trim(props.cboeBaseUrl()) + CBOE_PATH + encode(symbol) + ".json", null, USER_AGENT);
+        return get(http, trim(props.cboeBaseUrl()) + CBOE_PATH + encode(symbol) + ".json", null, USER_AGENT, JSON_ACCEPT, null);
     }
 
     @Override
@@ -92,7 +97,7 @@ public class HttpQuoteTransport implements QuoteTransport {
         if (key.isEmpty()) {
             return new FetchAttempt.NoKey();
         }
-        return get(http, trim(finnhub.baseUrl()) + FINNHUB_PATH + encode(symbol), key.get(), USER_AGENT);
+        return get(http, trim(finnhub.baseUrl()) + FINNHUB_PATH + encode(symbol), key.get(), USER_AGENT, JSON_ACCEPT, null);
     }
 
     @Override
@@ -144,21 +149,25 @@ public class HttpQuoteTransport implements QuoteTransport {
             }
         }
         try {
-            return get(yahooHttp, url, null, props.yahoo().userAgent());
+            return get(yahooHttp, url, null, props.yahoo().userAgent(), YAHOO_ACCEPT, YAHOO_ACCEPT_LANGUAGE);
         } finally {
             yahooRequested = true;
             lastYahooRequestNanos = System.nanoTime();
         }
     }
 
-    private FetchAttempt get(HttpClient client, String url, String token, String userAgent) {
+    private FetchAttempt get(HttpClient client, String url, String token, String userAgent, String accept,
+            String acceptLanguage) {
         HttpRequest request;
         try {
             HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(url))
                     .timeout(Duration.ofSeconds(props.readTimeoutSeconds()))
-                    .header("Accept", "application/json")
+                    .header("Accept", accept)
                     .header("User-Agent", userAgent)
                     .GET();
+            if (acceptLanguage != null) {
+                b.header("Accept-Language", acceptLanguage);
+            }
             if (token != null) {
                 b.header(TOKEN_HEADER, token);
             }

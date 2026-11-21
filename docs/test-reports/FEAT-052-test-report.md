@@ -86,7 +86,39 @@
 - 已改为按契约断言：lastSuccessAt 10:00、10:05 不提示；把时钟拨到 11:31 后提示 `行情未更新（上次：2026-11-20 10:00 美东）`。
 
 ## 发现的 Bug
-无。
+- 首次验证时无。
+- commit d71cac7 之后在真实环境发现 [BUG-008](../bugs/BUG-008-yahoo-getcrumb-406.md)（backend）：getcrumb 返回 HTTP 406。已修复并复测通过（见下文“BUG-008 复测”）。
+
+## BUG-008 复测（2026-11-20）
+**问题与修复**
+- 真实 Yahoo 环境下，每次刷新都报 `Yahoo handshake failed (getcrumb HTTP 406)`。
+- 原因：Yahoo 请求带了 `Accept: application/json`，而 getcrumb 的响应是 `text/plain`。
+- backend-dev 修复：Yahoo 的所有请求改带 `Accept: */*` 和 `Accept-Language: en-US,en;q=0.9`；CBOE 和 Finnhub 仍带 `application/json`。契约 `docs/api/FEAT-052.md` 已补请求头表。
+
+**QA 补的测试**（`Feat052YahooRealHttpSystemTest`）
+- 假 Yahoo 现在会记录 `Accept` 和 `Accept-Language`。和真实 Yahoo 一样，getcrumb 在 `Accept` 不允许 `text/plain` 时回 406。
+- `FakeYahooOverHttp`：断言首次握手（cookie 页、getcrumb）、options 请求，以及 401 后重新握手的每个请求，都带 `Accept: */*` 和 `Accept-Language: en-US,en;q=0.9`。
+- 新增假服务自检 `fakeGetcrumbRejectsJsonOnlyAccept`：
+  - `Accept: application/json` → 406；
+  - `*/*` → 200 + crumb；
+  - 另外覆盖 `text/*`、q=0 排除的情况。
+  - 这证明修复前的代码在本测试里会握手失败。
+- CBOE / Finnhub 的 `application/json` 由 dev 的 `HttpQuoteTransportTest` 覆盖。本系统测试把 CBOE / Finnhub 指向不可达端口，不重复断言。
+
+**运行结果**
+| 检查 | 结果 |
+|------|------|
+| `gradlew.bat test --tests com.optionmgr.systemtest.Feat052* --tests com.optionmgr.quote.service.HttpQuoteTransportTest` | 54 个全部通过：HttpQuoteTransportTest 11、Acceptance 15、Boundary 25、RealHttp 3 |
+| `gradlew.bat build`（全部后端测试） | BUILD SUCCESSFUL，1682 个测试，0 失败、0 跳过（原 1679 + dev 新增 2 + QA 新增 1） |
+| 前端 | 未改动，不跑 |
+| E2E | 不跑（理由见下） |
+
+**不跑 E2E 的依据**
+- `backend/src/main/resources/application-e2e.yml` 配置 `quotes.transport: in-memory`。E2E 后端不发 HTTP 请求，所以请求头不起作用。
+- 在 `e2e/` 里 grep `accept|getcrumb|406|transport`，只在 feat-001 / 004 / 011 / 039 的注释里命中 "acceptance" / "accepted"。没有 spec 涉及请求头或 HTTP 传输。
+- 本次没有改动任何 testid、文字或错误信息。
+
+**结论：** BUG-008 Closed；FEAT-052 保持 Verified。仍有一个剩余风险：真实 Yahoo 的其他请求头或反爬规则变化，只能在真实环境中发现。
 
 ## 疑问 / 需求不清楚的地方
 - 请求记录断言假设：某个标的 Yahoo 失败后，紧接着就是它的 Finnhub 兜底请求。契约只写了"按时间顺序""标的按 symbol 升序"，当前实现符合这个假设。

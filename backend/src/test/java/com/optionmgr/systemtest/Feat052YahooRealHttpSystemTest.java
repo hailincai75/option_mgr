@@ -81,12 +81,13 @@ class Feat052YahooRealHttpSystemTest {
     /**
      * Local fake of the three Yahoo endpoints. Records every request (path + query, Cookie, User-Agent). The cookie
      * path answers 404 with a {@code Set-Cookie} (like the real {@code fc.yahoo.com}); getcrumb answers the crumb as
-     * plain text; options answer per "SYMBOL" / "SYMBOL date" key, a list of replies used in order (the last one
+     * plain text, or 406 when {@code Accept} does not allow {@code text/plain} (BUG-008, like the real Yahoo); options answer per "SYMBOL" / "SYMBOL date" key, a list of replies used in order (the last one
      * repeats). Unconfigured → 404.
      */
     static final class FakeYahoo {
 
-        record Received(String path, String query, String cookie, String userAgent) {
+        record Received(String path, String query, String cookie, String userAgent, String accept,
+                String acceptLanguage) {
         }
 
         record Reply(int status, String body) {
@@ -106,16 +107,24 @@ class Feat052YahooRealHttpSystemTest {
             server.createContext("/", ex -> {
                 String path = ex.getRequestURI().getPath();
                 String query = ex.getRequestURI().getRawQuery();
+                String accept = ex.getRequestHeaders().getFirst("Accept");
                 received.add(new Received(path, query, ex.getRequestHeaders().getFirst("Cookie"),
-                        ex.getRequestHeaders().getFirst("User-Agent")));
+                        ex.getRequestHeaders().getFirst("User-Agent"), accept,
+                        ex.getRequestHeaders().getFirst("Accept-Language")));
                 Reply reply;
                 if (path.equals("/fc")) {
                     ex.getResponseHeaders().add("Set-Cookie", COOKIE + "; Path=/; HttpOnly");
                     reply = new Reply(404, "Not Found");
                 } else if (path.equals("/v1/test/getcrumb")) {
-                    reply = next("crumb");
-                    if (reply == null) {
-                        reply = new Reply(200, CRUMB);
+                    // BUG-008: like the real Yahoo, getcrumb answers text/plain and replies 406 when Accept does not
+                    // allow it (e.g. "Accept: application/json")
+                    if (!acceptsTextPlain(accept)) {
+                        reply = new Reply(406, "Not Acceptable");
+                    } else {
+                        reply = next("crumb");
+                        if (reply == null) {
+                            reply = new Reply(200, CRUMB);
+                        }
                     }
                 } else if (path.startsWith("/v7/finance/options/")) {
                     String symbol = path.substring("/v7/finance/options/".length());
@@ -146,6 +155,28 @@ class Feat052YahooRealHttpSystemTest {
             }
             int i = served.merge(key, 1, Integer::sum) - 1;
             return list.get(Math.min(i, list.size() - 1));
+        }
+
+        /** True when an Accept header allows text/plain (missing header = anything; q=0 = excluded). */
+        static boolean acceptsTextPlain(String accept) {
+            if (accept == null || accept.isBlank()) {
+                return true;
+            }
+            for (String part : accept.split(",")) {
+                String[] p = part.trim().split(";");
+                String type = p[0].trim().toLowerCase(java.util.Locale.ROOT);
+                boolean zero = false;
+                for (int i = 1; i < p.length; i++) {
+                    String a = p[i].trim().replace(" ", "");
+                    if (a.startsWith("q=") && Double.parseDouble(a.substring(2)) == 0.0) {
+                        zero = true;
+                    }
+                }
+                if (!zero && (type.equals("*/*") || type.equals("text/*") || type.equals("text/plain"))) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         static String param(String query, String name) {
@@ -184,6 +215,28 @@ class Feat052YahooRealHttpSystemTest {
             replies.clear();
             served.clear();
         }
+    }
+
+    @Test
+    @DisplayName("BUG-008 假 Yahoo 自检：getcrumb 在 Accept 不允许 text/plain 时回 406（旧的 Accept: application/json 会被拒）")
+    void fakeGetcrumbRejectsJsonOnlyAccept() throws Exception {
+        assertThat(FakeYahoo.acceptsTextPlain("application/json")).isFalse();
+        assertThat(FakeYahoo.acceptsTextPlain("text/plain;q=0, application/json")).isFalse();
+        assertThat(FakeYahoo.acceptsTextPlain("*/*")).isTrue();
+        assertThat(FakeYahoo.acceptsTextPlain("text/*")).isTrue();
+        assertThat(FakeYahoo.acceptsTextPlain("application/json, text/plain;q=0.5")).isTrue();
+        java.net.http.HttpClient c = java.net.http.HttpClient.newHttpClient();
+        java.net.http.HttpResponse<String> json = c.send(java.net.http.HttpRequest
+                .newBuilder(java.net.URI.create(FAKE.baseUrl() + "/v1/test/getcrumb"))
+                .header("Accept", "application/json").GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString());
+        assertThat(json.statusCode()).isEqualTo(406);
+        java.net.http.HttpResponse<String> any = c.send(java.net.http.HttpRequest
+                .newBuilder(java.net.URI.create(FAKE.baseUrl() + "/v1/test/getcrumb"))
+                .header("Accept", "*/*").GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString());
+        assertThat(any.statusCode()).isEqualTo(200);
+        assertThat(any.body()).isEqualTo(CRUMB);
     }
 
     // ============================================================================================== base
@@ -377,6 +430,9 @@ class Feat052YahooRealHttpSystemTest {
             assertThat(FakeYahoo.param(rec.get(4).query(), "crumb")).isEqualTo(CRUMB);
             for (FakeYahoo.Received x : rec) {
                 assertThat(x.userAgent()).as("browser UA on %s", x.path()).isNotBlank().contains("Mozilla/5.0");
+                // BUG-008: every Yahoo request (cookie page, getcrumb, options) carries Accept: */* + Accept-Language
+                assertThat(x.accept()).as("Accept on %s", x.path()).isEqualTo("*/*");
+                assertThat(x.acceptLanguage()).as("Accept-Language on %s", x.path()).isEqualTo("en-US,en;q=0.9");
                 if (!x.path().equals("/fc")) {
                     assertThat(x.cookie()).as("session cookie on %s", x.path()).contains(COOKIE);
                 }
@@ -402,6 +458,10 @@ class Feat052YahooRealHttpSystemTest {
             assertThat(after).containsExactly("/v7/finance/options/IXQZ", "/fc", "/v1/test/getcrumb",
                     "/v7/finance/options/IXQZ", "/v7/finance/options/QRTV", "/v7/finance/options/QRTV");
             assertThat(yres(r)).contains("IXQZ SUCCESS YAHOO SUCCESS null null");
+            for (FakeYahoo.Received x : FAKE.received().subList(before, FAKE.received().size())) {
+                assertThat(x.accept()).as("BUG-008 Accept on re-handshake %s", x.path()).isEqualTo("*/*");
+                assertThat(x.acceptLanguage()).as("Accept-Language on %s", x.path()).isEqualTo("en-US,en;q=0.9");
+            }
             assertThat(stockQuote("IXQZ").get("price").asText()).isEqualTo("61.50");
             for (JsonNode res : r.get("results")) {
                 if (!res.get("failureDetail").isNull()) {

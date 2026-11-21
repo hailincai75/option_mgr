@@ -24,6 +24,7 @@ class HttpQuoteTransportTest {
 
     HttpServer server;
     final List<Received> received = new CopyOnWriteArrayList<>();
+    final List<String> accepts = new CopyOnWriteArrayList<>();
     volatile int status = 200;
     volatile String body = "{}";
 
@@ -32,6 +33,7 @@ class HttpQuoteTransportTest {
         server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
         server.createContext("/", ex -> {
             received.add(new Received(ex.getRequestURI().toString(), ex.getRequestHeaders().getFirst("X-Finnhub-Token")));
+            accepts.add(String.valueOf(ex.getRequestHeaders().getFirst("Accept")));
             byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
             ex.sendResponseHeaders(status, bytes.length);
             try (OutputStream out = ex.getResponseBody()) {
@@ -88,7 +90,7 @@ class HttpQuoteTransportTest {
 
     // ---------------------------------------------------------------- FEAT-052 Yahoo (local fake server only)
 
-    record YahooReceived(String uri, String cookie, String userAgent) {
+    record YahooReceived(String uri, String cookie, String userAgent, String accept, String acceptLanguage) {
     }
 
     final List<YahooReceived> yahooReceived = new CopyOnWriteArrayList<>();
@@ -101,7 +103,8 @@ class HttpQuoteTransportTest {
         server.createContext("/", ex -> {
             String path = ex.getRequestURI().getPath();
             yahooReceived.add(new YahooReceived(ex.getRequestURI().toString(),
-                    ex.getRequestHeaders().getFirst("Cookie"), ex.getRequestHeaders().getFirst("User-Agent")));
+                    ex.getRequestHeaders().getFirst("Cookie"), ex.getRequestHeaders().getFirst("User-Agent"),
+                    ex.getRequestHeaders().getFirst("Accept"), ex.getRequestHeaders().getFirst("Accept-Language")));
             int code;
             String text;
             if (path.equals("/fc/")) {
@@ -111,8 +114,14 @@ class HttpQuoteTransportTest {
             } else if (path.equals("/v1/test/getcrumb")) {
                 String c = ex.getRequestHeaders().getFirst("Cookie");
                 boolean ok = c != null && c.contains("A3=d=fakecookie");
-                code = ok ? 200 : 401;
-                text = ok ? crumbBody : "{\"finance\":{\"error\":\"Unauthorized\"}}";
+                if (!acceptsTextPlain(ex.getRequestHeaders().getFirst("Accept"))) {
+                    // like real Yahoo: getcrumb is text/plain, so Accept: application/json gets 406
+                    code = 406;
+                    text = "Not Acceptable";
+                } else {
+                    code = ok ? 200 : 401;
+                    text = ok ? crumbBody : "{\"finance\":{\"error\":\"Unauthorized\"}}";
+                }
             } else {
                 code = optionsStatus;
                 text = "{\"optionChain\":{}}";
@@ -144,6 +153,48 @@ class HttpQuoteTransportTest {
         assertThat(yahooReceived).extracting(YahooReceived::userAgent).containsOnly("FakeBrowser/1.0");
         assertThat(yahooReceived.subList(1, 4)).extracting(YahooReceived::cookie).containsOnly("A3=d=fakecookie");
         assertThat(slept).as("interval 0").isEmpty();
+    }
+
+    /** No Accept header means anything; otherwise one of the listed media ranges must cover text/plain. */
+    static boolean acceptsTextPlain(String accept) {
+        if (accept == null) {
+            return true;
+        }
+        for (String range : accept.split(",")) {
+            String type = range.split(";")[0].strip();
+            if (type.equals("*/*") || type.equals("text/*") || type.equals("text/plain")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Test
+    void yahoo_acceptAllowsTextPlainCrumb_cboeAndFinnhubStayJson() {
+        HttpQuoteTransport t = yahoo(0);
+        assertThat(t.yahooHandshake()).as("getcrumb must not answer 406")
+                .isEqualTo(new QuoteTransport.Handshake.Ok("AbCdEfGhIjK"));
+        t.yahooOptions("QRTV", null, "AbCdEfGhIjK");
+        assertThat(yahooReceived).hasSize(3);
+        assertThat(yahooReceived).extracting(YahooReceived::accept).containsOnly("*/*");
+        assertThat(yahooReceived).extracting(YahooReceived::acceptLanguage).containsOnly("en-US,en;q=0.9");
+
+        server.removeContext("/");
+        server.createContext("/", ex -> {
+            accepts.add(String.valueOf(ex.getRequestHeaders().getFirst("Accept")));
+            ex.sendResponseHeaders(200, -1);
+            ex.close();
+        });
+        transport("fake-test-key").cboe("QRTV");
+        transport("fake-test-key").finnhubQuote("QRTV");
+        assertThat(accepts).containsExactly("application/json", "application/json");
+    }
+
+    @Test
+    void yahoo_fakeAnswers406WhenAcceptIsJsonOnly() {
+        assertThat(acceptsTextPlain("application/json")).isFalse();
+        assertThat(acceptsTextPlain("*/*")).isTrue();
+        assertThat(acceptsTextPlain("text/plain;q=0.9, application/json")).isTrue();
     }
 
     @Test
