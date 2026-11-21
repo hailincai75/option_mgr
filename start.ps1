@@ -1,6 +1,9 @@
 # Starts Option Manager for everyday use: backend (port 8080, your real database
 # in backend/data/) and frontend (port 5173), each in its own window, then opens
-# the browser. Close the two windows to stop the app.
+# the browser. Close the two windows (or run stop.ps1) to stop the app; restart.ps1 restarts it.
+# -BackendOnly starts only the backend; -NoBrowser skips opening the browser.
+
+param([switch]$BackendOnly, [switch]$NoBrowser)
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
@@ -22,13 +25,14 @@ if (-not $jdk) {
     throw 'JDK 21 not found. Install it, or set OPTIONMGR_JAVA_HOME to its folder.'
 }
 
-foreach ($port in 8080, 5173) {
+$ports = if ($BackendOnly) { @(8080) } else { @(8080, 5173) }
+foreach ($port in $ports) {
     if (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) {
-        throw "Port $port is already in use. Stop whatever is running there (e.g. an E2E run) and try again."
+        throw "Port $port is already in use. Run stop.ps1 (or restart.ps1) and try again."
     }
 }
 
-if (-not (Test-Path (Join-Path $root 'frontend\node_modules'))) {
+if (-not $BackendOnly -and -not (Test-Path (Join-Path $root 'frontend\node_modules'))) {
     Write-Host 'Installing frontend dependencies (first run only)...'
     Push-Location (Join-Path $root 'frontend'); npm install; Pop-Location
 }
@@ -36,8 +40,10 @@ if (-not (Test-Path (Join-Path $root 'frontend\node_modules'))) {
 Write-Host "Using JDK: $jdk"
 $backendCmd = "`$env:JAVA_HOME='$jdk'; `$env:SPRING_PROFILES_ACTIVE=''; Set-Location '$root\backend'; .\gradlew.bat bootRun"
 Start-Process powershell -ArgumentList '-NoExit', '-Command', $backendCmd -WindowStyle Normal
-$frontendCmd = "Set-Location '$root\frontend'; npm run dev"
-Start-Process powershell -ArgumentList '-NoExit', '-Command', $frontendCmd -WindowStyle Normal
+if (-not $BackendOnly) {
+    $frontendCmd = "Set-Location '$root\frontend'; npm run dev"
+    Start-Process powershell -ArgumentList '-NoExit', '-Command', $frontendCmd -WindowStyle Normal
+}
 
 function Wait-Http([string]$url, [string]$name) {
     Write-Host "Waiting for the $name to start..."
@@ -51,7 +57,7 @@ function Wait-Http([string]$url, [string]$name) {
 }
 
 # The first start after a dependency change can take a couple of minutes on both sides.
-if ((Wait-Http 'http://localhost:8080/api/health' 'backend') -and (Wait-Http 'http://localhost:5173/' 'frontend')) {
-    Start-Process 'http://localhost:5173'
+if ((Wait-Http 'http://localhost:8080/api/health' 'backend') -and ($BackendOnly -or (Wait-Http 'http://localhost:5173/' 'frontend'))) {
+    if (-not $NoBrowser) { Start-Process 'http://localhost:5173' }
     Write-Host 'Option Manager is running at http://localhost:5173'
 }

@@ -5,6 +5,8 @@ pm / backend-dev / frontend-dev / qa。规则和流程见 CLAUDE.md。
 
 ## 日常使用
 - **启动**：双击 `start.cmd`（或运行 `.\start.ps1`）。它会自动找到 JDK 21，分别在两个窗口里启动后端（8080）和前端（5173），然后打开浏览器 http://localhost:5173。关闭这两个窗口即停止。
+- **重启**：双击 `restart.cmd`（或 `.\restart.ps1`）。它会关掉旧的两个窗口和占着 8080/5173 的进程，再开新窗口，不会再开一个浏览器标签。只重启后端：`.\restart.ps1 -BackendOnly`。
+- **停止**：双击 `stop.cmd`（或 `.\stop.ps1`；`-WhatIf` 只列出会停哪些进程，不真停）。
   - 找不到 JDK 21 时，设置环境变量 `OPTIONMGR_JAVA_HOME` 指向 JDK 21 的目录。
   - 跑 E2E 时不要同时开着日常用的后端（E2E 会拒绝运行，以免碰到真实数据）。
 - **数据**：全部在 `backend/data/optionmgr.mv.db`（不进 git）。系统没有备份功能，请在**关闭应用后**定期把这个文件复制到别处备份。
